@@ -1,5 +1,10 @@
 # GPU node upgrade gate
 
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
+
 GPU nodes add a coupled compatibility boundary: the PCI device, host kernel,
 RKE2/Kubernetes, NVIDIA driver, GPU Operator, and DCGM exporter must be validated as one
 tuple. Upstream support for each component independently is not sufficient.

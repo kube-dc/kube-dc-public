@@ -135,15 +135,22 @@ spec:
 
 A **StorageClass** defines what type of storage backs your volumes. The available storage classes depend on the infrastructure provider.
 
-### Kube-DC Cloud default: `local-path`
+### Node-local storage: `local-path`
 
+Your provider decides which class is the default. To list the classes and see the default, run:
+
+```bash
+kubectl get storageclass
 ```
-$ kubectl get storageclass
+
+On an installation that offers node-local storage, the output contains a line such as:
+
+```text
 NAME                   PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE
 local-path (default)   rancher.io/local-path   Delete          WaitForFirstConsumer
 ```
 
-The `local-path` storage class provisions storage on the local disk of the node where the workload runs. Key characteristics:
+The `local-path` storage class provisions storage on the local disk of the node where the workload runs. It has these characteristics:
 
 - **Fast**: Direct local disk I/O, no network overhead
 - **Node-bound**: Data is stored on a specific node; the workload must run on the same node

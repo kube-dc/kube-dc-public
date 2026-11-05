@@ -1,3 +1,7 @@
+---
+draft: true
+---
+
 # Container registry
 
 A private OCI registry for your project's images. Kube-DC offers it as the

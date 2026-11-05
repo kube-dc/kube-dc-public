@@ -228,7 +228,7 @@ reserved in kube-ovn IPAM. Three rules are load-bearing:
 ## Gateway MTU (oversized packets from outside)
 
 Tenant pods and VMs run a smaller MTU than the external networks (kube-ovn
-derives it from the underlay; 1340 on our Stage). Without a gateway MTU, OVN routes
+derives it from the underlay, for example 1400). Without a gateway MTU, OVN routes
 a 1500-byte packet from the Internet into the overlay, where it is dropped
 without an ICMP reply, so senders never learn the smaller path MTU. UDP
 datagrams above the overlay limit are lost and TCP depends on the endpoints'
@@ -238,17 +238,16 @@ Set `manager.ovnGatewayMTU` to the tenant pod MTU of the installation:
 
 ```yaml
 manager:
-  ovnGatewayMTU: "1340"
+  ovnGatewayMTU: "1400"
 ```
 
 The manager then sets OVN `options:gateway_mtu` on every Project router's
-gateway ports (re-checked every five minutes, so new Projects follow). OVN
-answers a larger packet entering through the gateway with ICMP "fragmentation
-needed" carrying that MTU. Use exactly the pod MTU: a lower value makes flows
-that work today depend on ICMP. Find it with `ip link show eth0` in any tenant
-pod. Empty (the default) leaves the option unset and removes a value set
-earlier, so ship the cluster's value together with the manager release that
-first carries this setting.
+gateway ports. It checks them again every five minutes, so Projects created
+later also get the option. OVN answers a larger packet entering through the
+gateway with ICMP "fragmentation needed" carrying that MTU. Use exactly the pod
+MTU: a lower value makes working flows depend on ICMP. Find it with
+`ip link show eth0` in any tenant pod. Empty (the default) leaves the option
+unset and removes a value set earlier.
 
 ## ARP flooding on the external switches
 
@@ -336,24 +335,12 @@ kubectl exec -n [namespace] [pod] -- wget -qO- http://httpbin.org/ip
 
 ## Qualify client source restrictions
 
-Qualify direct LoadBalancer, Gateway and FIP support separately. Schema presence
-and controller Ready pods do not establish enforcement. Preserve client source
-addresses on the actual ingress path; Envoy must authorize the socket peer or
-an explicitly trusted proxy chain, rather than arbitrary forwarding headers.
-The exact source-preservation configuration depends on the address layer and
-its local endpoint availability.
-
-The platform chart defaults `manager.fipSourcePolicy.enabled`,
-`backend.exposureSourcePolicy` methods and
-`backend.managedK8sPublicAPISourcePolicy` to disabled. Project roles cannot
-write shared Gateway routes, and the tenant exposure admission policies protect
-controller acknowledgments and certificate issuance. Before publishing
-availability, install matching controller/CRD/backend versions and qualify
-allowed/denied traffic, tightening,
-return traffic, update/removal, restart, deletion and address reuse. FIP needs
-router-port ACL support and verified NAT/chassis convergence. HTTP-01 needs a
-platform ACME ClusterIssuer as `manager.defaultTLSIssuerRef`, retired tenant
-HTTP-01 Issuers, and verified issuance and renewal.
+To qualify client source restrictions for direct LoadBalancer Services, shared
+Gateway routes, and Floating IPs, follow
+[Qualify exposure source policies](exposure-source-policy.md). That page covers
+the chart controls, tenant route and certificate policies, the acceptance steps,
+address-pool headroom, and rollback. The sections here cover the shared Gateway
+and Floating IP behavior that the acceptance depends on.
 
 ### Verify Gateway transport and ingress maintenance
 
@@ -467,6 +454,9 @@ shared live Gateway to test exhaustion.
 
 ### Qualify Floating IP restrictions
 
+Floating IP enforcement needs router-port ACL support and verified NAT and
+chassis convergence.
+
 For a bounded FIP qualification, set `manager.fipSourcePolicy.namespaceUIDs`
 to an object mapping each qualification namespace to its live Kubernetes UID.
 Admission and NAT publication verify that exact namespace incarnation through
@@ -482,7 +472,8 @@ separately reviewing the gate change. An older replica ignores the scope and
 can admit restrictions outside it if enablement accompanies the image rollout.
 Keep backend capabilities off until their traffic and authenticated console
 acceptance pass. Scope removal and gate rollback require the restricted-resource
-inventory and withdrawal procedure described here.
+inventory and withdrawal procedure in
+[Qualify exposure source policies](exposure-source-policy.md#roll-back).
 
 After bounded qualification, delete owned restrictive FIPs first and verify
 their actual NAT and ACL/group rows are absent. Remove the remaining owned
@@ -503,63 +494,3 @@ Backend method availability can be limited to qualified namespaces through
 namespace list. Gateway LoadBalancer Services require both direct and Gateway
 qualification. Do not publish a generic capability for untested protocols,
 database families, VM migrations or shared External worker transport.
-
-Retain image/chart digests, producer commits, dependency versions, ingress
-topology and packet evidence for each installation. Platform chart release
-preflight requires an explicit clean producer commit and compares its source-
-policy schema to the chart. This prevents schema skew; it does not verify the
-selected image's provenance or qualify the installation. Repeat packet
-qualification when OVN, Envoy, network topology or policy producers change.
-
-Before downgrade or disabling a gate, inventory restricted resources. Keep a
-controller that enforces them, or withdraw their external exposure and verify
-unreachability before installing an older version. Never delete protection
-while leaving a restricted endpoint reachable. A public address quota addon
-cannot resolve exhaustion of the physical routed address pool.
-
-The external-subnet allocator keeps one address in reserve to reduce the risk of
-exhaustion while status updates and concurrent allocations are in flight. A known
-`v4availableIPs` value of zero or one blocks a new allocation. Before requesting
-one EIP, operators must confirm at least two reported available addresses on the
-selected subnet, as well as Organization quota. This check is advisory and does
-not reserve an address. Deleting a FIP frees its address only when the associated
-EIP allocation is also released.
-
-### Console qualification on Stage (2026-10-04)
-
-The recorded Stage console subset verifies restricted LoadBalancer creation
-and later edits, including source inversion and clearing the list. It also
-verifies edits on an existing LoadBalancer with an `expose-route` Gateway route,
-preserving the Service UID, EIP binding and hostname. The aggregate passes
-21 browser/API checks and 132 independent-source packet probes, including
-24 baseline probes retained from an earlier attempt. Direct TCP/UDP and combined
-direct HTTP use the shared EIP. Gateway HTTP matches the requested lists across
-three separately selected ingress nodes.
-
-The temporary namespace capability scope is closed after acceptance. At this
-checkpoint, global controls and FIP enforcement remain disabled. The subsequent
-owner-approved Stage validation rollout is recorded separately. This traffic
-subset does not qualify Cloud, all lifecycle paths, or other managed consumers.
-Installation capability publication remains a separate reviewed rollout. Empty lists request open access; do not describe requested intent as
-verified enforcement without current path-specific evidence.
-
-
-### Stage control availability (2026-10-04)
-
-A separately reviewed, owner-approved rollout enables direct LoadBalancer,
-Gateway, and FIP controls across Stage for validation. Empty lists remain open.
-Authenticated browser inspection verifies open-default creation fields and
-editable CIDR fields on existing Service and FIP forms, with all network
-mutations blocked. Eleven browser checks, 12 post-convergence health checks,
-and 206 resource/Gateway preservation checks pass. Earlier direct/Gateway
-traffic results remain a separate acceptance subset.
-
-At this rollout checkpoint, the Stage public address pool had no free addresses
-despite quota headroom. A later owner release made one address available, but
-the allocator's one-address reserve still prevented a fresh public-FIP allocation.
-This rollout does not qualify fresh independent public Stage FIP traffic or
-inherit Cloud qualification. Unsupported topology remains unavailable; require
-current enforcement evidence after a restrictive write. Production capability
-publication, broader lifecycle/failover, and consumer qualification remain
-separate release gates. Before disabling enforcement, inventory restrictions
-and retain their enforcement or normally withdraw external exposure.

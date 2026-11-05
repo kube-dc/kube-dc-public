@@ -13,8 +13,10 @@ hand on a cluster.
 | Path | Content |
 |------|---------|
 | `tenant-native.yaml`, `postgresql.yaml` | The base: the connectivity class and the PostgreSQL bundle, class and plans |
-| `components/<family>/` | One component per additional family, such as `mysql`, `valkey`, or `forgejo`. Each carries the `ServiceFamilyBundle`, the `ManagedServiceClass` and the family's plans |
-| `components/shared-service-plans/` | The Development and Production plans for PostgreSQL, Kafka and Valkey, with the sizing table in its README. The MySQL, MariaDB and ClickHouse components define their own Development and Production pairs. |
+| `components/<family>/` | One component per additional family: `mysql`, `mariadb`, `clickhouse`, `valkey`, `kafka`, `rabbitmq`, `opensearch` and `forgejo`. Each carries the `ServiceFamilyBundle`, the `ManagedServiceClass` and the family's plans |
+| `components/shared-service-plans/` | The Development and Production plans for PostgreSQL, Kafka and Valkey, with the sizing table in its README. The MySQL, MariaDB, ClickHouse, RabbitMQ and OpenSearch components define their own Development and Production pairs |
+| `components/rabbitmq-durable-storage/`, `components/opensearch-durable-storage/` | Move the RabbitMQ Production plan and both OpenSearch plans from the `database-ha` role to the `database` role with volume expansion |
+| `components/local-ha-storage/` | Moves the Production plans of PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey and Kafka to the `database-ha` role on node-local storage. See [Local HA storage](managed-services-local-ha.md) |
 | `components/data-plane/` | Registers the cluster's own data plane |
 | `components/postgresql-gateway/`, `components/postgresql-public-loadbalancer/` | Exposure entitlements, where the cluster has a shared TLS listener or a public address pool |
 | `components/console*/` | Console publication of plans on clusters that predate the annotation being the default |
@@ -46,7 +48,9 @@ A plan is the product decision for one class. The fields an operator sets:
 | `engineVersion`, `allowedImages` | The engine line the plan runs, and the exact images upgrades may move to |
 | `capacity.cpu`, `capacity.memory`, `capacity.storage` | The per-member defaults |
 | `capacity.computeBounds`, `capacity.maxStorage` | What tenants may choose at creation and through `Resize` and `ExpandStorage`; a plan without bounds is fixed-size |
-| `capacity.storageRole`, `capacity.allowedStorageClasses` | The logical storage role (`database`) the data plane maps to a class, and the other classes tenants may pick |
+| `capacity.storageRole` | The logical storage role, `database` or `database-ha`, that the data plane maps to a class. Mutually exclusive with `capacity.storageClass` and `capacity.allowedStorageClasses`. Tenants omit `spec.storage.class` on a role-based plan; a set value is refused |
+| `capacity.storageClass`, `capacity.allowedStorageClasses` | On a plan without a storage role: the default class and the other classes tenants may pick at creation |
+| `capacity.storageAllocationMode` | `Volume` (the default) resizes the PVC on `ExpandStorage`. `UnrestrictedLocal` records a larger allocation on node-local storage and does not resize the PVC |
 | `capacity.allocationProtocol: v1` | Durable capacity accounting; required for `Resize` and `RestoreInPlace` |
 | `topology` | Either `min/max/defaultInstances`, or `min/max/defaultShards` with `min/max/defaultReplicasPerShard` for sharded families; plus `ha`, `synchronousStandbys`, `durability` |
 | `operations.allowed`, `operations.autoApprove` | Which operation types tenants may request and which run without an operator's approval |
@@ -79,16 +83,44 @@ topology is highly available with more than one member as HA.
 
 ## Storage roles and backups
 
-A plan asks for the storage **role** `database`, not a class name, because
-class names differ between installations. The data plane maps it:
+A plan asks for a storage **role**, not a class name, because class names
+differ between installations. The standard catalog uses two roles:
+
+| Role | Used by | Typical class |
+|------|---------|---------------|
+| `database` | Every standard plan that the `database-ha` row does not name | An expandable network block class, such as a Ceph RBD class |
+| `database-ha` | Both OpenSearch plans, the RabbitMQ Production plan, and the six Production plans that `components/local-ha-storage` patches | A node-local class, such as `local-path`, for families that replicate their own data across hosts |
+
+The Forgejo plan sets `capacity.storageClass` instead of a role.
+
+The data plane maps each role to a physical class in
+`ServiceDataPlane.spec.storageRoles`. The fleet writes the mapping and the
+per-class budgets from `cluster-config.env`:
 
 ```text
-SERVICES_STORAGE_ROLES={database: rbd-vm}
-SERVICES_STORAGE_BUDGETS={rbd-vm: 500Gi}
+SERVICES_STORAGE_ROLES={database: rbd-vm, database-ha: local-path}
+SERVICES_STORAGE_BUDGETS={rbd-vm: 500Gi, local-path: 256Gi}
 ```
 
-Map the role to a class that supports volume expansion; local-path storage
-does not, and `ExpandStorage` is refused on it.
+Map every role that a selected plan uses. A data plane without a mapping for
+the plan's role is not a placement candidate. The service stays `Pending`
+with `Placed=False`, reason `NoQualifiedDataPlane`, and a message that names
+the role: `storage role "database-ha" has no mapping on data plane <plane>`.
+To offer OpenSearch and RabbitMQ Production without node-local storage, select
+`components/opensearch-durable-storage` and
+`components/rabbitmq-durable-storage`. They move those plans to `database`.
+
+The `storage.kube-dc.com/roles` annotation on a `StorageClass`, described in
+[Storage classes](storage-classes.md), does not affect managed services. Only
+`spec.storageRoles` on the data plane does.
+
+`ExpandStorage` depends on the plan's `capacity.storageAllocationMode`:
+
+- **`Volume`**: the platform resizes the PVC. Map the role to a class that
+  supports volume expansion.
+- **`UnrestrictedLocal`**: on node-local storage, the platform records the
+  larger allocation against the logical budget. It does not resize the PVC or
+  cap the directory, and the host filesystem must have the space.
 
 Backups go to the Project's own bucket by default: `backup.objectStoreSource:
 ProjectBucketClaim` with `objectBucketClaimName: db-backups`. Each Project has its own backup bucket.

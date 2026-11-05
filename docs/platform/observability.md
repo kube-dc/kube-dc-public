@@ -93,6 +93,23 @@ Routing is automatic after the collectors and controller reconcile:
   to `system`;
 - Organization datasource configuration federates the relevant backend tenant IDs.
 
+Grafana tenancy has two modes. You set the mode with `GRAFANA_TENANT_MODE` in
+`clusters/<name>/cluster-config.env`, where `<name>` is the cluster name. The
+chart value is `manager.grafanaTenantMode`. The modes are:
+
+- **`org`** (default): one Grafana organization for each Kube-DC Organization.
+  Its datasource spans the Organization namespace and all of its Projects, so
+  every member of the Organization sees all of its Projects.
+- **`project`**: the controller also creates one Grafana organization for each
+  Project. It is named after the Project backing namespace, and its datasource
+  covers only that Project. End users land only in their own Project's Grafana
+  organization. The Organization-wide Grafana organization is for Organization
+  administrators.
+
+Choose `project` when the Projects of one Organization belong to different end
+customers, such as in a reseller or partner offering. To choose it when you
+install, pass `--set GRAFANA_TENANT_MODE=project` to `kube-dc bootstrap init`.
+
 ### 2.2 Adding or removing a Project
 
 No separate observability registration is required. When a Project changes,
@@ -248,16 +265,16 @@ For bulk operations across backend tenant IDs (for example, pushing a common bas
 ```bash
 # List all rule groups for one backend tenant ID
 mimirtool rules list \
-  --address https://mimir-ruler.kube-dc.cloud \
+  --address https://mimir-ruler.<domain> \
   --id <backend-tenant-id>
 
 # Upload rule groups for one backend tenant ID
 mimirtool rules load ./rules/my-rules.yaml \
-  --address https://mimir-ruler.kube-dc.cloud \
+  --address https://mimir-ruler.<domain> \
   --id <backend-tenant-id>
 ```
 
-Authentication requires a valid Keycloak access token from the `master` realm (platform
+`<domain>` is your platform domain. Authentication requires a valid Keycloak access token from the `master` realm (platform
 admin group). See the `kube-dc` CLI docs for obtaining tokens.
 
 ### 4.4 Default alertmanager routing

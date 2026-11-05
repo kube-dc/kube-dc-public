@@ -12,11 +12,8 @@ the independent VM GPU creation gate. A cluster that offers only Shared GPU
 (HAMi/DRA pod workloads) cannot attach those shared devices to VMs; on such a
 cluster the VM console does not show accelerator creation or edit controls.
 
-This guide documents the qualified guest and driver combinations. A guest
-becomes supported on your cluster when the platform operator completes the
-guest qualification checklist at the end of this page. GPU passthrough
-couples the device, guest OS and driver package, so each combination is
-qualified rather than assumed.
+This guide lists the guest and driver combinations that a provider can
+enable. Your provider enables GPU VMs after it prepares the GPU nodes.
 
 ## Guest and driver matrix
 
@@ -172,23 +169,3 @@ describe the underlying behavior.
   identifiers in a tenant support ticket.
 - **VM stopped during maintenance:** start it only after the operator restores
   compatible capacity. It can receive a different device.
-
-## Fresh qualification checklist
-
-Operators must record this evidence separately for Ubuntu and Windows before
-changing either row to supported:
-
-1. exact immutable image version/digest and OS build;
-2. exact signed driver package version and SHA-256 checksum;
-3. successful first boot, install, required reboot, and second boot;
-4. `nvidia-smi` model, driver, memory, ECC, and zero-error result;
-5. pinned CUDA allocation, kernel execution, synchronization, and result check;
-6. stop releases the device, start reattaches it, and verification still passes;
-7. a second VM queues when capacity is exhausted and starts after release;
-8. live migration is rejected and planned stop/start recovery is accepted;
-9. deletion releases quota/device state with no stale holder;
-10. support owner, rollback procedure, and driver/image update policy.
-
-Retain the evidence from both walkthroughs. Open tenant GPU VM creation on a
-cluster after its qualification record is complete. That record is what makes
-the combination supported for your users.

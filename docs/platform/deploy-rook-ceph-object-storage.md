@@ -466,10 +466,27 @@ curl -s -o /dev/null -w "%{http_code}" https://s3.example.com/
 
 ### 7.1 Helm values
 
-Configure the object storage store name and namespace in your Kube-DC Helm values. The defaults match the manifests above:
+Two settings name the object store, and both must name the same one. The
+defaults, `rook-ceph` and `my-store`, match the manifests on this page:
+
+- **Kube-DC chart values**: the backend and the platform admin identity read
+  `objectStorage.rookNamespace` and `objectStorage.cephStoreName`.
+- **`billing-plans` ConfigMap**: the controller reads `objectStorageConfig`
+  in the `plans.yaml` key when it creates the Organization users.
+
+To use another store, change both. The chart values look like this:
 
 ```yaml
 # values.yaml (kube-dc chart)
+objectStorage:
+  rookNamespace: rook-ceph   # default
+  cephStoreName: my-store    # default
+```
+
+The matching entry in `plans.yaml` of the `billing-plans` ConfigMap looks like
+this:
+
+```yaml
 objectStorageConfig:
   namespace: rook-ceph       # default
   storeName: my-store        # default
@@ -493,17 +510,16 @@ Until it is enabled, buckets, objects and presigned URLs all work normally, but
 the console's S3 key management and its storage-usage figures return HTTP 503 and
 log the reason.
 
-**On a new cluster, turn this on now.** There is nothing in the store yet for it
-to be exposed to.
+**On a fresh cluster, turn this on.** The store holds no identity yet that it
+could be exposed to.
 
-**On a cluster that already serves organizations, do not turn it on yet.** Ceph
+**On a cluster that already serves organizations, leave it off at first.** Ceph
 RGW admin capabilities are not scoped to the identity that holds them, so any
 identity in the store that still carries them can read this one's secret key, and
 removing capabilities later does not invalidate a key that was already copied.
 Kube-DC releases before v0.7.10 granted those capabilities to every organization.
-Work through the inventory and rotation procedure first; Kube-DC engineers should
-follow `docs/internal/s3-admin-capability-remediation.md`, and operators of an
-existing cluster should contact support before enabling it.
+Inventory the identities that still carry capabilities and rotate their keys
+first. Contact support before you enable it on an existing cluster.
 
 The name is reserved: an organization of the same name would resolve to the same
 `CephObjectStoreUser` and Secret, so both the controller and the backend refuse
@@ -511,17 +527,21 @@ to serve an organization by that name.
 
 ### 7.3 Backend environment variables
 
-The UI backend reads these from environment (all have sensible defaults):
+The UI backend reads these environment variables. The chart renders most of
+them from its values:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ROOK_NAMESPACE` | `rook-ceph` | Namespace where Rook-Ceph is deployed |
-| `CEPH_STORE_NAME` | `my-store` | Name of the `CephObjectStore` resource |
-| `CEPH_STORAGE_CLASS` | `ceph-bucket` | StorageClass for `ObjectBucketClaim` provisioning |
-| `S3_ENDPOINT` | `https://s3.example.com` | External S3 endpoint URL used by the UI and presigned URLs |
-| `S3_PLATFORM_ADMIN_USER` | `kube-dc-platform-admin` | The RGW identity that signs admin operations, and the organization name both the backend and the controller refuse (§7.2) |
+| Variable | Set from | Default | Description |
+|----------|----------|---------|-------------|
+| `ROOK_NAMESPACE` | `objectStorage.rookNamespace` | `rook-ceph` | Namespace where Rook-Ceph is deployed |
+| `CEPH_STORE_NAME` | `objectStorage.cephStoreName` | `my-store` | Name of the `CephObjectStore` resource |
+| `CEPH_STORAGE_CLASS` | Not rendered by the chart | `ceph-bucket` | StorageClass for `ObjectBucketClaim` provisioning |
+| `S3_ENDPOINT` | `s3Endpoint` | None | External S3 endpoint URL used by the UI and presigned URLs |
+| `S3_PLATFORM_ADMIN_USER` | `objectStorage.platformAdminUser.name` | `kube-dc-platform-admin` | The RGW identity that signs admin operations, and the organization name both the backend and the controller refuse (§7.2) |
 
-Set `S3_ENDPOINT` to your actual S3 domain in the backend deployment.
+Set the chart value `s3Endpoint` to your S3 URL, for example
+`https://s3.example.com`. The chart renders `S3_ENDPOINT` only when the value
+is set. Without it, bucket API responses report no endpoint, and the console
+disables the file browser.
 
 ### 7.4 Billing plans
 
@@ -576,7 +596,7 @@ After deployment, the following features are automatically available:
 - Creates `CephObjectStoreUser` per organization with quotas from billing plan
 - Updates quotas on plan change, blocks uploads on suspension (`maxSize=0`)
 - Deletes user on organization removal
-- User capabilities: `user=*`, `bucket=*` (enables key management through RGW Admin API)
+- Organization users carry no RGW admin capabilities, and the controller removes any that an older release granted. Key management and usage reporting run on the platform admin identity (§7.2)
 
 ### UI backend API
 - **Bucket Management**: Create/delete buckets through `ObjectBucketClaim`, list with usage stats

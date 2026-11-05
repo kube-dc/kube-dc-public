@@ -17,9 +17,10 @@ creation.
 ## Names to use
 
 Class and plan names come from the provider catalog.
-The following names are examples from the standard catalog; installations that publish the standard shared plans use
+The following names are examples from the standard catalog. Installations that publish the standard shared plans use
 `<family>-development` and `<family>-production`, which the console shows as
-the Dev and Production tiers.
+the Dev and Production tiers. Where your provider offers GitHub Actions
+runners, that family has one plan, `github-runner-preview`.
 
 | Family | Class | Standard plans |
 |--------|-------|----------------|
@@ -29,6 +30,9 @@ the Dev and Production tiers.
 | ClickHouse | `clickhouse` | `clickhouse-development`, `clickhouse-production` |
 | Valkey | `valkey` (single node), `valkey-ha` (Sentinel) | `valkey-development`, `valkey-production` |
 | Kafka | `kafka` | `kafka-development`, `kafka-production` |
+| RabbitMQ | `rabbitmq` | `rabbitmq-development`, `rabbitmq-production` |
+| OpenSearch | `opensearch` | `opensearch-development`, `opensearch-production` |
+| GitHub Actions runners, where your provider offers them | `github-runner` | `github-runner-preview` |
 
 The standard shared plans use `tenant-native`. It publishes the service
 as internal Services inside your Project's network. Workloads in the same
@@ -61,7 +65,7 @@ these values.
 
 | Plan field | Effect |
 |------------|--------|
-| `engineVersion` | The engine version of the plan (a PostgreSQL major, or a release line such as MySQL `8.4`). If you set `spec.engineVersion`, it must equal this value. Omit it to take the plan's version |
+| `engineVersion` | The engine version of the plan. The standard plans pin a full release, such as PostgreSQL `17.11` or MySQL `8.4.10`. If you set `spec.engineVersion`, it must be a full release that the plan entitles. Omit it to take the plan's version |
 | `allowedImages` | The exact engine images that `MinorUpgrade` and `MajorUpgrade` operations may move to |
 
 ### Instances
@@ -80,8 +84,10 @@ these values.
 |------------|--------|
 | `capacity.storage` | The data volume size per instance when you omit `spec.storage.size` |
 | `capacity.maxStorage` | The largest size allowed at creation and for `ExpandStorage` |
-| `capacity.storageClass` | The storage class used when you omit `spec.storage.class` |
-| `capacity.allowedStorageClasses` | Other storage classes you may select at creation. Empty means only the default |
+| `capacity.storageRole` | A storage role, such as `database` or `database-ha`. The provider maps each role to a storage class. Omit `spec.storage.class` on a plan with a storage role: a set value is refused. A plan sets either a storage role or storage classes, never both |
+| `capacity.storageClass` | On a plan without a storage role: the storage class used when you omit `spec.storage.class` |
+| `capacity.allowedStorageClasses` | On a plan without a storage role: other storage classes you may select at creation. Empty means only the default |
+| `capacity.storageAllocationMode` | `Volume` (the default) resizes the data volume on `ExpandStorage`. On node-local storage, `UnrestrictedLocal` records a larger allocation and leaves the volume size unchanged |
 
 ### Compute
 

@@ -5,6 +5,15 @@ Kube-DC. Choose the tenant network, then choose how clients reach the platform.
 The form generates the install `.env` input. It does not configure physical
 switches, create host bonds, or change host routes during discovery.
 
+The New Cluster form in `kube-dc bootstrap` lets you enter, check, and save
+installation inputs. To open a saved input file with installation disabled,
+run `kube-dc bootstrap --config <file> --review-only`, where `<file>` is the
+input file. Press **S** to save a private draft. Install with the
+`kube-dc bootstrap init` commands in the
+[Installation guide](installation-guide.md), not from the form. Without
+`--review-only`, **Apply this configuration** in Review starts the `init` plan
+and its confirmation; do not use it to install.
+
 ## Before you begin
 
 Get the following information from your network operator:
@@ -133,10 +142,10 @@ imports retain their overrides so validation can report conflicts.
 
 ## Verify the result
 
-Before confirming installation, check the generated environment and plan for
-the selected preset, per-node NICs, VLANs, address pools, reservations, and
-platform access. The installer renders these values through the existing
-network and ingress generators.
+Before you install, run `kube-dc bootstrap init --config <file> --dry-run`
+with the saved input file. Check the plan for the selected preset, per-node
+NICs, VLANs, address pools, reservations, and platform access. The installer
+renders these values through the existing network and ingress generators.
 
 After installation, verify ProviderNetwork readiness on every intended node,
 tenant DNS and egress, platform HTTPS from an external client, and the expected

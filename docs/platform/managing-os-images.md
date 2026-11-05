@@ -161,17 +161,24 @@ the per-cycle download budget stays bounded.
 
 ### Example: Windows-style entry (no discovery)
 
-Two Windows entries share `windows/11/` so `familyId` disambiguates
-them in the catalog. There is no `discovery:` block, and the `static-url` adapter
-mirrors the upstream URL verbatim.
+The chart ships the Windows golden entry with an empty `upstreamURL`. There is no
+`discovery:` block, so the refresh job skips the entry and logs
+`skip <os-name>: no upstream URL`. The chart does not redistribute an installed
+Windows disk. You supply the image yourself at `mirrorPath`, from an authenticated
+source. For how to produce the image, see [OS-image operations](os-image-operations.md).
+
+The chart default for this entry is:
 
 ```yaml
 - osName: "Windows 11 Enterprise (Golden Image)"
   familyId: "windows-11-golden"
   cloudUser: kube-dc
-  upstreamURL: "https://iso.stage.kube-dc.com/windows11-x64-golden.qcow2"
-  mirrorPath: "windows/11/latest/windows11-x64-golden.qcow2"
+  upstreamURL: ""
+  mirrorPath: "private/windows/11/golden/windows11-x64-golden.qcow2"
 ```
+
+To mirror the image from your own source, set `upstreamURL` to that URL. The
+`static-url` adapter then mirrors it verbatim.
 
 ## Refresh CronJob
 
@@ -192,8 +199,8 @@ to the per-family adapter, downloads new versions to a scratch
 the versioned path, copies to the `/latest/` alias **only for the
 adapter's `is_latest=True` Version**, then runs retention.
 
-Retention runs **before** the catalog rebuild (since v0.3.15) so the
-catalog never advertises a version that's about to be pruned.
+Retention runs **before** the catalog rebuild, so the catalog never
+advertises a version that is about to be pruned.
 
 ### Run the refresh by hand
 
@@ -215,11 +222,11 @@ and does three passes:
 |---|---|---|---|
 | 1 | `cdi-(upload\|importer\|clone)-*` pods in Pending/Unknown | `staleDays` (default 7d) | catches the "upload scheduled but never landed" class. Parent DV is deleted. |
 | 2 | DataVolumes in phase `Failed` | `failedHours` (default 6h) | catches the "importer crashloops indefinitely against an unreachable URL" class. |
-| 3 | DataVolumes in `ImportInProgress` / `ImportScheduled` | `importDeadlineMinutes` (default 30m) | implements PRD Phase 0 time-bound importer retries; CDI has no native `failureRetryLimit`. |
+| 3 | DataVolumes in `ImportInProgress` / `ImportScheduled` | `importDeadlineMinutes` (default 30m) | bounds importer retries in time, because CDI has no native `failureRetryLimit`. |
 
-`cdiUploadGc.delete=false` (audit-only) is the safe default; set to
-`true` to actually delete. Cloud cluster runs with `delete: true`
-since v0.3.20.
+`cdiUploadGc.delete=false` (audit-only) is the safe default. In that
+mode the job only logs which DataVolumes it would delete. Run one cycle
+in audit mode, check the list, and then set `delete: true` to delete.
 
 ### Tuning knobs (chart values)
 
@@ -231,14 +238,14 @@ cdiUploadGc:
   importDeadlineMinutes: 30
   delete: false                       # set true to actually delete
   schedule: "0 */6 * * *"
-  image: "shalb/kubectl-jq:v1.35.4"
+  image: "shalb/kubectl-jq:v1.35.9@sha256:725cf211eb49cb524923dbede54e3f32e1530a903a24e0ba53a3305aaf0cd77d"
 ```
 
 ### Resource limits
 
-128 Mi OOM-killed the gc pod on busy clusters (346 pods → ~7 MiB
-JSON output → kubectl+jq peak working set >128 Mi). Limits are
-`64Mi/384Mi` since v0.3.21; covers up to ~1000 pods.
+The gc pod requests 64 Mi and is limited to 384 Mi of memory. kubectl and jq
+hold the whole pod list in memory, so a 128 Mi limit is too small on busy
+clusters. 384 Mi covers up to about 1000 pods.
 
 ## Mirror & importer health alerts
 
@@ -372,13 +379,15 @@ limit handles. Raise `cdiUploadGc.resources.limits.memory`.
 ## API reference
 
 `GET /api/create-vm/{namespace}/os-images` returns a flat array of
-catalog entries. Each entry now includes Phase 2.3 extension fields:
+catalog entries. Each entry includes the version fields `_familyId`,
+`_versions`, and `_latestURL`. The host in the URLs is your object-storage
+endpoint:
 
 ```json
 {
   "OS_NAME": "Ubuntu 24.04 LTS",
   "CLOUD_USER": "ubuntu",
-  "OS_IMAGE_URL": "https://s3.kube-dc.cloud/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img",
+  "OS_IMAGE_URL": "https://s3.<domain>/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img",
   "_familyId": "ubuntu-24.04",
   "_versions": [
     { "tag": "20260321", "displayName": "...", "imageURL": "...", "isLatest": true, "sha256": "...", "uploadedAt": "..." },
@@ -386,9 +395,11 @@ catalog entries. Each entry now includes Phase 2.3 extension fields:
     { "tag": "20260209", "...": "..." },
     { "tag": "20260131", "...": "..." }
   ],
-  "_latestURL": "https://s3.kube-dc.cloud/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img"
+  "_latestURL": "https://s3.<domain>/cdi-os-images/ubuntu/24.04/latest/noble-server-cloudimg-amd64.img"
 }
 ```
+
+`<domain>` is the installation's base domain.
 
 `_versions`, `_familyId`, and `_latestURL` are present only when
 `cdi-os-catalog` exists; the backend falls back to the flat

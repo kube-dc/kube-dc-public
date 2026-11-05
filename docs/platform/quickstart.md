@@ -13,9 +13,12 @@ Three pages, three jobs. Read them in this order only if you need all three.
 | **[Installation overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
 | **[Installation guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
 
-All three describe the **same installer**. Where they overlap, the Quickstart is
-the tested happy path, verified against the real command tree on every
-build, so its commands and config keys cannot drift.
+All three describe the **same installer**. Where they overlap, follow the
+Quickstart: it is the tested path. A CLI test checks that the command and
+long flags of every line that starts with `kube-dc` on these three pages exist
+in the CLI. The same test
+checks a few key names in the Quickstart example config. It does not check
+values or results.
 :::
 
 **Time:** ~60 minutes after the servers exist. Most of it is waiting for Flux.
@@ -58,16 +61,21 @@ two of them (the domain and the addresses) are painful to change afterwards.
 | 3 | Node internal IPs | `192.168.0.11-13` | Stable, same L2, used for etcd |
 | 4 | Public address for the front door | `203.0.113.10` | Where `*.dc.example.com` resolves |
 | 5 | Admin email | `ops@example.com` | Used for ACME registration |
-| 6 | GitHub owner + repo name | `my-org`, `my-kube-dc-fleet` | A **new, empty, private** repo. GitHub only |
+| 6 | GitHub owner + repo name | `my-org`, `my-kube-dc-fleet` | An **empty, private** repo. `init` creates it if it does not exist. This page uses GitHub |
 | 7 | Storage devices for Ceph | `/dev/nvme1n1` per node | **Will be wiped.** Must be raw |
 | 8 | Cloud VLAN id + NIC | `200`, `eth1` | For tenant networking |
 | 9 | SSH user with passwordless sudo | `ubuntu` | Must already exist on all three servers. `root` also works |
 | 10 | Local fleet checkout path | `~/kube-dc-fleet` | Writable on your workstation; every later command needs it |
-| 11 | First Project's CIDR | `10.90.0.0/16` | A Project **requires** this and it must not overlap #3, the pod/service CIDRs, or another Project |
+| 11 | First Project's CIDR | `10.90.0.0/16` | Optional. Omit it to let the controller allocate a block from the Project CIDR pool. If you set it, it must not overlap #3, the pod/service CIDRs, or another Project |
 
-:::warning GitHub only, for now
-The CLI advertises GitLab, but `doctor` probes only `gh` and this path is not
-tested end to end with `glab`. Use GitHub.
+:::note GitHub on this page
+This page uses GitHub. `bootstrap init` also works with GitLab, including a
+self-managed GitLab. Pass `--provider=gitlab`, and add `--provider-host <host>`
+for a self-managed host, where `<host>` is the GitLab hostname. A GitLab
+installation needs `glab`, signed in with `glab auth login --hostname <host>`.
+`doctor` probes `gh` only, so it does not check `glab`. For the flags, see
+[Run kube-dc bootstrap init](installation-guide.md#33-run-kube-dc-bootstrap-init)
+in the Installation guide.
 :::
 
 Export the two paths now. Later steps use them, and one of them is how every
@@ -121,7 +129,8 @@ sudo install -m 0755 "${tmp}/${asset}" /usr/local/bin/kube-dc && rm -rf "${tmp}"
 kube-dc version
 
 # 2. Install the other tools the CLI drives. On Ubuntu/Debian:
-sudo apt-get update && sudo apt-get install -y git curl openssh-client jq
+#    init runs the fleet scaffold with Python 3 and PyYAML (python3-yaml).
+sudo apt-get update && sudo apt-get install -y git curl openssh-client jq python3 python3-yaml
 #    kubectl, flux, sops, age, kustomize, helm and yq: use your usual method, or
 #    see the Installation Guide §1.5. `kube-dc bootstrap install-prereqs` can do
 #    it, but only AFTER a fleet checkout exists (it runs a script from the fleet),
@@ -136,8 +145,8 @@ gh auth login --scopes repo,workflow
 kube-dc bootstrap doctor
 ```
 
-`doctor` must show no **blockers**. It probes kubectl, flux, sops, age, git, gh,
-ssh, and bao. It does **not** verify helm, kustomize, or yq, so a green
+`doctor` must show no **blockers**. It probes python3 (with PyYAML), kubectl,
+flux, sops, age, git, gh, ssh, and bao. It does **not** verify helm, kustomize, or yq, so a green
 doctor is not proof those exist. A missing local `bao` is expected and
 informational: the CLI runs OpenBao commands inside the cluster, never on your
 machine.
@@ -345,8 +354,7 @@ therefore wires the API servers as its last finalize step, once Flux has brought
 
 Run it by hand when `init` reported the step deferred, when you installed with
 `--no-oidc-cutover` or `--no-ssh` (which also skips it, since the cutover needs
-SSH to the nodes), or on a cluster installed by a CLI older than v0.6, which is
-every cluster installed before 2026-08-28:
+SSH to the nodes), or on a cluster installed by a CLI older than v0.6:
 
 ```bash
 kube-dc bootstrap oidc-cutover --ssh-user "$KUBE_DC_SSH_USER" --dry-run   # review
@@ -465,8 +473,8 @@ Set it explicitly only to override the automatic choice.
 ## 7. Create the first tenant and verify
 
 An Organization lives in a namespace named after **itself**, not in `kube-dc`,
-and a Project **requires** a `cidrBlock` (worksheet #11). The API rejects it
-without one.
+and a Project's `cidrBlock` is optional (worksheet #11). Without it, the
+controller allocates a block from the Project CIDR pool.
 
 ```bash
 kubectl create namespace acme
@@ -487,8 +495,9 @@ metadata:
   name: web
   namespace: acme
 spec:
-  # REQUIRED. Must not overlap your node network, the pod/service CIDRs, or
-  # another Project: each Project is its own VPC subnet.
+  # Optional. Omit it to let the controller allocate a block. If you set it,
+  # it must not overlap your node network, the pod/service CIDRs, or another
+  # Project: each Project is its own VPC subnet.
   cidrBlock: 10.90.0.0/16
   egressNetworkType: cloud
 EOF

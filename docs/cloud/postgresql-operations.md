@@ -23,6 +23,39 @@ For the shared request lifecycle, see [Request a managed service operation](mana
 Throughout this page, replace `my-project` with your Project's backing
 namespace.
 
+## Operations by plan
+
+Your plan decides which operation types you can request. The standard catalog
+publishes the following PostgreSQL plans, which allow these types:
+
+| Type | `postgresql-development` | `postgresql-production` | `postgresql-shared` | `postgresql-platform-ha` |
+|------|:---:|:---:|:---:|:---:|
+| `Backup` | ✓ | ✓ | ✓ | ✓ |
+| `RestoreToNew` | ✓ | ✓ | ✓ | ✓ |
+| `RestoreInPlace` | ✗ | ✗ | ✗ | ✓ |
+| `Scale` | ✗ | ✓ | ✓ | ✓ |
+| `Resize` | ✓ | ✓ | ✓ | ✓ |
+| `ExpandStorage` | ✓ | ✓ | ✓ | ✓ |
+| `Switchover` | ✗ | ✓ | ✓ | ✓ |
+| `Failover` | ✗ | ✗ | ✗ | ✓ |
+| `RotateCredentials` | ✓ | ✓ | ✓ | ✓ |
+| `MinorUpgrade` | ✗ | ✗ | ✗ | ✓ |
+| `MajorUpgrade` | ✗ | ✗ | ✗ | ✓ |
+| `UpdateParameters` | ✓ | ✓ | ✓ | ✓ |
+| `Hibernate`, `Resume` | ✓ | ✓ | ✓ | ✓ |
+
+The table describes the standard plans. Your provider can publish other plans
+or other revisions of these plans. `postgresql-shared` and
+`postgresql-platform-ha` are older plans that the console does not offer.
+Installations scaffolded by `kube-dc bootstrap init` disable both, and a
+disabled plan accepts no services.
+
+An operation type that your plan does not allow is `Rejected` with reason
+`PlanNotEntitled` and the message `plan <plan> does not allow <type>`. On the
+standard plans, every allowed type runs without approval. On
+`postgresql-platform-ha`, `Failover` and `MajorUpgrade` wait for provider
+approval.
+
 ## Create an operation
 
 This example changes one PostgreSQL setting and resets another to its managed
@@ -109,7 +142,8 @@ While a service is hibernated, every type except `Resume` and `Hibernate` is
 ## Operation types
 
 Every type must be listed in your plan's `operations.allowed`; otherwise the
-operation is `Rejected` with `PlanNotEntitled`. The third column lists the other
+operation is `Rejected` with `PlanNotEntitled`. See
+[Operations by plan](#operations-by-plan). The third column lists the other
 plan fields a type depends on.
 
 | Type | Parameters | Other plan fields | Requirements and limits |
@@ -213,7 +247,15 @@ most the plan's `capacity.maxStorage`. It is `Rejected` with
 the service reports this as `"true"` or `"false"` in
 `status.engineDetails.storageExpansion`. Volumes never shrink.
 
+On a plan with `capacity.storageAllocationMode: UnrestrictedLocal`, the service
+runs on node-local storage. There, `ExpandStorage` records a larger allocation
+and does not resize the volume.
+
 ### Switchover and failover
+
+`Switchover` needs a plan with more than one instance, such as
+`postgresql-production`. Of the standard plans, only `postgresql-platform-ha`
+allows `Failover`.
 
 `Switchover` promotes a ready replica while the primary is healthy, without data
 loss. `Failover` promotes a running replica without waiting for the current
@@ -243,6 +285,10 @@ spec:
   old primary rejoins.
 
 ### Upgrades
+
+Upgrades need a plan that allows `MinorUpgrade` or `MajorUpgrade`. The standard
+`postgresql-development`, `postgresql-production` and `postgresql-shared` plans
+do not allow them; see [Operations by plan](#operations-by-plan).
 
 Both upgrade types take an exact image name that must be in your plan's
 `allowedImages`. Ask your provider for the image names.

@@ -103,10 +103,12 @@ flowchart TB
 
 <OvnLogicalNetworkDiagram />
 
-The Project's `spec.cidrBlock` is required input supplied by the creator or UI;
-the controller does not allocate it from an external-network CIDR. The Project's
-immutable `spec.egressNetworkType` selects the external network used by its
-default gateway.
+The Project's `spec.cidrBlock` sets the workload subnet. It is optional. When
+the creator omits it, the Project controller allocates the next free block from
+the platform's Project CIDR pool and records it in `spec.cidrBlock`. For the pool
+settings, see [Project lifecycle and resources](project-resources.md#project-cidr-allocation).
+The Project's immutable `spec.egressNetworkType` selects the external network
+used by its default gateway.
 
 ### Policy routing for secondary external networks
 
@@ -191,7 +193,9 @@ router-policy allow rules.
 
 When a Project is created:
 
-1. the creator supplies `spec.cidrBlock` and `spec.egressNetworkType`;
+1. the creator supplies `spec.egressNetworkType` and, optionally,
+   `spec.cidrBlock`; when `spec.cidrBlock` is empty, the controller allocates
+   a free block from the Project CIDR pool and writes it to the spec;
 2. the controller creates a VPC, workload subnet, and default
    NetworkAttachmentDefinition;
 3. the controller allocates the default gateway EIP and programs outbound SNAT;
@@ -337,10 +341,10 @@ admits Envoy with
 therefore **can never match**, because the CNI cannot map a node IP back to a pod namespace.
 The policy fails closed, and the only symptom is a 503 from whatever sits behind it.
 
-This is not theoretical. It took a production front door's OpenBao offline for 44 hours: a
-managed cluster's KMS plugin could not log in, the apiserver's `kms-providers` readiness
-check failed (`livez` 200, `readyz` 500), and the tenant control plane sat NotReady while its
-worker VMs were Running the whole time.
+A blocked upstream of this kind can stop a managed cluster's control plane. For example, if
+the KMS plugin cannot reach OpenBao, the apiserver's `kms-providers` readiness check fails
+(`livez` returns 200, `readyz` returns 500). The tenant control plane stays NotReady while its
+worker VMs keep running.
 
 Such a policy needs an **address peer** for the ingress nodes, which is what
 `INGRESS_HOST_CIDR` supplies:
@@ -355,15 +359,14 @@ the pinned Kube-OVN version skips hostNetwork pods when building selected ports,
 `podSelector` on Envoy cannot work either. The alternatives are giving up hostNetwork, adding
 a non-hostNetwork proxy hop, or SNATing Envoy's upstreams into a controlled range.
 
-**Do not derive that CIDR from the node's LAN prefix.** On at least one cluster in this fleet
-the recorded node CIDR is a *public* /26 while the management addresses are private. A
-derived value there would have admitted a prefix containing none of the real sources. Set it
-from the addresses the ingress nodes actually egress with, and let
-`scripts/frontdoor-check.sh preflight` confirm containment.
+**Do not derive that CIDR from the node's LAN prefix.** A node's recorded CIDR can be a
+public range while the ingress nodes egress from private management addresses. A derived
+value then admits a prefix that contains none of the real sources. Set `INGRESS_HOST_CIDR`
+from the addresses the ingress nodes actually egress with. Then run
+`scripts/frontdoor-check.sh preflight` in the fleet repository to confirm containment.
 
-`INGRESS_HOST_CIDR` has **no default**, deliberately: it previously defaulted to
-`127.0.0.1/32`, which is syntactically valid, passes every render and validation gate, and
-admits nothing.
+`INGRESS_HOST_CIDR` has **no default**. A placeholder such as `127.0.0.1/32` is
+syntactically valid and passes every render and validation gate, but admits nothing.
 :::
 
 **Which address** reaches those nodes is a separate, per-cluster choice.

@@ -404,8 +404,8 @@ spec:
           STAMP=$(date -u +%Y%m%d-%H%M%S)
           aws s3 cp /out/wp-content.tgz \
             "s3://$BUCKET_NAME/backups/wp-content-$STAMP.tgz" \
-            --endpoint-url "https://s3.kube-dc.cloud"
-          aws s3 ls "s3://$BUCKET_NAME/backups/" --endpoint-url "https://s3.kube-dc.cloud"
+            --endpoint-url "https://s3.<domain>"
+          aws s3 ls "s3://$BUCKET_NAME/backups/" --endpoint-url "https://s3.<domain>"
         envFrom:
         - configMapRef: {name: wordpress-files}   # BUCKET_NAME, BUCKET_HOST
         - secretRef: {name: wordpress-files}      # AWS_ACCESS_KEY_ID / SECRET
@@ -424,7 +424,7 @@ kubectl logs job/wp-content-backup -c upload | tail -2
 ```
 
 :::info Use the public S3 endpoint from workloads
-Use your cluster's public S3 endpoint (`https://s3.kube-dc.cloud` on Kube-DC Cloud) from pods. The in-cluster RGW service address in the ConfigMap is not reachable from project networks. The `amazon/aws-cli` image has no `tar`, which is why the manifest adds a busybox init container.
+Use your provider's public S3 endpoint from pods. It is usually `https://s3.<domain>`, where `<domain>` is your Kube-DC domain. The in-cluster RGW service address in the ConfigMap is not reachable from project networks. The `amazon/aws-cli` image has no `tar`, which is why the manifest adds a busybox init container.
 :::
 
 ## What you built

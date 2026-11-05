@@ -1,13 +1,18 @@
 # GPU supply-chain and image policy
 
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
+
 GPU drivers, device plugins, schedulers, webhooks, and monitoring agents run
 with enough privilege to compromise a node. Version selection and image
 provenance are therefore part of the GPU security boundary, not an ordinary
 application upgrade.
 
-This runbook implements the repository-owned portion of G9-T02. Fleet owns the
-Helm sources and component values; kube-dc owns the qualified installer tuple,
-runtime audit, promotion gate, and evidence contract.
+This runbook is for platform operators who install, upgrade, and audit the GPU
+stack. Fleet owns the Helm sources and component values; kube-dc owns the
+qualified installer tuple, runtime audit, promotion gate, and evidence contract.
 
 ## Released qualified tuple
 
@@ -131,3 +136,29 @@ and allocation canaries, and retain both the rejected and restored digest sets.
 Any digest change under an unchanged desired tag is a supply-chain event. It
 requires investigation and a new evidence record even when workloads appear
 healthy.
+
+## Check a GPU VM guest before you offer it
+
+Tenants create GPU VMs only after you enable them for a guest image. Check
+Ubuntu and Windows guests separately, and record these results for each one:
+
+1. The exact image version or digest and the OS build.
+2. The exact signed driver package version and its SHA-256 checksum.
+3. The first boot, the driver installation, the required reboot, and the
+   second boot all succeed.
+4. `nvidia-smi` reports the expected model, driver, memory, and ECC state,
+   with zero errors.
+5. A pinned CUDA program allocates memory, runs a kernel, synchronizes, and
+   returns the correct result.
+6. A stop releases the device, a start attaches it again, and the checks in
+   steps 4 and 5 still pass.
+7. When capacity is exhausted, a second VM waits in the queue and starts after
+   the first VM releases the device.
+8. The platform refuses live migration, and a planned stop and start recovers
+   the VM.
+9. Deleting the VM releases the quota and the device, with no stale holder.
+10. You have a support owner, a rollback procedure, and an update policy for
+    the driver and the image.
+
+Keep the records from both guests. Enable tenant GPU VM creation on a cluster
+after the records are complete.

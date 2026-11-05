@@ -267,14 +267,14 @@ outage.
 
 | Constraint | Current behavior |
 |---|---|
-| etcd replica count | The controller-driven restore supports one replica only |
+| etcd replica count | The controller restores every etcd member from the same snapshot. The manual path restores a single-replica Managed Cluster only |
 | Restore to another Managed Cluster | Rejected; the snapshot key must belong to the target Managed Cluster |
 | Concurrent restores | Not queued; do not submit a second restore annotation while one is active |
 | Effective RPO | Determined by the configured schedule and the latest verified successful snapshot |
 | Restore duration | No fixed RTO; measure restore tests on the installed storage, network, and control-plane topology |
 
-For a Managed Cluster with more than one etcd replica, use the manual recovery
-runbook that matches the installed controller version and topology. To reduce
+The controller restores every etcd member from the same snapshot. The manual
+path restores a single-replica Managed Cluster only. To reduce
 RPO, configure a supported snapshot schedule or take an on-demand snapshot from
 the danger zone, then validate object-storage capacity and restore behavior.
 
@@ -282,14 +282,18 @@ the danger zone, then validate object-storage capacity and restore behavior.
 
 ## When the controller is unavailable
 
-If `kube-dc-k8-manager` or one of its dependencies is unavailable, use the
-manual runbook in `kube-dc-k8-manager/docs/RESTORE.md` from the installed
-version. It covers the restore sequence with controlled scaling and a debug Pod
-that runs `etcdutl snapshot restore` against the member-0 PVC.
+If `kube-dc-k8-manager` or one of its dependencies is unavailable, you can
+restore a single-replica Managed Cluster by hand. The manual path scales the
+control plane and etcd down, runs a one-shot Pod that runs
+`etcdutl snapshot restore` against the member-0 PVC, and scales them back up.
 
-The following commands show the shape of the single-replica procedure. They are
-not a substitute for the complete runbook, snapshot validation, and change
-approval:
+The manual path restores **plaintext snapshots only**, that is, a key that ends
+in `.db`. An encrypted envelope snapshot needs the controller. Only the
+controller's restore Job unwraps the DEK with the Managed Cluster's OpenBao
+Transit key and decrypts the snapshot.
+
+The following commands show the shape of the single-replica procedure. They
+do not replace snapshot validation and change approval:
 
 ```bash
 NS=<backing-namespace>
@@ -302,9 +306,9 @@ CP_REPLICAS=$(kubectl -n "$NS" get deployment "${CLUSTER}-cp" \
 kubectl -n "$NS" scale deployment "${CLUSTER}-cp" --replicas=0
 kubectl -n "$NS" scale statefulset "${DS}-etcd" --replicas=0
 
-# 2. Run a one-shot Pod that mounts the etcd-data-${DS}-etcd-0 PVC
-#    and runs etcdutl snapshot restore against /var/run/etcd/default.etcd
-#    (full Pod spec in the runbook)
+# 2. Run a one-shot Pod that mounts the etcd-data-${DS}-etcd-0 PVC at
+#    /var/run/etcd, downloads the .db snapshot from the backup bucket,
+#    and runs etcdutl snapshot restore into /var/run/etcd/default.etcd
 
 # 3. Bring etcd back and wait for its StatefulSet to report ready.
 kubectl -n "$NS" scale statefulset "${DS}-etcd" --replicas=1

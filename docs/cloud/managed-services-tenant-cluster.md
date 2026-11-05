@@ -213,6 +213,8 @@ These `Placed` reasons are specific to this placement:
 | `ClusterIncarnationChanged` | The cluster was recreated after it was registered. Grant the new incarnation |
 | `ClusterNotEligible` | The cluster's data plane refused the service; the message names the check, such as capacity, worker count or a failing health check |
 | `ClusterAmbiguous` | The service names no cluster and more than one data plane qualifies. Set `clusterRef` |
+| `FamilyNotQualified` | The provider has not qualified this service family on Managed Clusters |
+| `SelfDataPlaneRequired` | The service uses credential inputs or a runner execution profile, which run only on the provider's own data plane. Create the service in your Project instead |
 | `PredecessorUnresolved` | A retained or unresolved earlier service of the same name still holds the name. See [Recover retained services](#recover-retained-services) |
 
 After placement, these `Ready` reasons report the cluster's state:
@@ -394,8 +396,8 @@ A cluster recreated under the same name is a new incarnation: it is not register
 
 ## Limits
 
-- Your provider qualifies Managed Clusters and service families for this placement; ask which families it supports.
-- Credential inputs and runner execution profiles are not supported on Managed Clusters. Do not use them with `TenantCluster` placement.
+- An installation supports Managed Clusters of one qualified infrastructure provider for managed services, and the provider qualifies each service family separately. Ask which families it supports.
+- Services with credential inputs or a runner execution profile run only on the provider's own data plane, not on a Managed Cluster.
 - Connectivity is `tenant-native` only: no Gateway routes or public load balancers. Clients run in the same cluster.
 - Plans for this placement include no platform metrics or alerts. The engine's metrics endpoint is available to your own collector.
 - A running service cannot move between clusters, or between a cluster and the Project namespace, and retained instances are not re-adopted automatically.

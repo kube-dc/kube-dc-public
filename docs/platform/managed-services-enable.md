@@ -1,12 +1,11 @@
 # Enable managed services on a Kube-DC installation
 
 As a platform operator, use this procedure to install the managed services control plane and publish selected service plans.
-New Kube-DC installations enable managed services when the installer has verified
+`kube-dc bootstrap init` enables managed services when the installer has verified
 expandable storage and an explicit capacity budget. Existing installations
-enable them through their per-cluster Fleet overlay. The Fleet starter carries the services hub, the
-catalog for PostgreSQL, Kafka, Valkey, MySQL, MariaDB, ClickHouse and Forgejo,
-and their operator trees. Enable only the families that you qualify on the
-target cluster.
+enable them through their per-cluster Fleet overlay. The Fleet starter carries
+the services hub, the catalog components, and the operator trees of the
+families. Enable only the families that you qualify on the target cluster.
 
 ## Before you begin
 
@@ -23,9 +22,23 @@ Check these prerequisites:
 The catalog defines the available services.
 A family component supplies its class, bundle, and plans.
 The provider selects components for each installation and publishes only qualified plans.
-With all six database and messaging families selected, the catalog offers 12
-Development and Production plans; Forgejo has its own plan.
+Each of the following families has a Development and a Production plan:
+
+- PostgreSQL
+- MySQL
+- MariaDB
+- ClickHouse
+- Valkey
+- Kafka
+- RabbitMQ
+- OpenSearch
+
+Forgejo has one plan.
 See [Publish the catalog](managed-services-catalog.md).
+
+`kube-dc bootstrap init` selects the components for PostgreSQL, Valkey, Kafka,
+MySQL, MariaDB, ClickHouse and OpenSearch. It adds RabbitMQ when the RabbitMQ
+operator pins are set.
 
 Operations differ by family.
 Every published Development and Production plan supports compute resize and
@@ -69,9 +82,20 @@ SERVICES_PG_STORAGE_CLASSES=[rbd-vm]
 Replace the release and image placeholders with the reviewed release pins.
 Replace `<name>` with the installation identifier. These are Fleet values, not shell commands.
 
-`SERVICES_STORAGE_ROLES` maps logical storage roles to local classes. A published plan asks for the
-`database` *role*, not a class name, because class names differ between
-installations. Map the role to a class that supports volume expansion.
+`SERVICES_STORAGE_ROLES` maps logical storage roles to the cluster's classes.
+A published plan asks for a *role*, not a class name, because class names
+differ between installations. The standard plans use two roles:
+
+- **`database`**: map it to a class that supports volume expansion.
+- **`database-ha`**: used by both OpenSearch plans, the RabbitMQ Production
+  plan, and the Production plans of [Local HA storage](managed-services-local-ha.md).
+  Map it to a node-local class. To keep OpenSearch and RabbitMQ off node-local
+  storage, select `components/opensearch-durable-storage` and
+  `components/rabbitmq-durable-storage`, which move their plans to `database`.
+
+A data plane without a mapping for a plan's role refuses placement with
+`storage role "<role>" has no mapping on data plane <plane>`. See
+[Storage roles and backups](managed-services-catalog.md#storage-roles-and-backups).
 
 ### 2. The hub
 
@@ -117,6 +141,8 @@ so the bundle attests the operator's version and never installs a second copy.
 | ClickHouse | `platform/clickhouse-operator` | `CLICKHOUSE_OPERATOR_CHART_VERSION` |
 | Valkey | `platform/valkey-operator` | `VALKEY_OPERATOR_CHART_VERSION` |
 | Kafka | `platform/strimzi-operator` | `STRIMZI_OPERATOR_CHART_VERSION` |
+| OpenSearch | `platform/opensearch-operator` | `OPENSEARCH_OPERATOR_CHART_VERSION` |
+| RabbitMQ | `platform/rabbitmq-crds`, then `platform/rabbitmq-operator` | `RABBITMQ_CLUSTER_OPERATOR_VERSION` and `RABBITMQ_TOPOLOGY_OPERATOR_VERSION`, plus `RABBITMQ_CLUSTER_OPERATOR_IMAGE` and `RABBITMQ_TOPOLOGY_OPERATOR_IMAGE` pinned as `<image>:<version>@sha256:<digest>` |
 
 Selecting a family component without its operator gives you a bundle that
 never becomes ready and placements that are refused with "family bundle not
@@ -219,8 +245,10 @@ Replace `FLEET_REPO`, `CLUSTER`, and `ADMIN_KUBECONFIG` with the repository,
 cluster overlay name, and administrator kubeconfig. The command pins that
 kubeconfig's context and checks cluster/cell identity, the Ready services
 chart and hub digest, the completed runner image rollout, current-generation
-classes and plans, six family bundles, egress, placements, and console
-publication. Add `--greenfield` for a new installation; it also requires the
+classes and plans, the family bundles, egress, placements, and console
+publication. The family bundles it checks are PostgreSQL, Valkey, Kafka,
+MySQL, MariaDB, ClickHouse and OpenSearch, and RabbitMQ when the RabbitMQ
+operator pins are set. Add `--greenfield` for a new installation; it also requires the
 starter's legacy plans to be disabled. It does not read signing-key Secrets.
 
 To test a deployment, render the starter and the target overlay, run this

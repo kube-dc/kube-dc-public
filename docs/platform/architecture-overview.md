@@ -34,9 +34,6 @@ flowchart TB
 
 </details>
 
-The product model uses an art-directed layout, PatternFly-aligned styling,
-responsive scrolling, and a print-safe light theme.
-
 <ProductModelDiagram />
 
 - An **Organization** is the tenant boundary for identity, membership, billing,
@@ -75,11 +72,6 @@ flowchart LR
 ```
 
 </details>
-
-This diagram preserves the established relationships while making
-the two control loops explicit. Local, repository-approved SVG icons identify
-the access surfaces and management services without becoming the primary
-carrier of meaning.
 
 <ManagementPlaneDiagram />
 

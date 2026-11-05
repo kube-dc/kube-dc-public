@@ -35,13 +35,13 @@ Kube-DC supports Google OAuth authentication through a central `sso` Keycloak re
 │  │  └─────────────────┘  └─────────────────┘  └──────────────────┘    │     │
 │  │                                                                    │     │
 │  │  Registration: Passwordless (email verification required)          │     │
-│  │  Groups: /orgs/shalb, /orgs/acme, ...                              │     │
+│  │  Groups: /orgs/delta, /orgs/acme, ...                              │     │
 │  └────────────────────────────────────────────────────────────────────┘     │
 │                              │                                              │
 │                              │ OIDC IdP Brokering                           │
 │                              ▼                                              │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐           │
-│  │  Realm: shalb    │  │  Realm: acme     │  │  Realm: foo      │           │
+│  │  Realm: delta    │  │  Realm: acme     │  │  Realm: foo      │           │
 │  │  IdP: sso ───────┼──┼──────────────────┼──┼──► SSO Realm     │           │
 │  │  Users: admin    │  │  Users: admin    │  │  Users: admin    │           │
 │  └──────────────────┘  └──────────────────┘  └──────────────────┘           │

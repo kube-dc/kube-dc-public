@@ -1,8 +1,8 @@
-# Kube-DC Cloud
+# Kube-DC
 
-Kube-DC Cloud is a managed cloud platform. You deploy applications, virtual
-machines, and Managed Clusters. The service provider operates the
-infrastructure underneath.
+Kube-DC is a Kubernetes-native cloud platform that your provider runs for you.
+You deploy applications, virtual machines, and Managed Clusters. Your provider
+operates the infrastructure underneath.
 
 This documentation is for tenants: the people who build and run workloads in a
 Kube-DC organization. For the operator documentation, see the
@@ -53,5 +53,5 @@ For a specific task, use these entry points:
 
 ## Get help
 
-For Slack, GitHub issues, and professional support options, see
+For your provider's support, Slack, and GitHub issues, see
 [Community and support](community-support.md).

@@ -1,55 +1,122 @@
-# Assign GPU capacity without billing (enterprise and no-billing installs)
+# Assign GPU capacity without billing
 
-Most Kube-DC clusters drive organization quota from the billing plan: an org with
-an active plan gets a `HierarchicalResourceQuota` (HRQ) and, on top of it, any
-addons. Enterprise and private-cloud installs frequently run **without a billing
-provider**. The organizations have no plan, so historically they had no HRQ and
-therefore no way to receive a bounded GPU capacity grant.
+This page is for platform operators who run Kube-DC without a billing provider,
+or who grant capacity outside the billing plans. After you read it, you can give
+an Organization a bounded GPU grant, and its administrator can cap that grant
+for each Project.
 
-This page documents the billing-independent path: a **platform operator grants GPU
-capacity to an organization through a GPU addon**, and the organization admin
-sub-assigns it to a project. No billing provider, plan, or payment flow is
-involved. The same catalog profile, DeviceClass, DRA admission policies, per-project
-accelerator cap editor, and DRA quota enforcement are reused unchanged.
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
 
-## How it works
+You can grant GPU capacity in two ways:
 
-1. **Catalog**: a GPU profile is published (`gpu.profiles`, `GPU_CATALOG_ENABLED=true`)
-   and marked **grantable** (`billingEligible: true`). That flag means "may be
-   granted"; it does **not** require a payment provider). Its DeviceClass is generated
-   by the chart.
-2. **Addon**: a GPU addon is defined in the billing config `addons` map with a `gpu`
-   grant against that profile (for example, `gpu: { <profileId>: { shares: 1 } }`), `disabled:
-   false`.
-3. **Operator grant**: the platform admin assigns the addon to an organization
-   (admin console → GPU add-on management, or the `set-addons` admin API, which writes
-   the `billing.kube-dc.com/addons` annotation). The org needs no plan; its
-   subscription status only has to be active-family.
-4. **Org HRQ**: the manager now renders an **accelerator-only HRQ** for an active,
-   plan-less org that carries GPU addons: the HRQ holds only the
-   `<deviceClass>.deviceclass.resource.k8s.io/devices` key(s). cpu/memory/pods/storage
-   stay unmanaged, exactly as for any plan-less org. The grant never imposes a quota
-   the deployment did not opt into.
-5. **Org → project**: the organization admin caps a project with the existing
-   per-project accelerator cap editor (Organization → project quota), bounded by the
-   org grant.
-6. **Enforcement**: Kubernetes DRA ResourceQuota bounds actual concurrent claims to
-   the project cap; the DRA shape policies force the fixed product.
+- **Explicit Organization quota**: set `spec.quota.gpu` on the Organization.
+  This is the direct route, and it needs no billing provider, plan, or add-on.
+- **GPU add-on**: assign a GPU add-on to an Organization that has no billing
+  plan.
 
-## Why it is safe
+## Before you begin
 
-- An accelerator-only HRQ deliberately omits the base dimensions. Emitting them for a
-  plan-less org would write `requests.cpu=0` / `pods=0` and deny every workload; the
-  manager omits them so those dimensions remain unmanaged.
-- `billingEligible: true` must be set on the profile **before** a GPU addon that
-  grants it is enabled. This is the same ordering rule as any GPU addon, and reversing it fails
-  plan-config load. No payment provider is required either way.
-- Removing the addon (or setting its quantity to zero) drops the org HRQ accelerator
-  key on the next reconcile; existing project caps then have nothing to draw on.
+Both routes use the GPU catalog. Prepare it first:
 
-## Relationship to billing plans
+1. Set `gpu.enabled: true` in the chart values.
+2. Publish the GPU profile in `gpu.profiles` with `enabled: true`.
+3. Set `billingEligible: true` on the profile. The flag means that the profile
+   may be granted. It does not require a payment provider.
 
-Where a billing provider *is* configured, the same addon mechanism still applies on
-top of the plan HRQ; nothing changes. The only new behavior is that an **active org
-with no plan** now receives an accelerator-only HRQ from its GPU addons instead of no
-HRQ at all.
+For a profile with the DRA allocation backend, the chart generates its
+DeviceClass. A grant that names an unknown or
+disabled profile is refused by the controller.
+
+## Grant GPU capacity with an explicit quota
+
+`spec.quota` is the explicit capacity of an Organization. When it is set, it
+takes precedence over any billing plan and over GPU add-ons. To set or change it,
+you need the custom `allocate` verb on `organizations.kube-dc.com`.
+
+An omitted dimension in `spec.quota` is not granted. The controller enforces it
+as zero where the platform enforces that dimension. Set every dimension the
+Organization needs, together with the GPU grant.
+
+To grant GPU capacity, add `quota` to the existing Organization. This example
+sets every dimension, because an omitted one is enforced as zero:
+
+```yaml
+apiVersion: kube-dc.com/v1
+kind: Organization
+metadata:
+  name: <organization>
+  namespace: <organization>
+spec:
+  email: <contact-email>
+  quota:
+    cpu: "32"
+    memory: 128Gi
+    storage: 1Ti
+    pods: 200
+    loadBalancers: 2
+    publicIPs: 2
+    objectStorage:
+      size: 100Gi
+    gpu:
+      <profile-id>:
+        shares: 2
+```
+
+Keep the Organization's existing `email`; the field is required.
+
+- `<organization>` is the Organization name.
+- `<profile-id>` is the ID of a profile in `gpu.profiles`.
+
+Each entry in `spec.quota.gpu` maps a profile ID to its grant. A grant has these
+fields, all non-negative integers:
+
+| Field | Meaning |
+|---|---|
+| `devices` | Whole devices, for a profile that is counted in devices. |
+| `shares` | Shares, for a profile that is counted in shares. |
+| `memoryMiB` | GPU memory budget, only for a HAMi profile with `shares` greater than 0. |
+| `corePercent` | GPU core budget, only for a HAMi profile with `shares` greater than 0. |
+
+The map holds at most 32 profiles. The manager writes the grant into the
+Organization's HierarchicalResourceQuota, with the other quota dimensions.
+
+## Grant GPU capacity with an add-on
+
+Use this route for an active Organization that has no billing plan and no
+`spec.quota`:
+
+1. Define a GPU add-on in the billing configuration `addons` map. Give it a
+   `gpu` grant against the profile, for example
+   `gpu: { <profile-id>: { shares: 1 } }`, and set `disabled: false`.
+2. Assign the add-on to the Organization. In the admin console, open the
+   Organization's billing tab and click **Manage add-ons**, or use the
+   `set-addons` admin API. Both write the `billing.kube-dc.com/addons`
+   annotation. The Organization needs no plan, but its subscription status
+   must be `active`, `trialing`, or `canceling`.
+3. The manager renders an accelerator-only HierarchicalResourceQuota for the
+   Organization. For a DRA profile it holds only the
+   `<device-class>.deviceclass.resource.k8s.io/devices` keys, where
+   `<device-class>` is the profile's DeviceClass name. CPU, memory, Pods, and
+   storage stay unmanaged.
+
+The quota omits the base dimensions on purpose. Writing them for an
+Organization with no plan would set `requests.cpu=0` and `pods=0`, and deny
+every workload.
+
+To remove the grant, remove the add-on or set its quantity to zero. The manager
+drops the accelerator key on the next reconcile, and existing Project caps then
+have nothing to draw on.
+
+When a billing provider is configured, GPU add-ons apply on top of the plan's
+quota in the same way.
+
+## Cap GPU capacity for a Project
+
+With either route, the Organization administrator caps each Project with the
+per-Project accelerator cap editor (**Organization** > Project quota). The cap
+is bounded by the Organization grant. A Kubernetes ResourceQuota for DRA bounds
+the concurrent claims to the Project cap, and the DRA admission policies force
+the fixed product.

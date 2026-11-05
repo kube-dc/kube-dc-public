@@ -9,9 +9,12 @@ Three pages, three jobs. Read them in this order only if you need all three.
 | **[Installation overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
 | **[Installation guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
 
-All three describe the **same installer**. Where they overlap, the Quickstart is
-the tested happy path, verified against the real command tree on every
-build, so its commands and config keys cannot drift.
+All three describe the **same installer**. Where they overlap, follow the
+Quickstart: it is the tested path. A CLI test checks that the command and
+long flags of every line that starts with `kube-dc` on these three pages exist
+in the CLI. The same test
+checks a few key names in the Quickstart example config. It does not check
+values or results.
 
 An AI agent can drive the same path with the `install-kube-dc` agent skill
 (`npx skills add kube-dc/kube-dc-public --skill install-kube-dc`): it gathers the
@@ -35,7 +38,8 @@ baseline. The storage prerequisite gate holds Ceph installation if a node fails
 these checks. See [Rook's CephX client requirements](https://rook.github.io/docs/rook/v1.19/Storage-Configuration/Advanced/cephx-key-rotation/).
 Other RKE2-supported systems can be used with object storage disabled.
 
-Use CLI 0.9.17 for platform bundle 0.9.16. Their versions are independent;
+Use CLI 0.9.18 for platform bundle 0.9.16. CLI 0.9.17 installs the same
+bundle. The CLI and bundle versions are independent;
 `--starter-ref` pins the platform bundle, and its metadata declares the minimum
 supported CLI version.
 
@@ -247,9 +251,11 @@ kube-dc bootstrap doctor --no-tty
 
 The download pins one reviewed release (never the mutable `latest` alias) and
 verifies it against that release's published checksum before installation.
-`doctor` checks `kubectl`, `flux`,
-`sops`, `age`, `git`, `gh`, and `ssh` (it does not probe `helm`, `kustomize`
-or `yq`, so install those by hand). Fix every blocker before
+`doctor` checks `python3` (with PyYAML), `kubectl`, `flux`,
+`sops`, `age`, `git`, `gh`, `ssh`, and `bao` (it does not probe `helm`, `kustomize`
+or `yq`, so install those by hand). `bootstrap init` needs Python 3 with PyYAML
+to run the fleet scaffold. On Ubuntu, install the `python3` and `python3-yaml`
+packages. Fix every blocker before
 continuing. Ensure the control-plane key is loaded with `ssh-add <key>`.
 
 ---
@@ -268,7 +274,7 @@ produces, the manual reference is grouped in
 From your bastion, after you install the CLI (see [§1.5](#15-install-the-kube-dc-cli)):
 
 ```bash
-RKE2_VERSION=v1.36.3+rke2r1  # pin the same reviewed version on EVERY node
+RKE2_VERSION=v1.35.9+rke2r1  # the CLI default; use the same version on every node
 kube-dc bootstrap install master-1 \
   --ssh-host root@203.0.113.10 \
   --domain example.com \
@@ -276,6 +282,10 @@ kube-dc bootstrap install master-1 \
   --rke2-version "$RKE2_VERSION" \
   --dry-run                       # review the resolved config, then drop --dry-run
 ```
+
+If you omit `--rke2-version`, the CLI installs its pinned default,
+`v1.35.9+rke2r1`. The [Quickstart](quickstart.md) omits the flag. Use the
+same RKE2 version on every node.
 
 It resolves the node's internal IP over SSH, then writes
 `/etc/rancher/rke2/config.yaml` and installs + starts `rke2-server` with the
@@ -300,8 +310,8 @@ no non-empty `mirrors:` mapping. Pair it with the image-acceleration stack that
 [enterprise install guide](private-ca-enterprise-install.md) §6).
 
 > ⚠️ When retrofitting spegel onto an **existing** cluster, restart
-> `rke2-server`/`rke2-agent` one node at a time and **drain or stop KubeVirt
-> VMs on the node first.** Restarting under running VMs can wedge the node
+> `rke2-server`/`rke2-agent` one node at a time and **drain the node first, so
+> that no KubeVirt VM runs on it.** Restarting under running VMs can wedge the node
 > (see the enterprise guide §1 for the failure signature and recovery).
 
 Key flags: `--name` (the RKE2 node name; it defaults to the positional arg, so use the
@@ -507,7 +517,7 @@ RKE2.
 Install and start RKE2:
 
 ```bash
-export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
+export INSTALL_RKE2_VERSION="v1.35.9+rke2r1"
 export INSTALL_RKE2_TYPE="server"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-server.service
@@ -534,7 +544,7 @@ Verify:
 ```bash
 kubectl get nodes
 # NAME       STATUS     ROLES                       AGE   VERSION
-# master-1   NotReady   control-plane,etcd,master   1m    v1.36.3+rke2r1
+# master-1   NotReady   control-plane,etcd,master   1m    v1.35.9+rke2r1
 ```
 
 The node shows `NotReady` until a CNI is installed. This is expected.
@@ -587,7 +597,7 @@ tls-san:
 EOF
 
 # Install and start
-export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
+export INSTALL_RKE2_VERSION="v1.35.9+rke2r1"
 export INSTALL_RKE2_TYPE="server"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-server.service
@@ -614,7 +624,7 @@ node-name: worker-1
 node-ip: 192.168.0.11
 EOF
 
-export INSTALL_RKE2_VERSION="v1.36.3+rke2r1"
+export INSTALL_RKE2_VERSION="v1.35.9+rke2r1"
 export INSTALL_RKE2_TYPE="agent"
 curl -sfL https://get.rke2.io | sh -
 sudo systemctl enable rke2-agent.service
@@ -630,9 +640,9 @@ Back on `master-1`:
 ```bash
 kubectl get nodes
 # NAME       STATUS     ROLES                       AGE   VERSION
-# master-1   NotReady   control-plane,etcd,master   10m   v1.36.3+rke2r1
-# master-2   NotReady   control-plane,etcd,master   3m    v1.36.3+rke2r1
-# master-3   NotReady   control-plane,etcd,master   1m    v1.36.3+rke2r1
+# master-1   NotReady   control-plane,etcd,master   10m   v1.35.9+rke2r1
+# master-2   NotReady   control-plane,etcd,master   3m    v1.35.9+rke2r1
+# master-3   NotReady   control-plane,etcd,master   1m    v1.35.9+rke2r1
 ```
 
 All three nodes should appear with the `control-plane,etcd,master` roles. `NotReady` status is expected until the CNI is deployed in Phase 3.
@@ -694,7 +704,7 @@ kube-dc version
 kube-dc bootstrap doctor --no-tty
 ```
 
-`doctor` checks `kubectl`, `flux`, `sops`, `age`, `git`, `gh`, `ssh` and `bao`
+`doctor` checks `python3` (with PyYAML), `kubectl`, `flux`, `sops`, `age`, `git`, `gh`, `ssh` and `bao`
 (the last one for information only: the CLI runs `bao` inside the cluster, never here).
 It does NOT probe `helm`, `kustomize` or `yq`, so a green doctor is not proof
 those exist. Fix every blocker before continuing. `bootstrap init --yes` then
@@ -856,7 +866,7 @@ kube-dc bootstrap init \
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat per node, up to 16; in a `--config` file use `CEPH_NODE_<n>` and `CEPH_NODE_<n>_DEVICE`). Stable `/dev/disk/by-id/...` paths are accepted. Every OSD node except the `--ssh-host` node needs an entry in `KUBE_DC_INIT_NODE_SSH_HOSTS` so `init` can check its disk. The device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`), and a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data. See the zap warning. **Re-used hardware: see the zap warning below** |
 | `--rook-osd-device` | `rook-ceph-local` only: OSD block device (bare name). The default is the fleet template's loop file (`loop0`, sized by `--rook-osd-size-gb`). Pass a real device for anything beyond a lab; when set, `init` probes it over SSH and warns if missing or non-empty |
 | `--ceph-storage-class` / `--ceph-osd-count` / `--ceph-osd-volume-size-gb` | `rook-ceph-pvc` only: the StorageClass backing the OSD PVCs (required), OSD PVC count (0 = fleet default 2) and size in GB (0 = fleet default 200). For clusters that already have a CSI-backed StorageClass and no raw disks |
-| `--no-kubevirt` | VMs are out of scope for this cluster (for example, a CloudSigma `cs` cluster that only runs managed Kubernetes). It skips the KubeVirt-eligibility (`/dev/kvm`) preflight, so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
+| `--no-kubevirt` | VMs are out of scope for this cluster (for example, a cluster that runs only Managed Clusters). It skips the KubeVirt-eligibility (`/dev/kvm`) preflight, so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
 | `--site-components` | `LAYER=PATH` entries (comma-separated; `KUBE_DC_INIT_SITE_COMPONENTS` in a config file). Each attaches a Kustomize Component kept in the Fleet repository to the generated Flux Kustomization named `LAYER` (`infra-core`, `platform`, `infra-object-storage`, …), with the path made relative to that layer. Use it for site settings the starter does not express, instead of editing generated files. Entries for one layer are appended in order |
 | `--ssh-host` | Control-plane SSH target. It enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
 | `--ssh-host-key-sha256` | Expected SHA-256 fingerprint for the primary SSH target. The handshake checks this value and `known_hosts`. Use the fingerprint, not a public-key line |
@@ -890,6 +900,7 @@ kube-dc bootstrap init \
 | `--set GRAFANA_TENANT_MODE=project` (default `org`) | Give every Project its own Grafana organization and datasource, so end users see only their own Project's metrics and logs. Choose it when the Projects of one Organization belong to different end customers, such as a reseller or partner offering; with `org`, every member of an Organization sees all of its Projects |
 | `--mirror-registry` / `--bundle-pull-secret` | Air-gap: pull platform images through your mirror registry, with a Docker pull-secret JSON |
 | `--provider github` / `gitlab` | Remote hosting for `--fleet-mode=new-repo` (default github) |
+| `--provider-host <host>` | Git provider hostname, with an optional HTTPS port, for a self-managed GitLab or GitHub Enterprise host (default: the provider's public host) |
 | `--no-push` · `--no-ssh` · `--no-create-repo` · `--no-install-prereqs` | Commit locally without pushing · skip the SSH kubeconfig pull and node probes when no raw Ceph disk is selected · skip remote-repo creation · skip prerequisite install |
 | `--no-kubevirt` · `--allow-no-kubevirt-eligible` · `--allow-dns-not-ready` · `--allow-unpinned-adopt` | The gates: VMs out of scope (skip the KVM preflight) · keep VMs but bypass the eligibility gate on a non-KVM node · proceed with the wildcard record not yet resolving (ACME certs sit Pending until it does) · `adopt` without pinning live versions (RISKY) |
 | `--gpu-*`, `--hami-*`, `--nvidia-*` | Accelerator products. See [gpu-node-mode-transitions](gpu-node-mode-transitions.md) and the GPU docs |
@@ -1014,9 +1025,14 @@ action shown below the panel. `S` saves a draft, `?` shows help, and
 New Cluster, `q` discards the form and returns to Fleet; in the standalone
 panel, it quits. `Ctrl+C` quits and cancels an active check.
 
-The form retains advanced `--set` values and shows them in Review. Apply
-continues into the existing installation plan and confirmation. You do not
-need to copy a command. Field validation does not prove host readiness.
+The form retains advanced `--set` values and shows them in Review. Use the
+form to review and save inputs. To open a saved file with installation
+disabled, run `kube-dc bootstrap --config <file> --review-only`, where `<file>`
+is the saved input file. Install with the `bootstrap init` commands in
+[§3.3](#33-run-kube-dc-bootstrap-init), and pass the saved file with
+`--config <file>`. Without `--review-only`, **Apply this configuration** in
+Review starts the `init` plan and its confirmation; do not use it to install.
+Field validation does not prove host readiness.
 
 In Network, select one tenant network with its radio button. **Platform access**
 is a separate choice. **Inspect network hosts** reads link ownership, addresses,
@@ -1287,7 +1303,7 @@ Run it by hand in four cases: `init` deferred the step; you installed with
 `--no-oidc-cutover` (for control planes whose apiserver manifests are managed
 elsewhere); you installed with `--no-ssh`, which also skips it because the
 cutover needs SSH to the nodes; or the cluster was installed by a CLI older than
-v0.6, which is every cluster installed before 2026-08-28.
+v0.6.
 
 The command takes **no cluster name**: it acts on whatever the current
 kubeconfig points at, so check your context first.
@@ -1384,9 +1400,9 @@ spec: { email: admin@example.com, description: "Acme Inc." }
 apiVersion: kube-dc.com/v1
 kind: Project
 metadata: { name: web, namespace: acme }
-# cidrBlock is REQUIRED: the API rejects a Project without one. It must not
-# overlap the node network, the pod/service CIDRs, or another Project: each
-# Project is its own VPC subnet.
+# cidrBlock is optional: omit it to let the controller allocate a block from
+# the Project CIDR pool. If you set it, it must not overlap the node network,
+# the pod/service CIDRs, or another Project: each Project is its own VPC subnet.
 spec: { cidrBlock: 10.90.0.0/16, egressNetworkType: cloud }
 EOF
 kubectl -n acme get organization acme -o jsonpath='{.status.ready}'   # → true
@@ -1424,7 +1440,7 @@ matches the generated resources before moving DNS.
 | `--ingress-node=NODE` (repeatable) | validation, the plan's `Front door:` line, **and the `kube-dc.com/ingress` label applied to those nodes** in the `ingress-nodes` step. Fail-closed: an empty set, a node that does not exist, or a node outside the set already carrying the label all stop the run before anything is committed |
 | `METALLB_MODE` | **derived from the address layer, not an independent choice.** `metallb-l2` → `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE`; `metallb-bgp` → `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement`. Setting it against the layer is refused rather than silently overridden, because the addon tree that gets wired is chosen from the layer |
 | `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
-| `EXT_NET_EXCLUDE_IPS` (+ `EXT_NET_GATEWAY`) | `EXT_NET_MGMT_SNAT_IP`, the management VPC's SNAT address, the first host after the reserved block (`.1` → `.2`; a `.1...100` block → `.101`), with the block widened to cover it, and the `infra-mgmt-snat` Flux layer that declares it as `OvnEip ovn-cluster-<ext>` **before** `infra-core` wakes kube-ovn's external-gateway handler. Without this the handler picks and never records an address: the first tenant EIP can be handed the same one, and every Project stays `NotReady` on "no management SNAT address" (one installation, 2026-08-31). Set it explicitly only to a free host inside `EXT_NET_CIDR` that the exclusion covers |
+| `EXT_NET_EXCLUDE_IPS` (+ `EXT_NET_GATEWAY`) | `EXT_NET_MGMT_SNAT_IP`, the management VPC's SNAT address, the first host after the reserved block (`.1` → `.2`; a `.1...100` block → `.101`), with the block widened to cover it, and the `infra-mgmt-snat` Flux layer that declares it as `OvnEip ovn-cluster-<ext>` **before** `infra-core` wakes kube-ovn's external-gateway handler. Without this the handler picks and never records an address: the first tenant EIP can be handed the same one, and every Project stays `NotReady` on "no management SNAT address". Set it explicitly only to a free host inside `EXT_NET_CIDR` that the exclusion covers |
 | a `metallb-l2` front-door VIP inside the node subnet carried by `INFRA_ATTACHMENT_ROUTES`, with Envoy on control-plane nodes and managed services on | an internal front door for Projects: an Envoy platform endpoint with a VIP and one anchor per gateway node right after `EXT_NET_EXCLUDE_IPS` on the external network (reserved, added to both global allowlists, anchors bound during finalization), and a generated `vpc-dns-front-door` component on `infra-core` that answers every name under the domain except `kube-api` with it in Project DNS. Dual-homed Project Pods otherwise cannot reach S3, Keycloak or the console ([Class D](internal-platform-endpoints.md#class-d)) |
 | `EXT_NET_EXTRA_EXCLUDE_IPS` | further reserved addresses or `a..b` ranges of the external network (comma-separated), checked against `EXT_NET_CIDR` in the plan, as a generated `ext-net-exclusions` component on `infra-core` that keeps `EXT_NET_EXCLUDE_IPS` first. Kube-OVN never hands them to tenants |
 | three or more nodes labelled `kube-dc-manager=true` (every server `bootstrap install` creates) | Grafana's and Keycloak's PostgreSQL on those nodes, one instance per node, on `local-path` (`platform/components/platform-state-on-managers`); with `OPENBAO_REPLICAS` of three or more, OpenBao's members too, started in parallel (`openbao-on-managers`) |
@@ -1478,9 +1494,9 @@ platform NetworkPolicies can admit that only by `ipBlock`, because a `namespaceS
 map a node IP back to a pod namespace. Left unset, OpenBao and the Flux UI answer `503`
 while every manifest is correct and Flux is green.
 
-It is deliberately **not** derived from `NODE_CIDR`: those are not always the same network
-(on one real cluster `NODE_CIDR` is a public `/26` taken from an external NIC while the
-nodes' `InternalIP`s are private). If your nodes reach upstreams from a different NIC than
+It is deliberately **not** derived from `NODE_CIDR`: those are not always the same network.
+For example, `NODE_CIDR` can be a public `/26` on an external NIC while the
+nodes' `InternalIP`s are private. If your nodes reach upstreams from a different NIC than
 their `InternalIP`, pass `--set INGRESS_HOST_CIDR=` explicitly. A comma-separated list is
 **not** supported. The policies render one `ipBlock.cidr`, so a list is a single
 malformed CIDR. `scripts/covering_cidr.py` prints the correct single prefix for a set of
@@ -1609,9 +1625,8 @@ The two paths carry different traffic and are wired differently:
   VIP on a MetalLB layer (`init` substitutes `METALLB_FLOATING_IP` there so
   both keys carry one value). kube-proxy matches that arriving address and
   hands the connection to the apiserver. There is no Envoy `:6443` listener at
-  all, because one would collide with the apiserver on a control-plane ingress node
-  (production incident 2026-08-11), which is exactly why the old listener +
-  "drop it behind NAT" patch were retired.
+  all, because one would collide with the apiserver on a control-plane ingress
+  node.
 - **`:443`** (`tls-passthrough-wildcard`, hostname `*.<domain>`) carries the
   **Managed Clusters**. A tenant's kubeconfig points at
   `https://<cluster>-cp-<namespace>.<domain>:443`, and Envoy passes the TLS
@@ -1995,98 +2010,26 @@ To enable Google OAuth login, see [SSO with Google Auth](sso-google-auth.md).
 ### PAYG usage billing (optional)
 
 Kube-DC's pay-as-you-go usage billing is off by default. Without `--payg`,
-`kube-dc bootstrap init` writes no PAYG switch, identity, Flux layer, database
-login or role: the installation runs no usage collector and no billing
-service, and the console shows no PAYG screens. The release pins still add
-`PAYG_METERING_IMAGE` to every `cluster-config.env`. Nothing reads that key
-until a `payg.yaml` layer exists, so it has no effect.
+`kube-dc bootstrap init` writes no PAYG configuration, and the installation
+runs no usage collector and no billing service.
 
-PAYG runs only on an installation that bills through Kube-DC. Pass
-`--set BILLING_PROVIDER=stripe` or `--set BILLING_PROVIDER=whmcs` with
-`--payg`. Without a provider, with `BILLING_PROVIDER=none`, or for an
-installation billed by a partner, `--payg` is refused. The CLI checks this
-when it validates the inputs and again against the generated
-`cluster-config.env` before it writes anything.
+PAYG runs only on an installation that bills through Kube-DC. To turn it on
+when you install, add `--payg` and `--set BILLING_PROVIDER=stripe` (or
+`whmcs`) to the `bootstrap init` command in
+[§3.3](#33-run-kube-dc-bootstrap-init). The CLI refuses `--payg` without one
+of these providers, with `BILLING_PROVIDER=none`, and for an installation
+billed by a partner.
 
-With `--payg`, the scaffold writes:
-
-- `PAYG_ENABLED=true`, a new `PAYG_INSTALLATION_UID`,
-  `PAYG_INSTALLATION_BINDING=<name>/<domain>` and
-  `PAYG_PRODUCTS_REVISION=<name>-<yyyymmdd>` in
-  `clusters/<name>/cluster-config.env`. The collector image,
-  `PAYG_METERING_IMAGE`, comes from the release pins and must be pinned by
-  digest. Override it with `--set PAYG_METERING_IMAGE=repo:tag@sha256:...`.
-- `clusters/<name>/payg.yaml`, the Flux Kustomization for the shared
-  `platform/payg` bundle, listed in `clusters/<name>/kustomization.yaml`.
-- `clusters/<name>/metering-db.enc.yaml`, the collector's database login
-  (SOPS-encrypted), and a patch in `platform.yaml` that adds its role to the
-  platform CNPG cluster's managed roles. Roles the cluster already declares
-  are kept.
-
-The installation UID is part of the identity of every usage record. The CLI
-generates it once, binds it to the cluster name and domain, and never changes
-it. Don't copy it from another installation. `--set PAYG_INSTALLATION_UID` is
-refused, and a `--config` file taken from another cluster does not carry PAYG
-over, so pass `--payg` again. A re-run refuses an overlay whose UID is bound to
-another installation or also appears in another cluster directory of the
-fleet, with or without `--payg`.
-
-Region and trusted producers are per-installation settings. Set
-`PAYG_REGION` and `PAYG_DECLARED_PRODUCERS` with `--set` or later in
-`cluster-config.env`. The fleet's `platform/payg/README.md` lists every
-variable.
-
-`--payg` applies to a new overlay. If a run fails during the PAYG step (for
-example, SOPS cannot reach an age key), the partial overlay is removed and the
-next run starts clean.
-
-Every resume, with or without `--payg`, checks each PAYG piece that the
-overlay contains. It stops before anything is pushed when:
-
-- the billing provider isn't stripe or whmcs;
-- the database login isn't one fully encrypted Secret;
-- `payg.yaml` differs from the file the CLI generates (don't customise it:
-  an extra `substitute` or `substituteFrom` could override the installation
-  UID or the image);
-- the role patch in `platform.yaml` differs from the one the CLI generates;
-- any other patch or replacement might select the CNPG cluster, in
-  `platform.yaml` or in the shared `platform/` tree;
-- a patch in the cluster's `kustomization.yaml`, or in a kustomization it
-  includes, might select `payg.yaml`, the `platform` Kustomization, the
-  database login or the `cluster-config` ConfigMap;
-- the cluster build uses `components`, `transformers`, `validators`,
-  `replacements`, `generators`, `namespace` or a name prefix or suffix. The
-  generated scaffold uses none of them;
-- `cluster-config` is generated other than by the scaffold's own entry (from
-  `cluster-config.env`), or another generator uses its name or the database
-  login's name;
-- another Flux Kustomization builds `./platform/payg`, or another object in
-  the cluster directory reuses the name of `payg`, `platform`, the login or
-  `cluster-config`.
-
-These checks match exactly and refuse anything else. Merge an extra change to
-those objects by hand, following `platform/payg/README.md`.
-
-These checks protect the CLI's own scaffold from mistakes: a copied overlay, a
-re-run, or a hand edit that would override the installation UID, the image or
-the database login. They are not a security boundary. Anyone who can write to
-the fleet repository can change the deployed objects directly. Keeping each
-installation UID unique is the operator's job. As a second line of defence,
-the billing service refuses data from a data plane whose installation UID
-isn't its own.
-
-`--payg` on a resume only finishes a PAYG scaffold that is partly present. It
-refuses an overlay that has no PAYG at all. It also refuses PAYG that was set
-up by hand without an installation UID from the CLI, because finishing it would
-give a running installation a second identity. To turn PAYG on for an
-installed cluster, follow the steps in `platform/payg/README.md`.
-
-After Flux reconciles the `payg` Kustomization, the collector logs
-`billing schema migrated` and `billing API serving addr=:8443`:
+After Flux reconciles the `payg` Kustomization, check the collector:
 
 ```bash
 kubectl -n monitoring logs deploy/kube-dc-metering | grep -E 'schema migrated|billing API serving'
 ```
+
+The output shows `billing schema migrated` and `billing API serving addr=:8443`.
+For the files that the scaffold writes, the installation UID rules, the resume
+checks, and PAYG on an installed cluster, see
+[PAYG billing (optional)](payg-billing.md).
 
 ### Worker node scaling with Metal3
 

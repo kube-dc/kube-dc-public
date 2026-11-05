@@ -64,9 +64,10 @@ kube-dc version
 ```
 
 Organization login uses the CLI binary, a browser, and network access.
-Operator bootstrap workflows additionally use tools such as `kubectl`, `flux`,
-`sops`, `age`, `git`, `gh`, and `ssh` (plus `helm`/`kustomize`/`yq`, which
-`doctor` does not probe). Run
+Operator bootstrap workflows additionally use tools such as Python 3 with
+PyYAML, `kubectl`, `flux`, `sops`, `age`, `git`, `gh`, and `ssh` (plus
+`helm`/`kustomize`/`yq`, which `doctor` does not probe). `bootstrap init` runs
+the fleet scaffold with Python 3 and PyYAML. Run
 `kube-dc bootstrap doctor --no-tty` before an installation workflow.
 
 ---
@@ -104,10 +105,16 @@ you change tabs.
 
 Inside any tab, `Tab` and `Shift+Tab` cycle focus between the panes of that screen (cluster list ↔ details ↔ drill-down). Top-tab and pane-focus navigation are intentionally distinct keys so they never collide.
 
-New Cluster uses the same form, validation, plan confirmation, and installation
-path as `bootstrap init`. Its Hosts section can read interfaces and disk
-candidates through SSH after you request discovery. See the
-[interactive installation procedure](installation-guide.md#331-interactive-panel--reusable-config---config----save-config).
+New Cluster lets you enter, check, and save installation inputs. It uses the
+same fields and validation as `bootstrap init`. Its Hosts section can read
+interfaces and disk candidates through SSH after you request discovery. To open
+a saved input file with installation disabled, run
+`kube-dc bootstrap --config <file> --review-only`, where `<file>` is the input
+file. Press **S** to save a private draft. Install with the documented
+`kube-dc bootstrap init` commands, not from the form. Without `--review-only`,
+**Apply this configuration** in Review starts the `init` plan and its
+confirmation; do not use it to install. See
+[Interactive panel and reusable config](installation-guide.md#331-interactive-panel--reusable-config---config----save-config).
 
 The chapters that follow cover each tab in detail, plus the non-TUI subcommands (`break-glass`, `kubeconfig`, `login`).
 

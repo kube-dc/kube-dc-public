@@ -716,7 +716,7 @@ See the [Service exposure](service-exposure.md) for more options including HTTPS
 | VM running but not Ready | Run `kubectl get vmi` to verify that the guest agent is connected |
 | No IP assigned | Check `networkName` matches your project's default network |
 | SSH key not injected | Verify `authorized-keys-default` secret exists and guest agent is running |
-| Docker in the VM: `git clone` / `docker pull` / `apt-get` hangs then fails, but `curl` works | Docker's default MTU (1500) is larger than the project network's 1400. Set `{"mtu": 1400}` in `/etc/docker/daemon.json`, then restart Docker. See [Network MTU](networking-overview.md#network-mtu-1400) |
+| Docker in the VM: `git clone` / `docker pull` / `apt-get` hangs then fails, but `curl` works | Docker's default MTU (1500) is larger than the Project network's MTU (1400 by default). Set `{"mtu": 1400}`, or the value `ip link show` reports, in `/etc/docker/daemon.json`, then restart Docker. See [Network MTU](networking-overview.md#network-mtu) |
 
 ```bash
 # Check events for errors

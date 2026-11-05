@@ -45,7 +45,7 @@ OpenBao.
 - **The management cluster's own etcd.** This page covers Managed Cluster
   control-plane etcd only. Platform-side encryption is a separate
   consideration handled at the install time.
-- **Kubernetes resources outside the encrypted list.** Phase-1 default
+- **Kubernetes resources outside the encrypted list.** The default
   is `[secrets]`; Project users can select `[secrets, configmaps]`. Other
   resources (`leases`, `events`, `endpoints`, `pods`) remain in
   plaintext, because they have high write rates and low sensitivity, so
@@ -62,11 +62,11 @@ management cluster:
 | Prerequisite | How to check | Where it's configured |
 |---|---|---|
 | OpenBao is deployed and reachable | `kubectl -n openbao get sts openbao -o jsonpath='{.status.readyReplicas}'` returns `>=2` | Fleet config `OPENBAO_ENABLED=true` |
-| `enable_openbao=true` in master-config | `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.enable_openbao}' \| base64 -d` | Chart values `openBao.enabled: true` |
-| `openbao_url` in master-config | `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.openbao_url}' \| base64 -d` | Chart values `openBao.url: https://bao.<DOMAIN>` |
+| `enable_openbao=true` in master-config | `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.enable_openbao}' \| base64 -d` | Chart values `manager.openBao.enabled: true` |
+| `openbao_url` in master-config | `kubectl -n kube-dc get secret master-config -o jsonpath='{.data.openbao_url}' \| base64 -d` | Chart values `manager.openBao.url: https://bao.<domain>` |
 | `kube-dc-k8-manager` has `KMS_PLUGIN_IMAGE` env | `kubectl -n kube-dc get deploy kube-dc-k8-manager -o jsonpath='{.spec.template.spec.containers[0].env}' \| jq '.[] \| select(.name=="KMS_PLUGIN_IMAGE")'` | Chart values `k8Manager.kmsPluginImage` |
 | `kube-dc-k8-manager` has `OPENBAO_URL` env | Same as above with `OPENBAO_URL` | Chart values `k8Manager.openBaoUrl` |
-| Per-Organization OpenBao Transit engine exists | `bao secrets list -namespace=<org>` shows `transit/` | Provisioned by the M3 KMSKey controller on first key request |
+| Per-Organization OpenBao Transit engine exists | `bao secrets list -namespace=<org>` shows `transit/` | Provisioned by the KMSKey controller in the kube-dc manager on the first key request |
 
 If any of these are missing, the kdccluster reconciler refuses to
 provision the sidecar with a clear `EncryptionConfigError` condition
@@ -149,7 +149,7 @@ apiVersion: k8s.kube-dc.com/v1alpha1
 kind: KdcCluster
 metadata:
   name: prod
-  namespace: shalb-docs
+  namespace: acme-production
 spec:
   version: v1.35.0
   controlPlane:
@@ -184,9 +184,8 @@ ValidatingAdmissionPolicy, so this verification is operator-only.
 
 The key encryption key, the OpenBao Transit key that wraps every DEK,
 rotates on a schedule the **Project user** chooses. The platform owns nothing
-here except OpenBao itself; rotation is driven by the M3 KMSKey
-reconciler in the kube-dc-manager, which we lean on rather than ship a
-separate CronJob.
+here except OpenBao itself. The KMSKey controller in the kube-dc manager
+drives rotation; there is no separate CronJob.
 
 ### Project user spec
 
@@ -206,7 +205,7 @@ Validation bounds (rejected at reconcile time with a clear
 | Rule |
 |---|
 | `enabled: true` requires `interval` |
-| Interval units must be `d`, `h`, `m`, or `s`. `w` is NOT supported, because the M3 parser does not accept weeks |
+| Interval units must be `d`, `h`, `m`, or `s`. `w` is NOT supported, because the KMSKey interval parser does not accept weeks |
 | Interval ≥ 7d (OpenBao Transit's own `min_rotation_interval` floor) |
 | Interval ≤ 730d |
 | Interval ≥ `spec.backup.retentionDays * 24h` when backups are enabled |
@@ -216,12 +215,12 @@ Validation bounds (rejected at reconcile time with a clear
 1. Creates a **new** Transit key version. The kms-plugin sidecar's
    next Encrypt call uses the new version automatically.
 2. New backup snapshots have `metadata.transitKeyVersion = N+1`.
-3. **Old etcd rows do NOT bulk-rewrap.** They re-wrap on next Update.
-   Bulk re-wrap is deferred to phase 6 (`kube-dc cluster rewrap-etcd`).
+3. **Old etcd rows do NOT bulk-rewrap.** They re-wrap on their next
+   update. The platform has no bulk re-wrap.
 4. **`min_decryption_version` is NEVER advanced by automation.** Old
-   DEKs and old backups remain decryptable indefinitely. See §
-   "Advancing `min_decryption_version`". That is a manual +
-   irreversible operator gesture.
+   DEKs and old backups remain decryptable indefinitely. Advancing it is
+   a manual and irreversible operator action. See
+   [Advance `min_decryption_version`](#advance-min_decryption_version).
 
 ### Project observability
 
@@ -247,7 +246,7 @@ Three paths, in order of preference:
 
 1. **Schedule the rotation through the `KdcCluster` resource.** Set
    `spec.encryption.etcd.kekRotation.interval` to whatever cadence is
-   desired; the M3 reconciler picks it up on its next loop.
+   desired; the KMSKey controller picks it up on its next loop.
 2. **Direct Transit call as a platform admin.** Use the platform-root
    token (or a dedicated platform-admin OpenBao policy):
 
@@ -273,8 +272,8 @@ backups.
 **Use only when:**
 
 - A KEK version is suspected compromised AND
-- Every backup wrapped with that version has aged out of retention OR
-  been re-wrapped through the deferred `kube-dc cluster rewrap-backups` CLI
+- Every backup wrapped with that version has aged out of retention. The
+  platform has no tool to re-wrap existing backups.
 
 **Never use as a routine operation.** No automation does this; the
 controllers explicitly refuse. Pre-flight checklist for the manual
@@ -363,10 +362,9 @@ had it on would brick the apiserver: encrypted rows would become
 unreadable because the apiserver would no longer have a KMS provider
 configured to unwrap them.
 
-The proper flow uses the two-step `disableRequested` migration documented
-in the design (§12.3) and in runbook §8. The phase-1 implementation is
-deferred. Until the migration controller lands, the platform-admin
-break-glass is:
+The `KdcCluster` API has a `spec.encryption.etcd.disableRequested` field for a
+two-step migration back to plaintext, but the controller does not act on it.
+The only way to remove encryption is the platform-admin break-glass:
 
 ```bash
 kubectl -n <ns> annotate kdccluster <name> \

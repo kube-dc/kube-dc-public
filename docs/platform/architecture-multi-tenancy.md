@@ -80,11 +80,13 @@ spec:
   egressNetworkType: cloud
 ```
 
-Both fields are required:
+The two fields set the Project network:
 
-- `cidrBlock` is the Project workload subnet. Choose a range that does not
-  overlap other networks the workloads must reach.
-- `egressNetworkType` is immutable and is either `cloud` or `public`.
+- `cidrBlock` is the Project workload subnet. It is optional. When you omit it,
+  the controller allocates the next free block from the platform's Project CIDR
+  pool. If you set it, choose a range that does not overlap other networks the
+  workloads must reach.
+- `egressNetworkType` is required and immutable, and is either `cloud` or `public`.
   `cloud` uses the private external provider network. `public` requires the
   platform operator to enable public Projects and configure the public external
   network.

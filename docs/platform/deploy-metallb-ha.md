@@ -89,10 +89,11 @@ that might recreate the Service. It is a no-op while the Service exists.
   cluster. A *partial* overlap is refused too: the single node in both sets can announce,
   which makes it a point of failure that looks like HA. See
   [the co-location invariant](#when-the-vip-is-announced-by-nobody).
-- On CloudSigma: the masters' public NICs must be in **manual** mode through the CloudSigma
-  API, which allows traffic for all subscribed IPs on that NIC including the VIP. Without
-  it, traffic for an IP not explicitly assigned is dropped. The VIP must be a subscribed
-  (owned) address.
+- On a cloud or hosting provider that filters traffic by assigned address, the
+  provider must accept traffic for the VIP on the announcing nodes' public NICs. The
+  VIP must be an address that you own on that network. Some providers drop traffic for
+  an IP that is not explicitly assigned to the NIC until you change the NIC's address
+  filtering mode.
 
 ## Verify
 

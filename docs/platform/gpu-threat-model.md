@@ -1,10 +1,18 @@
 # GPU security threat model
 
-**Status:** approved by Security and Product, 2026-08-07. The residual risks
-in [Approval gates and residual risks](#approval-gates-and-residual-risks) are
-accepted as documented; each is a property of the design and travels with the
-capability wherever it is described. Shared GPU and Dedicated GPU VM creation
-are enabled per cluster once its qualification record is complete.
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
+
+This page is for platform operators and security reviewers who decide whether
+to enable GPU workloads on a cluster. The residual risks in
+[Approval gates and residual risks](#approval-gates-and-residual-risks) are
+properties of the design, and travel with the capability wherever it is
+described. Enable Shared GPU and Dedicated GPU VM creation on a cluster only
+after you collect the [Required security evidence](#required-security-evidence).
+For Dedicated GPU VMs, also complete
+[Check a GPU VM guest before you offer it](gpu-supply-chain.md#check-a-gpu-vm-guest-before-you-offer-it).
 
 **Scope:** Shared GPU containers, Dedicated GPU VMs, catalog/discovery, quota,
 billing add-ons, operator installation, node-mode transitions, monitoring, and
@@ -124,7 +132,7 @@ retain:
 ## Approval gates and residual risks
 
 Security approval is a recorded decision, not an inference from passing tests.
-Security and Product accepted the following residual risks on 2026-08-07:
+Before you enable GPU workloads, accept these residual risks:
 
 1. **Shared compute is cooperative.** Memory and control injection is not a
    hostile-tenant boundary: startup can exceed a requested compute percentage,

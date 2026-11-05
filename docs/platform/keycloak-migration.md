@@ -37,10 +37,10 @@ theme keep their names.
 - The CNPG operator is installed (it is part of infra-core).
 - The Bitnami PostgreSQL is PostgreSQL 17 or older. `keycloak-db` runs 17;
   `pg_dump` refuses to dump a newer server.
-- A maintenance window; sign-in is unavailable while it runs. Measured on
-  the 2026-10-08 rollouts: 2 min with images pre-pulled and the objects
-  applied directly; 4-5 min when waiting for Flux (Keycloak databases of
-  48-490 MB); 10 min where the platform reconcile itself is slow. Pre-pull `docker.io/shalb/keycloak` and
+- A maintenance window; sign-in is unavailable while it runs. Plan for 2 to
+  10 minutes. The window is shortest with images pre-pulled and the objects
+  applied directly. Waiting for Flux adds a few minutes, and a slow platform
+  reconcile adds more. Pre-pull `docker.io/shalb/keycloak` and
   `ghcr.io/cloudnative-pg/postgresql:17` on the nodes first.
 - An admin kubeconfig that does **not** sign in through this Keycloak. A
   `kube-dc login --admin` session expires during the freeze and cannot be
@@ -55,11 +55,12 @@ theme keep their names.
   patch the Deployment's env in the cluster (a white-label installation does this for its brand
   name). Do not set `KUBEDC_BRAND_NAME` in cluster-config: the kube-dc chart
   nests it inside another default, which Flux substitution does not resolve.
-- CloudSigma installations set
+- An installation with an integration that impersonates users through
+  legacy token exchange sets
   `KEYCLOAK_FEATURES=preview,organization,admin-fine-grained-authz:v1`.
-  cs-bff impersonates users through legacy token exchange, whose grants are
-  v1 fine-grained permissions; 26.8's `preview` profile enables v2 instead
-  and the exchange fails with `unknown_error`.
+  Legacy token exchange grants are v1 fine-grained permissions. The 26.8
+  `preview` profile enables v2 instead, and the exchange fails with
+  `unknown_error`.
 
 ## Procedure
 
@@ -116,10 +117,10 @@ identity providers and signing key ids; they must be identical. Then:
   stops once Keycloak answers.
 - Prometheus scrapes the new pod (`up{namespace="keycloak"}`), and both
   `keycloak-db` instances report.
-- On CloudSigma: cs-bff's exchange (client `cs-partner-admin`,
-  `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`,
-  `requested_subject`, `audience=kube-dc`) returns a token, and
-  existing managed clusters are unchanged.
+- With a legacy token exchange integration: its exchange
+  (`grant_type=urn:ietf:params:oauth:grant-type:token-exchange`,
+  `requested_subject`, `audience=kube-dc`) returns a token, and existing
+  Managed Clusters are unchanged.
 
 ## Roll back (before cleanup)
 
@@ -138,8 +139,7 @@ flux reconcile hr keycloak -n keycloak --force
 kubectl -n keycloak scale statefulset keycloak --replicas=1
 ```
 
-The Bitnami release comes back on its original, unmigrated database (one installation
-was rolled back this way on 2026-10-08 in about two minutes). Writes made
+The Bitnami release comes back on its original, unmigrated database. Writes made
 while 26.8 ran are lost. Delete `cluster/keycloak-db` once you no longer need
 it for comparison.
 

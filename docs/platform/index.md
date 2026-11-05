@@ -11,7 +11,8 @@ run the management cluster.
 |---|---|
 | Understand the product model | [Architecture overview](architecture-overview.md) |
 | Plan an installation | [Installation overview](installation-overview.md) |
-| Install the platform | [Installation guide](installation-guide.md) |
+| Install the platform for the first time | [Quickstart](quickstart.md) |
+| Look up every installation option and recovery step | [Installation guide](installation-guide.md) |
 | Understand Organizations, Projects, and access | [Multi-tenancy and access control](architecture-multi-tenancy.md) |
 | Design provider and Project networks | [Networking architecture](architecture-networking.md) |
 | Qualify client restrictions for exposed workloads | [Exposure source policies](exposure-source-policy.md) |

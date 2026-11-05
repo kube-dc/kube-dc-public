@@ -21,9 +21,10 @@ handles:
 
 The console offers the CLI as soon as you create a Project:
 
-1. Open your Project's **Workloads Dashboard**.
-2. Click the **Get CLI Access** card.
-3. Run the commands the console displays to install the CLI and authenticate.
+1. Open your Project's **Overview** page.
+2. On the **Command-line access** card, click **Get kubeconfig**. The **Set up
+   CLI access** dialog opens.
+3. Run the commands the dialog displays to install the CLI and authenticate.
 
 ![Get CLI Access from Console UI](images/get-kubeconfig.png)
 
@@ -37,10 +38,13 @@ authentication details. The `kube-dc` CLI then:
 
 ```bash
 # Example workflow shown in the console
-kube-dc login --domain kube-dc.cloud --org your-org
-kube-dc use kube-dc.cloud/your-org/your-project
+kube-dc login --domain example.com --org <organization>
+kube-dc use example.com/<organization>/<project>
 kubectl get pods
 ```
+
+Replace `example.com` with your Kube-DC domain, `<organization>` with your
+Organization ID, and `<project>` with your Project name.
 
 ## Install the CLI
 
@@ -78,7 +82,7 @@ if ($userPath -notlike "*$installDir*") { [Environment]::SetEnvironmentVariable(
 ### 1. Sign in to your Organization
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org acme
+kube-dc login --domain example.com --org acme
 ```
 
 The command opens your browser for authentication. After you sign in, the CLI:
@@ -96,7 +100,7 @@ administrator for a trusted CA bundle and pass it with `--ca-cert`.
 For an SSH session or a machine without a browser, add `--device-code`:
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org acme --device-code
+kube-dc login --domain example.com --org acme --device-code
 ```
 
 Open the displayed URL on another device, enter the code, and approve the
@@ -113,7 +117,7 @@ client.
 kube-dc use
 
 # Switch to a Project
-kube-dc use kube-dc.cloud/acme/production
+kube-dc use example.com/acme/production
 ```
 
 ### 3. Run kubectl
@@ -134,13 +138,14 @@ Authenticates you to a Kube-DC platform.
 kube-dc login --domain <domain> --org <organization>
 
 # Examples
-kube-dc login --domain kube-dc.cloud --org acme
-kube-dc login --domain stage.kube-dc.com --org mycompany
+kube-dc login --domain example.com --org acme
+kube-dc login --domain cloud.example.com --org mycompany
 ```
 
 The command takes the following options:
 
-- `--domain`: the platform domain, for example `kube-dc.cloud`.
+- `--domain`: the platform domain your provider gives you, for example
+  `example.com`.
 - `--org`: the Organization, which is also the realm name.
 - `--insecure`: skips TLS verification. Do not use it in production.
 
@@ -168,7 +173,7 @@ Switches between Kube-DC contexts. This is the preferred Project switcher.
 kube-dc use
 
 # Switch to a specific context
-kube-dc use kube-dc.cloud/acme/production
+kube-dc use example.com/acme/production
 ```
 
 ### `kube-dc logout`
@@ -217,14 +222,14 @@ After you sign in, your kubeconfig contains entries like these:
 
 ```yaml
 contexts:
-- name: kube-dc/kube-dc.cloud/acme/production
+- name: kube-dc/example.com/acme/production
   context:
-    cluster: kube-dc-kube-dc.cloud-acme
-    user: kube-dc@kube-dc.cloud/acme
+    cluster: kube-dc-example.com-acme
+    user: kube-dc@example.com/acme
     namespace: acme-production
 
 users:
-- name: kube-dc@kube-dc.cloud/acme
+- name: kube-dc@example.com/acme
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1
@@ -232,7 +237,7 @@ users:
       args:
         - credential
         - --server
-        - https://kube-api.kube-dc.cloud:6443
+        - https://kube-api.example.com:6443
         - --realm
         - acme
 ```
@@ -282,7 +287,7 @@ If a command reports that the current context is not a Kube-DC context, run:
 kubectl config current-context
 
 # Switch to a kube-dc context
-kube-dc use kube-dc.cloud/acme/production
+kube-dc use example.com/acme/production
 ```
 
 ### Clear all credentials
@@ -317,9 +322,12 @@ kube-dc login --help
 To get access without installing the CLI, use the **Project console** in the
 web interface:
 
-1. Click your username in the top right corner.
-2. Select **Project console**. A web terminal opens with `kubectl` already
-   configured.
+1. Open your Project's **Overview** page.
+2. On the **Command-line access** card, click **Open project console**. A web
+   terminal opens in a separate tab with `kubectl` already configured.
+
+You can also open the account menu in the top right corner and select
+**Project console** while you work in a Project.
 
 The web console includes:
 

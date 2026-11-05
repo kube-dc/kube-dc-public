@@ -1,6 +1,6 @@
 # Billing and usage
 
-The **Billing & Subscriptions** section lets you monitor resource consumption, manage your subscription plan, add extra capacity, and control payment for your whole Organization, all from one page under **Manage Organization > Billing**.
+The **Billing & quotas** page lets you monitor resource consumption, manage your subscription plan, add extra capacity, and control payment for your whole Organization. To open it, select **Manage organization** in the account menu, then open **Billing & quotas**.
 
 ## Pay-as-you-go organizations
 
@@ -51,7 +51,7 @@ month depends on how long the service is managed during that month. Use the
 prices shown for your installation.
 
 [Service offerings](service-offerings.md) list a plan's defaults and limits,
-not its prices. Showing prices next to offerings is planned.
+not its prices.
 
 ### Monetary precision
 
@@ -63,16 +63,14 @@ estimate can change as additional usage arrives and the period is reconciled.
 
 The subscription plans and add-ons below apply to fixed-plan Organizations.
 
-## Overview dashboard
+## Billing overview
 
-![Billing overview](images/billing-subsciption-view.png)
+The **Billing & quotas** page shows your subscription, your resource usage,
+and three tabs: **Project usage**, **Plans**, and **Add-ons**. It shows:
 
-The **Overview** tab shows your current state at a glance:
-
-- **Current Plan**: Active plan name and subscription start date
-- **Monthly Cost**: Total cost broken down as base plan + active add-ons
-- **Active Add-ons**: Turbo packages currently applied to the organization
-- **Resource Usage**: Live progress bars for every quota dimension:
+- **Subscription**: the active plan and its cost
+- **Active add-ons**: the add-on packages applied to the organization
+- **Resource usage**: a usage bar for every quota dimension:
   - CPU (cores used / total available)
   - Memory (GiB used / total available)
   - NVMe Storage (GiB used / total available)
@@ -82,35 +80,20 @@ The **Overview** tab shows your current state at a glance:
 
 The progress bars change color as usage rises: green → yellow → red. A resource shown in red is at or near its limit and may block new deployments.
 
-From the Overview you can also:
-- **View Plans**: Browse and switch subscription plans
-- **Manage Add-ons**: Add or remove Turbo capacity packages
-- **Manage Payment**: Open the configured billing provider to update billing details
+From this page you can also:
+
+- open the **Plans** tab to browse and switch subscription plans;
+- open the **Add-ons** tab to add or remove capacity packages;
+- click **Payment & invoices** to update billing details with the billing provider.
 
 ---
 
 ## Subscription plans
 
-![Available plans](images/billing-subsciption-plans.png)
-
-Kube-DC Cloud offers the following plans. Plan names, prices, and
-entitlements can vary by installation; the **Available Plans** tab in your
-console is the source of truth.
-
-| | **Dev Pool** | **Pro Pool** | **Scale Pool** |
-|---|---|---|---|
-| **Monthly price** | €19/month | €49/month | €99/month |
-| **Best for** | Sandbox / Dev | Production / Teams | High Load / VDC |
-| **CPU** | 4 vCPU | 8 vCPU | 16 vCPU |
-| **Memory** | 8 GB | 24 GB | 56 GB |
-| **NVMe Storage** | 60 GB | 160 GB | 320 GB |
-| **Object Storage** | 20 GB | 100 GB | 500 GB |
-| **Dedicated IPv4** | 1 | 1 | 3 |
-| **Max Pods** | 100 | 200 | 500 |
-| **Managed Clusters** | Included | Included | Included |
-| **Bandwidth** | Unlimited 1Gbit/s | Unlimited 1Gbit/s | Unlimited 1Gbit/s |
-
-All plans can run Project workloads and Managed Clusters. Features marked
+Your provider defines the plans, their prices, and the CPU, memory, storage,
+pod, and public IPv4 quota each plan includes. To see them, open the **Plans**
+tab on the **Billing & quotas** page. The console is the source of truth for
+plan names, prices, and entitlements. Features marked
 Preview, Pilot, or provider-specific in the console may require a separate
 entitlement.
 
@@ -152,7 +135,7 @@ capacity guarantee.
 
 All resources in your plan are **shared across all projects** in your organization. The quota is applied at the organization level, and any combination of usage across your projects counts toward it.
 
-**Example:** Organization `acme` has an 8 vCPU, 24 GiB Pro Pool shared by
+**Example:** Organization `acme` has a plan with 8 vCPU and 24 GiB, shared by
 Projects `development`, `staging`, and `production`:
 
 | Project | Backing namespace | CPU used | Memory used |
@@ -170,10 +153,10 @@ The **Public IPv4** dimension counts only `EIp` resources with `externalNetworkT
 
 ### Guaranteed capacity
 
-The current Kube-DC Cloud plans use a 1.0 allocation ratio: the CPU and memory
-shown in the plan are the organization quota, not a smaller reservation backed
-by an advertised burst multiplier. Scheduling still depends on available
-cluster capacity.
+Your provider sets an allocation ratio for each plan. With a ratio of 1.0, the
+CPU and memory shown in the plan are the organization quota, not a smaller
+reservation backed by a burst multiplier. Scheduling still depends on
+available cluster capacity.
 
 :::info
 Use the Billing page for the effective quota on your organization. Do not plan
@@ -185,24 +168,22 @@ capacity around temporary usage above that value.
 ## Resource limits for workloads
 
 Kubernetes enforces organization quota from workload resource requests and
-limits. When a container omits them, the Project's LimitRange applies the
-defaults shown below.
+limits. When a container omits them, the Project's LimitRange applies your
+plan's defaults.
 
 ### Automatic defaults
 
-**You do not need to manually set resource values on every workload.** The platform automatically applies default CPU and memory values to any container that doesn't specify them. These defaults are sized based on your active plan:
+**You do not need to manually set resource values on every workload.** The platform automatically applies default CPU and memory values to any container that doesn't specify them. Your provider sets these defaults for each plan. They cover the default CPU and memory request, the default CPU and memory limit, and the maximum CPU and memory for each container and each pod.
 
-| | **Dev Pool** | **Pro Pool** | **Scale Pool** |
-|---|---|---|---|
-| **Default CPU request** | 100m | 250m | 500m |
-| **Default memory request** | 128 Mi | 256 Mi | 512 Mi |
-| **Default CPU limit** | 500m | 500m | 1 core |
-| **Default memory limit** | 512 Mi | 512 Mi | 1 Gi |
-| **Max CPU per container** | 4 cores | 8 cores | 16 cores |
-| **Max memory per container** | 8 Gi | 24 Gi | 56 Gi |
-| **Max CPU per pod** | 4 cores | 8 cores | 16 cores |
-| **Max memory per pod** | 8 Gi | 24 Gi | 56 Gi |
-| **Max PVC storage** | 60 Gi | 160 Gi | 320 Gi |
+To see the values for your plan, read the `default-resource-limits` LimitRange
+in a Project backing namespace:
+
+```bash
+kubectl get limitrange default-resource-limits -n <organization>-<project> -o yaml
+```
+
+Replace `<organization>` with your Organization ID and `<project>` with your Project
+name.
 
 **Requests** reserve schedulable capacity. **Limits** cap runtime use: CPU is
 throttled, while exceeding a memory limit can terminate the container for OOM.
@@ -230,35 +211,25 @@ To resolve this:
 
 ## Turbo add-ons
 
-![Turbo add-ons](images/billing-subsciptions-addons.png)
-
 Turbo Add-ons let you boost your organization's resources without switching plans. Add-ons apply to your **whole Organization**, and they stack. You can add the same package more than once.
 
-| | **Turbo x1** | **Turbo x2** |
-|---|---|---|
-| **Monthly price** | €9/month | €16/month |
-| **Additional vCPU** | +2 cores | +4 cores |
-| **Additional RAM** | +4 GB | +8 GB |
-| **Additional Storage** | +20 GB | +40 GB |
-
-**Example:** Scale Pool + 3× Turbo x1 + 2× Turbo x2 = €99 + €27 + €32 = **€158/month**, providing:
-- CPU: 16 + 6 + 8 = **30 vCPU**
-- RAM: 56 + 12 + 16 = **84 GB**
-- Storage: 320 + 60 + 80 = **460 GB**
-
-This matches the Overview screenshot above where Monthly Cost shows €158.
+Your provider defines the add-on packages, their prices, and the capacity each
+one adds. To see them, open the **Add-ons** tab on the **Billing & quotas**
+page.
 
 ### Add a Turbo add-on
 
-1. Navigate to **Manage Organization → Billing → Turbo Add-ons**
-2. Click **Add Another** on the desired package
+1. Open **Manage organization**, then **Billing & quotas**, then the
+   **Add-ons** tab.
+2. Click **Add capacity** on the package.
 3. Wait for the billing provider to confirm the purchase and for the updated
-   quota to appear in the Billing overview
+   quota to appear on the **Billing & quotas** page.
 
 ### Remove a Turbo add-on
 
-1. Navigate to **Manage Organization → Billing → Turbo Add-ons**
-2. Click **Remove 1** on the package you want to reduce
+1. Open **Manage organization**, then **Billing & quotas**, then the
+   **Add-ons** tab.
+2. Click **Remove one** on the package you want to reduce.
 
 :::warning Downgrade Check
 Before removing an add-on, ensure your current resource usage fits within the reduced quota. If active workloads exceed the new limit, they will continue running but no new workloads will be schedulable until usage drops below the new quota.
@@ -379,7 +350,7 @@ fallback. Check each resource status timestamp before comparing values.
 
 ```bash
 # Full quota summary (human-readable)
-kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+kubectl get organization <organization> -n <organization> -o jsonpath='{.status.quotaUsage}' | jq .
 ```
 
 Example output:
@@ -405,7 +376,7 @@ Example output:
 Check a single field:
 
 ```bash
-kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage.cpu}' | jq .
+kubectl get organization <organization> -n <organization> -o jsonpath='{.status.quotaUsage.cpu}' | jq .
 # → { "hard": "26", "used": "18.975" }
 ```
 
@@ -414,7 +385,7 @@ kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage.cpu}' |
 Each Project reports usage for its backing namespace:
 
 ```bash
-kubectl get project <project> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+kubectl get project <project> -n <organization> -o jsonpath='{.status.quotaUsage}' | jq .
 ```
 
 Example output:
@@ -437,7 +408,7 @@ Example output:
 
 ```bash
 # Print Project name and CPU used/hard for all Projects in an Organization
-kubectl get projects -n <org> \
+kubectl get projects -n <organization> \
   -o custom-columns='PROJECT:.metadata.name,CPU_USED:.status.quotaUsage.cpu.used,CPU_HARD:.status.quotaUsage.cpu.hard,MEM_USED:.status.quotaUsage.memory.used'
 ```
 
@@ -462,7 +433,7 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 **New pods or VMs fail to start with "exceeded quota"**
 - Check the Overview dashboard for which resource is at its limit, or run:
   ```bash
-  kubectl get organization <org> -n <org> -o jsonpath='{.status.quotaUsage}' | jq .
+  kubectl get organization <organization> -n <organization> -o jsonpath='{.status.quotaUsage}' | jq .
   ```
 - Delete unused workloads to free capacity, or add a Turbo Add-on
 
@@ -480,9 +451,8 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 - Scale down or delete workloads until usage falls within the target plan's limits, then retry
 
 **IPv4 at 100%: you cannot create a LoadBalancer Service**
-- Dev Pool and Pro Pool include 1 dedicated IPv4 with no burst
-- Scale Pool includes 3 IPv4 addresses
-- Add-ons do not include additional IPv4 addresses; upgrade to Scale Pool for more
+- Compare the public IPv4 quota of each plan on the **Plans** tab
+- Choose a plan with more addresses, or ask your provider
 
 **Workloads were scaled to zero unexpectedly**
 - Check the subscription status in the Overview

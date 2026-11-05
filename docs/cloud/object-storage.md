@@ -139,8 +139,12 @@ Where your platform operator has enabled key rotation, a Project admin can repla
 key while managed services keep using the bucket as their backup archive. A rotation creates a
 new key and writes it into the bucket's Secret. It then waits until every managed service that
 reads or writes the bucket has switched to the new key or no longer exists, and only then
-revokes the old key. The console does not offer rotation yet; use the API with your console
-session token:
+revokes the old key.
+
+The console lists a bucket's rotations under **Archive key rotations** on the bucket's
+**Access** tab. It shows each rotation's phase and start time, and offers **Abandon rotation**
+for a rotation that has not finished. Only Project admins can manage rotations there. To start
+a rotation, use the API with your console session token:
 
 ```text
 POST https://backend.<your-domain>/api/object-storage/<project-namespace>/buckets/<bucket>/key-rotations

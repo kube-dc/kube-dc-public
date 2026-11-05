@@ -4,8 +4,7 @@ This runbook captures everything needed to reproduce an **enterprise-class**
 installation, an on-premises cluster where every public hostname
 (`login.`, `console.`, `s3.`, `bao.`, … `${DOMAIN}`) is served by a
 **private/corporate CA**, the outbound path is firewalled, and tenants get
-dual-homed (infra-attachment) networking. It was distilled from a real
-greenfield install; every step below is either a plain `kube-dc` command or an
+dual-homed (infra-attachment) networking. Every step below is either a plain `kube-dc` command or an
 explicitly listed, accepted per-cluster customization in the fleet repo.
 
 Throughout, placeholders:
@@ -51,15 +50,16 @@ Post-`init` day-2 sanity: `kube-dc bootstrap status <cluster> --repo <path>` and
 > `registries.yaml` (all nodes), restart `rke2-server`/`rke2-agent` one node at
 > a time.
 >
-> ⚠️ **Drain or stop VMs before restarting rke2 on a node.** Restarting the
+> ⚠️ **Drain the node before restarting rke2 on it, so that no VM runs there.** Restarting the
 > service under running KubeVirt VMs hard-kills qemu and can race the CSI node
 > plugin into unmapping an RBD device **under a live ext4 mount**. The node then
 > wedges hours later: kubelet's volume-ownership pass blocks in an unkillable
 > `chown` (kernel D-state), the half-dead kubelet keeps holding `:10250` with a
 > full accept queue, and the node flips NotReady while `rbd showmapped` on it is
 > empty. Recovery: stop affected VMs, lazy-unmount the dead mounts
-> (`umount -l`), delete the stale `VolumeAttachment`s, reboot the node. Seen
-> twice in real installs; treat the drain rule as mandatory.
+> (`umount -l`), delete the stale `VolumeAttachment`s, reboot the node. Treat
+> the drain rule as mandatory. RKE2 upgrade Plans drain each node for the same
+> reason. See [Upgrade a management cluster](upgrading-management-cluster.md).
 
 ## 2. Private-CA trust for independent consumers
 

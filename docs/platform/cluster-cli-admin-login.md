@@ -103,8 +103,10 @@ on a fresh machine. The master-realm identity and permissions are independent of
 the public certificate metadata.
 
 ```bash
-kube-dc login --domain kube-dc.cloud --admin --device-code
+kube-dc login --domain example.com --admin --device-code
 ```
+
+Replace `example.com` with your platform domain.
 
 The CLI displays a URL and code. Open the URL in a browser on another device,
 enter the code, and approve the login. The same master-realm `admin` group
@@ -117,9 +119,9 @@ or enable the capability in Keycloak's client settings. Its JSON attribute is
 `"oauth2.device.authorization.grant.enabled": "true"`.
 
 The same client's **Valid redirect URIs** are `http://localhost:*` and
-`http://127.0.0.1:*` — the browser login's loopback callback and nothing
+`http://127.0.0.1:*`: the browser login's loopback callback and nothing
 else. The client is public, so this list alone decides where Keycloak returns
-a login code; clusters bootstrapped before 2026-10-07 carried `*`, which let
+a login code. Clusters bootstrapped with an older fleet script carried `*`, which let
 any site that could show an administrator the real login page collect a
 platform-admin code. Rerunning `bootstrap/setup-keycloak-oidc.sh` converges an
 installed cluster. Keycloak matches a trailing `*` as a string prefix, which is
@@ -151,8 +153,8 @@ kubectl apply -f infrastructure/platform-admin/clusterrolebinding-platform-admin
 # 3. Create the kube-dc-admin client + both protocol mappers in Keycloak (idempotent)
 bash bootstrap/setup-keycloak-oidc.sh <cluster>
 
-# 4. Make sure kube-dc-manager (v0.3.0+) is running so its OIDCRegistry
-#    ReconcileAll creates the master OpenIDConnect CR. Roll if behind:
+# 4. Make sure kube-dc-manager is running so its OIDCRegistry
+#    ReconcileAll creates the master OpenIDConnect CR. Restart it if the CR is missing:
 kubectl rollout restart deployment/kube-dc-manager -n kube-dc
 ```
 

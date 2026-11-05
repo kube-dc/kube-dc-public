@@ -327,14 +327,14 @@ spec:
 ```bash
 # Check assigned hostname
 kubectl get svc my-app -n acme-production -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-# Output: my-app-acme-production.kube-dc.cloud
+# Output: my-app-acme-production.example.com
 
 # Check certificate status
 kubectl get certificate -n acme-production
 kubectl get challenge -n acme-production
 
 # Test access
-curl https://my-app-acme-production.kube-dc.cloud
+curl https://my-app-acme-production.example.com
 ```
 
 For HTTPS routes, hostname status is set after the certificate and route are ready. This can take a few minutes. If the command returns an empty value, check the certificate and ACME challenge status first.
@@ -365,7 +365,7 @@ spec:
     targetPort: 80
 ```
 
-Open `http://my-app-acme-production.kube-dc.cloud`.
+Open `http://my-app-acme-production.example.com`.
 
 ### Example: TLS passthrough (Kubernetes API)
 
@@ -389,14 +389,14 @@ spec:
 ```
 
 The Gateway listens publicly on port 443 and forwards to Service port 6443:
-`https://cluster-api-acme-production.kube-dc.cloud`.
+`https://cluster-api-acme-production.example.com`.
 
 :::caution Configure backend TLS first
 TLS passthrough does not issue a certificate or terminate TLS. The `TLSRoute`
 selects a backend from the SNI hostname in the client's initial TLS handshake.
 The client must therefore connect by the published hostname, and the backend
 must present a certificate whose SANs include that hostname. For this example,
-add `cluster-api-acme-production.kube-dc.cloud` to the API server certificate
+add `cluster-api-acme-production.example.com` to the API server certificate
 before exposing it. Use a dedicated LoadBalancer address when the protocol does
 not start with a TLS handshake or the backend certificate cannot cover the
 Gateway hostname.
@@ -511,7 +511,7 @@ SANs and chain to a CA trusted by your clients.
 
 ### gRPC
 
-The `expose-route` annotation creates an `HTTPRoute`, even when a Service port sets `appProtocol: kubernetes.io/h2c`. It does not create a `GRPCRoute` or configure an HTTP/2 backend. For gRPC today, use a dedicated LoadBalancer Service or work with your platform operator to provide explicit Gateway API `GRPCRoute` and backend protocol resources.
+The `expose-route` annotation creates an `HTTPRoute`, even when a Service port sets `appProtocol: kubernetes.io/h2c`. It does not create a `GRPCRoute` or configure an HTTP/2 backend. To expose gRPC, use a dedicated LoadBalancer Service with an EIP. See [Part 2: EIP-based exposure](#part-2-eip-based-exposure-both-project-types).
 
 ---
 

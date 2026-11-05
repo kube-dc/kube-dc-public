@@ -250,7 +250,7 @@ metadata:
   namespace: default
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-hostname: "my-app-acme-production.kube-dc.cloud"
+    service.nlb.kube-dc.com/route-hostname: "my-app-acme-production.example.com"
 spec:
   type: LoadBalancer
   selector:
@@ -263,7 +263,7 @@ spec:
 :::tip[Always pin `route-hostname`]
 Without `route-hostname`, the hostname is auto-generated from the
 management-side service name (a UID-derived hash like
-`af3d76ff…-acme-production.kube-dc.cloud`). It is hard to read **and it
+`af3d76ff…-acme-production.example.com`). It is hard to read **and it
 changes** if the Managed Cluster Service is ever deleted and recreated. Set an
 explicit hostname under the cluster's wildcard domain (or your own domain
 with DNS pointed at the Gateway).
@@ -276,7 +276,7 @@ with DNS pointed at the Gateway).
 kubectl get certificate,httproute -n acme-production
 
 # After ~1-2 minutes:
-curl https://my-app-acme-production.kube-dc.cloud
+curl https://my-app-acme-production.example.com
 ```
 
 Issuance typically completes in one to two minutes. `http` and
@@ -942,7 +942,7 @@ metadata:
   namespace: wordpress
   annotations:
     service.nlb.kube-dc.com/expose-route: "https"
-    service.nlb.kube-dc.com/route-hostname: "wordpress-acme-production.kube-dc.cloud"
+    service.nlb.kube-dc.com/route-hostname: "wordpress-acme-production.example.com"
 spec:
   type: LoadBalancer
   selector:

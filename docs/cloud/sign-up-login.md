@@ -13,7 +13,7 @@ You need:
 
 ## Create your account
 
-1. Go to [console.kube-dc.cloud](https://console.kube-dc.cloud).
+1. Go to `<console-url>`, the console address your provider gives you.
 2. Click **Sign up with email** or **Sign up with Google**.
 3. Fill in the registration form:
 
@@ -24,6 +24,12 @@ You need:
 
 4. Click **Register**.
 5. Open the verification email and confirm your account.
+
+:::note Sign-up options depend on your provider
+The sign-up buttons appear only when your provider enables self sign-up. The
+**Sign up with Google** button appears only when your provider enables Google
+sign-in. If you see no sign-up buttons, ask your provider for an account.
+:::
 
 :::tip Google single sign-on
 If you sign up with Google, Kube-DC verifies your account automatically. Go
@@ -40,11 +46,16 @@ for its Projects.
 
 Follow these steps if you start fresh, or if you need a separate Organization:
 
-1. Enter a unique **Organization name**, such as your company or team name.
-2. Wait for the availability check. A green checkmark means the name is free.
+1. Click **Create organization**.
+2. Enter a unique **Organization ID**. It is a short id, not a full name. It
+   appears in web addresses and you cannot change it later. Use lowercase
+   letters, numbers, and hyphens.
 3. Set your **Organization login password**. It needs at least 8 characters.
-4. Confirm the password.
-5. Click **Continue**.
+4. Enter the password again in **Confirm password**.
+5. Click **Create workspace**.
+
+If the Organization ID is taken, the console shows that it already exists. Pick
+another ID, or click **Ask to join instead**.
 
 :::note Organization Admin
 The user who creates an Organization becomes its Organization Admin, with full
@@ -57,9 +68,9 @@ it.
 
 Follow these steps if your team already has an Organization:
 
-1. Enter the existing **Organization name**.
-2. Read the message "Organization exists. You can request to join."
-3. Click **Request to join**.
+1. Click **Join organization**.
+2. Enter the existing **Organization ID**.
+3. Click **Request access**. The console shows **Request sent**.
 4. Wait for an Organization Admin to approve the request.
 
 An Organization Admin must approve every join request. Kube-DC sends you an
@@ -67,20 +78,18 @@ email when the request is processed.
 
 ## Sign in
 
-1. Go to [console.kube-dc.cloud](https://console.kube-dc.cloud).
-2. Enter your **Organization** name.
-3. Choose a sign-in method:
-
-   - **Log in**: enter your Organization login password.
-   - **Sign in with Google**: use Google single sign-on, if your Organization
-     has it configured.
+1. Go to `<console-url>`, the console address your provider gives you.
+2. Enter your **Organization ID**.
+3. Click **Log in to your organization**.
+4. On the sign-in page, enter your Organization login password, or click
+   **Login with Google** if your Organization has Google sign-in configured.
 
 ![Login page](images/sign-up-4.png)
 
 :::tip Bookmark your Organization
-For faster access, bookmark your Organization's direct sign-in URL:
-`https://console.kube-dc.cloud/?realm=ORGANIZATION_NAME`. Replace
-`ORGANIZATION_NAME` with your Organization name.
+For faster access, bookmark a sign-in URL that fills in your Organization ID:
+`<console-url>/?realm=<organization>`. Replace `<console-url>` with your
+console address and `<organization>` with your Organization ID.
 :::
 
 ## Choose a plan or a trial

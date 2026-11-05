@@ -1,10 +1,8 @@
-# Project-Internal LoadBalancer VIPs
+# Project-internal LoadBalancer VIPs
 
-How a Managed Cluster's `LoadBalancer` Services get a private VIP inside the
-Project VPC, what an operator switches on, and how to read the state when
-something is not delegated.
-
-This page is for **operators and SREs running a Kube-DC cluster**. For the
+This page is for **operators and SREs running a Kube-DC cluster**. After you
+read it, you can enable private LoadBalancer VIPs for Managed Clusters inside
+the Project VPC, and read their state when an address is not delegated. For the
 tenant-facing contract (the label and `loadBalancerClass` a user sets on a
 Service), see [Manage a Managed Cluster](/cloud/cluster-management).
 

@@ -29,13 +29,16 @@ admins can set repository variables.
 
 ## 2. Choose where images go
 
-| | Managed (recommended) | Your own registry (for example GHCR) |
-|---|---|---|
-| Registry | A [Kube-DC container registry](managed-services-registry.md) in your project | Your GHCR or another registry |
-| Secrets in GitHub | None: CI signs in with a short-lived token | None for workflows (GitHub's `GITHUB_TOKEN`); builds on push need a personal token saved in the project |
-| Pulling | Kube-DC keeps the pull Secret fresh | Public images need nothing; private ones need a pull Secret |
+Under **Where images go**, select **Your own registry**. Images then go to a
+registry you control, for example GHCR. This path behaves as follows:
 
-**Own registry and builds on push: the GitHub token.** GitHub does not let
+| Topic | Your own registry |
+|---|---|
+| Registry | GHCR or another registry you control |
+| Secrets in GitHub | None for workflows (GitHub's `GITHUB_TOKEN`); builds on push need a personal token saved in the project |
+| Pulling | Public images need nothing; private ones need a pull Secret |
+
+**Builds on push: the GitHub token.** GitHub does not let
 apps push to GHCR, so builds on push need a classic personal access token:
 
 1. **Create a token on GitHub** (button on the page; scope `write:packages`).
@@ -57,9 +60,9 @@ Never paste the token into a chat or an AI app.
 | Previews | `<app>-pr-<n>` in the previews project, removed when the PR closes | Done by `preview.yml` |
 
 Use one per app; both would build and deploy every push twice. Platform
-builds suit "deploy my Dockerfile"; repeated builds reuse a layer cache (a
-rebuild of an unchanged app took 26 seconds on stage). Use a workflow when you
-need tests or custom steps.
+builds suit "deploy my Dockerfile"; repeated builds reuse a layer cache, so
+a rebuild of an unchanged app is faster. Use a workflow when you need tests or
+custom steps.
 
 ## 4. Let your AI app do it (or do it by hand)
 
@@ -69,8 +72,7 @@ from your choices. It uses:
 - `deploy_app` with `buildFrom` for builds on push;
 - `connect_repository` for a workflow (it opens a pull request with the
   workflows and sets the repository variables; organization admins only);
-- `create_managed_service` for a registry or runner pool;
-- `registry_login` for a `docker login` command.
+- `create_managed_service` for a runner pool.
 
 *Set it up by hand* on the page shows the same steps as commands and YAML.
 For a workflow it fills the repository variables for every project member,
@@ -85,10 +87,10 @@ others see placeholders to ask an admin for.
 |---|---|
 | label `build.kube-dc.com/on-push` | `"true"` |
 | `build.kube-dc.com/repository` | `owner/repo` |
-| `build.kube-dc.com/image` | registry path without a tag, e.g. `images-my-project.<domain>/my-project/app` |
-| `build.kube-dc.com/push-secret` | own registry only: the Secret from step 2 |
+| `build.kube-dc.com/image` | registry path without a tag, for example `ghcr.io/<owner>/<app>` |
+| `build.kube-dc.com/push-secret` | the Secret from step 2 |
 | `build.kube-dc.com/previews` | optional: a project for pull request previews |
-| `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, e.g. `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
+| `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, for example `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
 | `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |
 | `build.kube-dc.com/build-secrets` | optional: comma-separated Secrets of the project; the Dockerfile reads each key with `RUN --mount=type=secret,id=<key>` (for example `NPM_TOKEN`), and nothing is stored in the image |
 | `build.kube-dc.com/preview-database` | optional: a plan such as `postgresql-development`; every preview gets a new, empty database (see [Databases in previews](#databases-in-previews)) |

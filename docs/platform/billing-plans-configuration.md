@@ -33,9 +33,11 @@ billing configuration.
 | `stripe` | Full Stripe integration: checkout sessions, webhooks, customer portal, subscription CRUD. |
 | `whmcs` | WHMCS is the billing system of record. The shipped provisioning module sends signed create, change, suspend, unsuspend, and terminate events; purchase actions stay in WHMCS rather than the Kube-DC console. |
 
-Pay-as-you-go billing is a separate, per-installation switch
-(`billing.payg.enabled`, off by default) and is independent of the provider
-above. See [PAYG billing (optional)](payg-billing.md).
+Pay-as-you-go (PAYG) billing is a separate, per-installation switch, off by
+default. In a Fleet installation, `kube-dc bootstrap init --payg` sets it as
+`PAYG_ENABLED`, and the chart value is `billing.payg.enabled`. PAYG requires
+the `stripe` or `whmcs` provider. The CLI refuses `--payg` with `none`. See
+[PAYG billing (optional)](payg-billing.md).
 
 When the active provider is `none`:
 - `GET /api/billing/config` returns `{ provider: "none", features: { quotas: true, checkout: false, portal: false, ... } }`

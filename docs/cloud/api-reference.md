@@ -12,8 +12,8 @@ organization's projects, users and billing.
 
 ## Open the API reference
 
-The API reference is at [backend.kube-dc.cloud](https://backend.kube-dc.cloud/).
-On another Kube-DC installation, it is at `https://backend.<domain>/`.
+The API reference is at `https://backend.<domain>/`. Replace `<domain>` with
+the Kube-DC domain your provider gives you.
 
 The reference lists every operation with its parameters, request and response
 examples, and errors. Its introduction explains authentication, permissions,
@@ -21,8 +21,8 @@ errors and paging, and its **Changelog** lists changes to the API, with
 breaking changes marked.
 
 The machine-readable OpenAPI description is at
-[/api-docs.json](https://backend.kube-dc.cloud/api-docs.json), for generating
-clients or importing into tools such as Postman.
+`https://backend.<domain>/api-docs.json`. Use it to generate clients or to
+import the API into tools such as Postman.
 
 ## Try requests in the browser
 
@@ -41,15 +41,16 @@ Get a token with the `kube-dc` CLI (see [CLI and kubeconfig](cli-kubeconfig.md))
 then send it as a bearer token:
 
 ```bash
-kube-dc login --domain kube-dc.cloud --org acme
-TOKEN=$(kube-dc credential --server https://kube-api.kube-dc.cloud:6443 --realm acme | jq -r .status.token)
-API=https://backend.kube-dc.cloud/api
+kube-dc login --domain example.com --org acme
+TOKEN=$(kube-dc credential --server https://kube-api.example.com:6443 --realm acme | jq -r .status.token)
+API=https://backend.example.com/api
 
 # List the virtual machines of project "web"
 curl -H "Authorization: Bearer $TOKEN" $API/virtual-machines/acme-web/vms
 ```
 
-Most paths take the project namespace, `<organization>-<project>` (here
+Replace `example.com` with your Kube-DC domain and `acme` with your
+Organization ID. Most paths take the project namespace, `<organization>-<project>` (here
 `acme-web`). Tokens are short-lived; run `kube-dc credential` again for a fresh
 one when a request returns 401.
 

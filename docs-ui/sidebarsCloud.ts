@@ -54,6 +54,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'deploy-from-github',
+          label: 'Deploy from GitHub',
+        },
+        {
+          type: 'doc',
           id: 'rollback',
           label: 'Roll Back an Application',
         },
@@ -143,6 +148,7 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-clickhouse', label: 'ClickHouse'},
         {type: 'doc', id: 'managed-services-kafka', label: 'Kafka'},
         {type: 'doc', id: 'managed-services-rabbitmq', label: 'RabbitMQ'},
+        {type: 'doc', id: 'managed-services-opensearch', label: 'OpenSearch'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
       ],
     },

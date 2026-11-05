@@ -55,10 +55,9 @@ login available, neither the disk nor its new size was checked inside the guest.
 That needs package-repository egress from the project network and takes from a few
 seconds (Alpine `apk`) to about a minute (`apt-get update`). A cluster that does not
 publish baked artifacts serves the plain mirror image, so the Ubuntu, Debian, CentOS
-Stream, Fedora and openSUSE families get the agent at first boot there. In chart
-v0.9.11-rc.15 and earlier the openSUSE entry ran `apt-get`, which openSUSE does not
-have, so an openSUSE VM from the plain image got no agent. The entry now uses
-`zypper`, like the bake recipe. The matrix row was measured with the baked image. Talos and the
+Stream, Fedora and openSUSE families get the agent at first boot there. The
+openSUSE entry installs it with `zypper`, like the bake recipe. The matrix row was
+measured with the baked image. Talos and the
 Windows golden image include the agent. Gentoo and CirrOS have none (below).
 
 ### Why a capability is missing
@@ -109,7 +108,7 @@ first; only when there is no VMI does it read the VM:
 
 | State, checked in this order | HTTP | `reason` |
 |---|---|---|
-| no VMI, and the VM does not exist either | 404 | — |
+| no VMI, and the VM does not exist either | 404 | None |
 | no VMI for an existing VM, or the VMI is not `Running` | 409 | `VMNotRunning` |
 | `Paused=True` | 409 | `VMPaused` |
 | no `AgentConnected=True` | 409 | `GuestAgentNotConnected` (with `agentConnected: false`) |

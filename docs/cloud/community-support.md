@@ -1,8 +1,7 @@
 # Community and support
 
-Use community channels for general questions and the support contact associated
-with your account for private, billing, availability, or security-sensitive
-issues.
+Use community channels for general questions. For private, billing,
+availability, or security-sensitive issues, contact your provider's support.
 
 ## Help yourself first
 
@@ -33,10 +32,11 @@ tokens, Secret values, kubeconfigs, and customer information.
 
 ## Contact support
 
-For account-specific help, use the support channel included with your
-subscription or email [support@kube-dc.com](mailto:support@kube-dc.com).
-Your subscription or support agreement defines the response targets and the
-coverage. This page does not add a service-level agreement.
+For account-specific help, contact your provider's support. To open it from
+the console, open the account menu in the top right corner and select **Human
+Help**. Your provider configures where this link goes. Your agreement with
+your provider defines the response targets and the coverage. This page does
+not add a service-level agreement.
 
 Include:
 
@@ -58,10 +58,10 @@ channel when needed.
 |---------|--------------|
 | How-to or design question | Documentation, Discussions, or Slack |
 | Reproducible public-component bug | GitHub Issues |
-| Billing or subscription | Account support |
-| Production availability | Account support |
-| Suspected security vulnerability | Private support channel; do not open a public issue |
-| Feature idea | GitHub Discussions or account contact |
+| Billing or subscription | Your provider's support |
+| Production availability | Your provider's support |
+| Suspected security vulnerability | Your provider's private support channel; do not open a public issue |
+| Feature idea | GitHub Discussions or your provider's support |
 
 ## Contributions
 

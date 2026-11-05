@@ -168,11 +168,11 @@ flowchart LR
 
 ---
 
-## Network MTU (1400)
+## Network MTU
 
-Kube-DC Cloud Project networks use an encapsulated overlay, so the usable MTU inside a project is **1400 bytes**, not the 1500 you may be used to. Kube-DC configures your VMs and pods with this value. A VM's interface picks up 1400 over DHCP, and pods get it from the network plugin. You normally never need to think about it.
+Project networks use an encapsulated overlay, so the usable MTU inside a Project is smaller than the 1500 bytes you may expect. The default is **1400 bytes**, and your provider can set another value. Kube-DC configures your VMs and Pods with the value of your installation: a VM's interface gets it over DHCP, and Pods get it from the network plugin.
 
-Self-managed installations may use a different overlay MTU. Check the workload interface with `ip link show` and use your installation's actual value before hard-coding runtime settings.
+Before you hard-code an MTU in a runtime setting, check the workload interface with `ip link show` and use the value it reports.
 
 **The exception is software that assumes 1500 and does not inherit the MTU from its host. Docker is the most common case.** If you install Docker inside a VM, Docker creates its default bridge with an MTU of 1500. Containers on that bridge then send packets too large for the 1400 network, and those packets are silently dropped.
 
@@ -231,15 +231,17 @@ Other container runtimes take the same setting: Podman uses `mtu` in its network
 
 ## Manage networking in the console
 
-The Console UI provides a **Networking** section with three tabs for managing network resources:
+The Console UI provides a **Networking** section with five tabs for managing network resources:
 
 ![Network Management UI](images/network-mgmt.png)
 
 - **External IPs**: view and create EIPs, see network type (Cloud/Public), ownership, and status
 - **Floating IPs**: manage FIP-to-VM mappings
 - **Load Balancers**: view LoadBalancer services and their endpoints
+- **Datacenter VLANs**: attach workloads to a physical datacenter network segment. See [Datacenter VLANs](datacenter-vlans.md).
+- **Routed Networks**: connect the Project VPC to approved external destinations. See [Routed networks](routed-networks.md).
 
-Use the **+ Create External IP** button to allocate a new EIP for your project.
+Use the **Create External IP** button to allocate an EIP for your project.
 
 ---
 

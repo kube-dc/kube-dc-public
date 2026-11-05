@@ -11,8 +11,8 @@ their usage. It does this through the Kubernetes API of the installation, as a
 `platform.kube-dc.com/v1alpha1`. There is no separate provider API or API key:
 Kubernetes RBAC and admission policy decide what the portal may do.
 
-The PHP SDK (`kube-dc/platform-sdk`, `sdk/platform-sdk/` in the repository)
-wraps all of it.
+The PHP SDK (`kube-dc/platform-sdk`) wraps all of it. Kube-DC delivers the
+SDK as an archive, not through a package registry.
 
 ## What the portal can do
 
@@ -50,7 +50,7 @@ platformApi:
 Then, in the admin console, open **Provisioning API** (superadmin):
 
 1. **New client**: choose a client id (for example, `partner-portal`), the
-   organization prefix (for example, `wd`) and the grants. Creating organizations is
+   organization prefix (for example, `acme`) and the grants. Creating organizations is
    always included; `users`, `consolelogins`, `organizationusages` and `plans`
    are separate, so creating organizations does not imply signing users in or
    reading usage. The page creates the Keycloak master-realm client (client
@@ -72,7 +72,7 @@ enabling, disabling and rotating the secret:
 ```yaml
 platformMachines:
   - clientId: partner-portal
-    prefix: wd
+    prefix: acme
     grants: [users, consolelogins, organizationusages, plans]
 ```
 

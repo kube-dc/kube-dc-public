@@ -50,7 +50,7 @@ The diagram below shows a KubeVirt-backed example for Project `production`, whos
 
 ## Before you begin
 
-- A Kube-DC Cloud [Project](first-project.md) with sufficient resource quota
+- A Kube-DC [Project](first-project.md) with sufficient resource quota
 - For kubectl access: [kubeconfig configured](cli-kubeconfig.md) for the platform Project
 
 ## Managed Clusters view
@@ -71,8 +71,8 @@ The console provides a guided 5-step wizard.
   - `1`: Development
   - `2`: High Availability
   - `3`: Production
-- **Expose API endpoint externally (through TLSRoute)**: Check this to make the API reachable from outside the cluster network (for example, `https://dev-cp-acme-production.kube-dc.cloud:443`).
-- **Enable etcd encryption at rest**: Encrypt supported API resources with a Project KMS key.
+- **Public HTTPS API endpoint**: Check this to make the API reachable from outside the cluster network (for example, `https://dev-cp-acme-production.example.com:443`).
+- **Encrypt etcd at rest with OpenBao KMS**: Encrypt supported API resources with a Project KMS key.
 
 ### Step 2: Datastore configuration
 
@@ -259,9 +259,8 @@ Rules:
 
 Rotation creates a new Transit key version. Old key versions stay
 alive, and historic Secrets and backups stay decryptable indefinitely.
-Bulk re-wrap of existing rows is not done automatically (each row
-re-wraps on next Update); a CLI-driven sweep is planned for a future
-release.
+The platform does not re-wrap existing rows in bulk. Each row re-wraps
+on its next update.
 
 Status:
 
@@ -305,7 +304,7 @@ kubectl get kdccluster -n acme-production -w
 
 # Example output:
 # NAME   VERSION   PHASE   ENDPOINT                                        DATASTORE   AGE
-# dev    v1.35.0   Ready   https://dev-cp-acme-production.kube-dc.cloud:443     dev-etcd    5m
+# dev    v1.35.0   Ready   https://dev-cp-acme-production.example.com:443     dev-etcd    5m
 
 # Check datastore status
 kubectl get kdcclusterdatastores -n acme-production
@@ -329,7 +328,7 @@ The cluster detail page shows:
 
 - **Phase**: Current state (Ready)
 - **Control Plane**: Replicas and health status
-- **API Endpoint**: The external URL (for example, `https://dev-cp-acme-production.kube-dc.cloud:443`)
+- **API Endpoint**: The external URL (for example, `https://dev-cp-acme-production.example.com:443`)
 - **DataStore**: etcd name and type (Shared/Dedicated)
 - **Worker Pools**: Number of pools and total workers
 - Tabs for **Summary**, **Workers**, **Network**, and **YAML** views

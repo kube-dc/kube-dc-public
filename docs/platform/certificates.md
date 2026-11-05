@@ -8,9 +8,10 @@ This is about the certificate the platform **serves**. For trusting a private
 CA on the *outbound* side (the manager and backend calling Keycloak, OpenBao or
 S3 over TLS), see [private-CA enterprise install](private-ca-enterprise-install.md).
 
-## Three modes
+## Certificate modes
 
-`TLS_MODE` in `clusters/<name>/cluster-config.env` records the choice.
+`TLS_MODE` in `clusters/<name>/cluster-config.env` records the choice. The
+platform supports four modes:
 
 | Mode | What issues the certificate | Use when |
 |---|---|---|

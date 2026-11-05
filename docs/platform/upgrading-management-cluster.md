@@ -12,15 +12,16 @@ versions.
 ## Why SUC
 
 SUC turns a node-by-node RKE2 upgrade into a declarative `Plan`: you label the
-nodes, set a target version, and the controller **cordons → upgrades → uncordons**
-each node in a controlled, serialized order. This replaces error-prone manual
+nodes, set a target version, and the controller cordons, drains, upgrades, and
+uncordons each node in a controlled, serialized order. This replaces error-prone manual
 `curl … | INSTALL_RKE2_VERSION=… sh` runs and keeps the fleet consistent.
 
 ## Hard constraints: read these first
 
 | Constraint | What it means for you |
 |---|---|
-| **No minor-version skipping** | Kubernetes does not support jumping the control plane more than one minor at a time. Upgrade **one minor per pass** (for example, `1.32 → 1.33 → 1.34`), not straight to the target. |
+| **No minor-version skipping** | Kubernetes does not support jumping the control plane more than one minor at a time. Upgrade **one minor per pass** (for example, `1.35 → 1.36`, then `1.36 → 1.37`), not straight to the target. |
+| **Drain before rke2 restarts** | No KubeVirt VM may run on a node while rke2 restarts on it. Every Plan on this page drains the node first. See [KubeVirt VMs and the drain rule](#kubevirt-vms-and-the-drain-rule). |
 | **No downgrade** | RKE2 cannot be rolled back. If a pass breaks the API server or CNI, there is no easy recovery. **Validate every pass before the next.** |
 | **CNI / KubeVirt support windows** | Kube-OVN and KubeVirt are each certified against a range of Kubernetes versions. Before targeting a brand-new minor, confirm your installed Kube-OVN and KubeVirt versions support it. Don't outrun your data-plane. |
 | **Single control-plane** | If the cluster has one server node, its RKE2 restart is a brief (~1–2 min) full API-server outage per pass. Plan for it. |
@@ -56,14 +57,42 @@ Run these before you start. They prevent the most common mid-upgrade stalls:
 
 ### 1. Install the controller (once per cluster)
 
-Vendor the SUC release manifests (`crd.yaml` + `system-upgrade-controller.yaml`)
-into your GitOps repo and apply them. In a Kube-DC fleet this is an
-`infrastructure/system-upgrade-controller/` kustomization wired as its own Flux
-`Kustomization`. The controller runs in the `system-upgrade` namespace and does
+The fleet starter ships the controller as the shared component
+`infrastructure/system-upgrade-controller/`. Its kustomization applies only
+the SUC v0.19.2 controller and the `Plan` CRD. Do not use
+`plans/rke2-upgrade-plans.yaml` from that directory: its Plans do not drain the
+node. Use the Plans on this page instead. `bootstrap init` does not wire
+this component, so you add it to your cluster yourself. Do not edit the shared
+tree. Reference it from your cluster directory instead.
+
+Create `clusters/<name>/system-upgrade.yaml` with this Flux `Kustomization`:
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-system-upgrade
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-cni
+  interval: 30m
+  retryInterval: 5m
+  timeout: 5m
+  path: ./infrastructure/system-upgrade-controller
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+```
+
+`<name>` is your cluster name. Add `system-upgrade.yaml` to the `resources:`
+list in `clusters/<name>/kustomization.yaml`, then commit and push. After Flux
+reconciles, the controller runs in the `system-upgrade` namespace. It does
 nothing until a `Plan` exists.
 
 > Keep the **controller** in GitOps, but apply the **upgrade `Plan`s by hand**.
-> a GitOps-managed Plan would re-apply on every reconcile and could re-run.
+> A GitOps-managed Plan would re-apply on every reconcile and could re-run.
 
 ### 2. Opt nodes in
 
@@ -76,7 +105,11 @@ kubectl label node <all-nodes> rke2-upgrade=true --overwrite
 There are two Plans, one for the control plane (`rke2-server`) and one for workers
 (`rke2-agent`). The agent Plan's `prepare` step blocks until the server Plan
 finishes, so the control plane always upgrades first. Both use
-`concurrency: 1` (one node at a time).
+`concurrency: 1` (one node at a time), and both drain each node before the
+upgrade. The example starts from the `v1.35.9+rke2r1` baseline that
+`kube-dc bootstrap install` installs, so the first pass targets 1.36.
+
+Save the Plans as `rke2-upgrade-plans.yaml`:
 
 ```yaml
 apiVersion: upgrade.cattle.io/v1
@@ -85,6 +118,7 @@ metadata: { name: rke2-server, namespace: system-upgrade }
 spec:
   concurrency: 1
   cordon: true
+  drain: { ignoreDaemonSets: true, deleteEmptydirData: true, force: true, skipWaitForDeleteTimeout: 60 }
   nodeSelector:
     matchExpressions:
       - { key: rke2-upgrade, operator: In, values: ["true"] }
@@ -92,7 +126,7 @@ spec:
   serviceAccountName: system-upgrade
   tolerations: [ { operator: Exists } ]
   upgrade: { image: rancher/rke2-upgrade }
-  version: v1.33.12+rke2r2          # <-- next minor, not the final target
+  version: v1.36.3+rke2r1           # <-- next minor, not the final target
 ---
 apiVersion: upgrade.cattle.io/v1
 kind: Plan
@@ -100,6 +134,7 @@ metadata: { name: rke2-agent, namespace: system-upgrade }
 spec:
   concurrency: 1
   cordon: true
+  drain: { ignoreDaemonSets: true, deleteEmptydirData: true, force: true, skipWaitForDeleteTimeout: 60 }
   nodeSelector:
     matchExpressions:
       - { key: rke2-upgrade, operator: In, values: ["true"] }
@@ -108,8 +143,10 @@ spec:
   tolerations: [ { operator: Exists } ]
   prepare: { args: ["prepare", "rke2-server"], image: rancher/rke2-upgrade }
   upgrade: { image: rancher/rke2-upgrade }
-  version: v1.33.12+rke2r2
+  version: v1.36.3+rke2r1
 ```
+
+Apply the Plans:
 
 ```bash
 kubectl apply -f rke2-upgrade-plans.yaml
@@ -124,14 +161,16 @@ kubectl get nodes -o wide        # kubeletVersion flips per node as each finishe
 ```
 
 Nodes cycle `Ready,SchedulingDisabled` → `NotReady` (brief) → `Ready`. The
-controller uncordons each node when its job succeeds.
+drain runs while the node is `SchedulingDisabled`. A drain waits while a
+PodDisruptionBudget refuses an eviction. The controller uncordons each node
+when its job succeeds.
 
 ### 5. Validate before the next minor
 
 ```bash
 kubectl get nodes                                   # all Ready, all on the new minor
 kubectl -n kube-system get pods | grep -E 'kube-ovn|ovs|multus'   # CNI healthy
-kubectl get vmi -A                                  # VMs still Running
+kubectl get vmi -A                                  # VMs Running again
 kubectl get pods -A | grep -vE 'Running|Completed'  # nothing stuck
 ```
 
@@ -139,31 +178,38 @@ If it is healthy, advance both Plans to the next minor. SUC re-runs, because the
 version hash changes:
 
 ```bash
-NEXT=v1.34.8+rke2r2
+NEXT=<next-version>
 kubectl -n system-upgrade patch plan rke2-server --type=merge -p "{\"spec\":{\"version\":\"$NEXT\"}}"
 kubectl -n system-upgrade patch plan rke2-agent  --type=merge -p "{\"spec\":{\"version\":\"$NEXT\"}}"
 ```
 
-Repeat until you reach the final target. When done, you can clear the target:
+`<next-version>` is an RKE2 release of the next minor from the `stable`
+channel. Repeat until you reach the final target. When done, you can clear the target:
 
 ```bash
 kubectl -n system-upgrade delete plan rke2-server rke2-agent
 ```
 
-## KubeVirt VMs: cordon-only compared with drain
+## KubeVirt VMs and the drain rule
 
-The example Plans above are **cordon-only** (no `drain:`). This is the right
-default when VMs are **not** live-migratable (`evictionStrategy: None`): a drain
-would evict their `virt-launcher` pods and stop the VMs, whereas cordon-only
-leaves the containerd-managed VM pods running across the in-place rke2 restart
-(`rke2-upgrade` swaps the binary, it does not reboot the host).
+Drain a node before rke2 restarts on it, so that no KubeVirt VM runs there.
+This rule is mandatory. Do not remove the `drain:` field from the Plans.
+Restarting rke2 under running VMs hard-kills QEMU. It can also race the CSI
+node plugin into unmapping an RBD device under a live mount, and the node can
+wedge hours later. For the failure signature and the recovery, see
+[Base install with kube-dc commands only](private-ca-enterprise-install.md#1-base-install-with-kube-dc-commands-only)
+in the enterprise install guide.
 
-If your VMs **are** live-migratable, add a drain to the agent Plan for a cleaner
-roll:
+The drain treats VMs by their eviction strategy:
 
-```yaml
-  drain: { force: true, skipWaitForDeleteTimeout: 60 }
-```
+- **`evictionStrategy: LiveMigrate`**: the drain live-migrates the VM to
+  another node. The Project needs free CPU quota for the second copy during
+  the migration. See [VM storage tiers](vm-storage-tiers.md).
+- **No live migration**: the drain evicts the `virt-launcher` pod, and the VM
+  stops. A VM with `runStrategy: Always` starts again on another node.
+
+To control when a VM that cannot migrate goes down, stop it before the pass and
+start it after the node is `Ready`.
 
 ## If a node's upgrade job won't schedule
 

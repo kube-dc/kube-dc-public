@@ -1,14 +1,20 @@
 # Windows 11 VM setup: operator guide for building the golden
 
+This page is for platform operators who build the Windows 11 golden image by
+hand. After you read it, you can install a Windows 11 VM, prepare it, seal it
+with Sysprep, and export it as a golden image that tenants clone. The supported
+way to produce the Windows golden image is the automated bake in
+[OS-image operations](os-image-operations.md#producer-2-windows-bake). Use this manual procedure only
+when you cannot run the automated bake.
+
 ## The QEMU guest agent is REQUIRED (not optional)
 
 Install `qemu-guest-agent` in the golden **before** sysprep/export, and verify it
 after: KubeVirt injects the Project's SSH public key *through* the agent and reads
 `guestOSInfo` from it. A golden without a running agent still boots and serves
-RDP, but **Project key injection silently does nothing**. This is exactly the
-defect the 2026-07-31 gate run found in the previously published golden.
+RDP, but **Project key injection silently does nothing**.
 
-In the commands below, replace `<backing-namespace>` with the generated `{organization}-{project}` namespace for the operator Project used to build and validate the image.
+In the commands below, replace `<backing-namespace>` with the generated `<organization>-<project>` namespace for the operator Project used to build and validate the image.
 
 Verify before publishing (must print `AgentConnected ... True`):
 
@@ -348,7 +354,7 @@ PowerShell -ExecutionPolicy Bypass -Command "Invoke-Expression (Invoke-WebReques
 # 1. Inside the Windows VM, run Sysprep. REQUIRED, not optional.
 #    Microsoft requires generalization before an installation is cloned to other
 #    machines: without it every cloned VM inherits the same machine SID/identity
-#    and the image is unsupported (codex review HIGH).
+#    and the image is unsupported.
 # Navigate to: C:\Windows\System32\Sysprep\sysprep.exe
 # Options: Generalize, Enter System Out-of-Box Experience (OOBE), Shutdown
 

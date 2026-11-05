@@ -13,7 +13,7 @@ those images into something a tenant can boot in seconds.
 
 ## The two halves, and why both exist
 
-**The mirror** copies upstream OS images into our own S3 bucket (`cdi-os-images`) on a
+**The mirror** copies upstream OS images into the platform's own S3 bucket (`cdi-os-images`) on a
 schedule and rebuilds the catalog the UI dropdown reads. It exists so that creating a VM
 never depends on quay.io or a distro mirror being up, so restricted and air-gapped
 installs work at all.
@@ -67,8 +67,8 @@ network boundary, and every cluster converges on an equivalent result.
 
 ## Producer 2: Windows (bake)
 
-Microsoft does not publish a cloud image. There is only an installer ISO, so we
-manufacture the equivalent: boot a VM, run Setup unattended, install the guest agent,
+Microsoft does not publish a cloud image. There is only an installer ISO, so the
+bake manufactures the equivalent: boot a VM, run Setup unattended, install the guest agent,
 OpenSSH and cloudbase-init, then `sysprep /generalize /oobe /shutdown`.
 
 ```
@@ -107,7 +107,7 @@ refresh build; it is deliberately absent otherwise.
 
 ### Bake on fast storage only
 
-Measured 2026-08-09: on SSD/NVMe-backed Ceph the bake takes **~2h20m** (~90m WIM apply,
+On SSD/NVMe-backed Ceph the bake takes **~2h20m** (~90m WIM apply,
 ~25m specialize, ~20m in-guest bootstrap). On an HDD-backed cluster the same bake ran at
 roughly **1% per 40 minutes**: days, not hours, because a Windows install is
 small-random-write heavy.
@@ -170,7 +170,8 @@ spec:
 ```
 
 Then snapshot that PVC with the contract labels above. Name goldens **versioned**
-(`golden-windows-11-golden-2026-08-09`) so a new one can sit beside the incumbent.
+(`golden-windows-11-golden-<date>`) so a candidate can sit beside the incumbent.
+`<date>` is the build date.
 
 > **BYOL.** The Windows golden carries **no `<ProductKey>`**. It is an unactivated
 > Enterprise Evaluation install, and cloudbase-init lets a tenant apply their own licence.
@@ -178,10 +179,10 @@ Then snapshot that PVC with the contract labels above. Name goldens **versioned*
 > anonymously readable bucket.
 >
 > **The `private/` prefix is NOT that protection.** It is a naming convention and
-> nothing more. Verified 2026-08-27 on `s3.stage.kube-dc.com`: an anonymous `GET` of
-> `private/windows/11/<date>/windows11-x64-golden.qcow2` returned HTTP 200 with the
-> full 7.3 GB body. The bucket is public-read throughout, so exporting a licensed
-> image "to the private prefix" publishes it to the world. Licensed media needs a
+> nothing more. An anonymous `GET` of
+> `private/windows/11/<date>/windows11-x64-golden.qcow2` returns the full object.
+> The bucket is public-read throughout, so exporting a licensed image "to the
+> private prefix" publishes it to the world. Licensed media needs a
 > bucket whose policy actually denies anonymous reads, imported with a CDI
 > `secretRef`. Beware that a Rook OBC drops a hand-applied bucket policy on
 > reconcile.
@@ -210,8 +211,9 @@ plus a namespaced `VolumeSnapshot` bound to it.
 ## Promotion: prefer a GoldenImageSelection
 
 `GoldenImageSelection` names the one golden a family serves. It exists because the
-`kube-dc.com/golden-active` label **cannot express a promotion atomically**. See the
-section below for what each intermediate state actually does. One object per
+`kube-dc.com/golden-active` label **cannot express a promotion atomically**. For what
+each intermediate state does, see
+[Promotion through the golden-active label (legacy)](#promotion-through-the-golden-active-label-legacy). One object per
 (family, mode) makes promotion a single reviewed write, and makes "which image is this
 cluster serving?" answerable from Git rather than from labels somebody has to remember
 to move in the right order.
@@ -249,33 +251,30 @@ either order without breaking golden seeding.
 
 ## Promotion through the golden-active label (legacy)
 
-Goldens are selected by `kube-dc.com/golden-active`. Exactly one per family may carry
-`"true"`. `activeGoldenConflicts()` rejects more, and `preferActive()` sorts an active
-golden ahead of the rest.
+Without a GoldenImageSelection, goldens are selected by `kube-dc.com/golden-active`.
+Exactly one per family may carry `"true"`. The Project controller reports more than one
+as a conflict, and sorts an active golden ahead of the rest.
 
 With **two goldens in a family and neither active**, selection falls back to list order
 rather than intent. That is safe (the incumbent keeps serving) but it is ambiguous, and it
 is the reason the label exists. Set it deliberately, only after the gate passes.
 
-**Neither intermediate state is safe, and no ordering makes one safe.** Read what the
-code actually does (`internal/project/res_golden_snapshots.go`) before trusting any
-sequence:
+**Neither intermediate state is safe, and no ordering makes one safe.** The two
+intermediate states behave like this:
 
-- **Zero active.** `preferActive()` is a `sort.SliceStable`, so with nothing labelled it
-  preserves *API list order*, which is not a selection contract. Projects seed from
-  whichever sibling the API returned first, and **no error is raised**. Silent and
-  arbitrary.
-- **Two active.** `activeGoldenConflicts()` produces an error, but the caller only
-  *appends it to a list* and the loop keeps going: seeding still proceeds, against an
-  arbitrary one of the two. Earlier revisions of this guide claimed seeding "fails for
-  the whole family" here. It does not.
+- **Zero active.** The sort is stable, so with nothing labeled it preserves *API list
+  order*, which is not a selection contract. Projects seed from whichever sibling the API
+  returned first, and **no error is raised**. Silent and arbitrary.
+- **Two active.** The controller records a conflict error, but seeding still proceeds
+  against an arbitrary one of the two. Seeding does not fail for the whole family.
 
 So the two states differ in whether anyone is told, not in whether the right image is
 chosen. Run the two commands back to back, then verify each project resolved to the
 handle you intended rather than assuming the sequence protected you.
 
-> The durable fix is a single Git-owned pointer per (family, mode) naming the chosen
-> snapshot, so promotion is one write with no intermediate state.
+> A GoldenImageSelection avoids both states: it is a single Git-owned pointer per
+> (family, mode) naming the chosen snapshot, so promotion is one write with no
+> intermediate state. See [Promotion: prefer a GoldenImageSelection](#promotion-prefer-a-goldenimageselection).
 
 ```bash
 # 1. stand down the incumbent (the family is briefly unlabeled: arbitrary AND silent; keep this window short)
@@ -321,17 +320,17 @@ pre-start expansion of image /var/run/kubevirt-private/vmi-disks/rootdisk/disk.i
 That log line is the quickest way to confirm the gate is doing its job.
 
 **Link 2, the WinRE partition.** Windows Setup appends a ~600 MB Recovery partition at
-the END of the disk, *after* `C:`, even though our answer file only asks for
+the END of the disk, *after* `C:`, even though the answer file only asks for
 EFI + MSR + C:(Extend). Windows cannot extend a partition past a following one, so that
 600 MB in the wrong place strands every byte beyond it, permanently, on every clone.
-The bake now runs `reagentc /disable` (moving WinRE into `C:\Windows\System32\Recovery`,
+The bake runs `reagentc /disable` (moving WinRE into `C:\Windows\System32\Recovery`,
 so this costs the recovery *image*, not the recovery *feature*) and deletes the
 partition before sysprep.
 
 **Link 3, `ExtendVolumesPlugin`.** Already in the golden's plugin list, in both the
 unattend and service passes, with `volumes_to_extend` unset so it extends every volume.
 
-Verified end-to-end on stage 2026-08-28, a v13 golden cloned into a 100Gi PVC:
+For example, a v13 golden cloned into a 100Gi PVC reports these sizes:
 
 ```
 golden C:      66.6 GB
@@ -341,8 +340,8 @@ guest  C:      98.1 GB      <- after all three links
 > **local-path caveat.** That provisioner does not enforce PVC size, so with
 > `ExpandDisks` on, a guest can grow its image toward a request the node cannot
 > satisfy. The image is sparse (nothing is allocated up front) and the ceiling is what
-> the customer asked for, but this is the same class of exposure as the 2026-06-12
-> node-disk outage. Watch it on local-path-backed VMs specifically.
+> the customer asked for, but a guest that grows can still fill the node disk. Watch
+> it on local-path-backed VMs specifically.
 
 ## Operational traps
 
@@ -375,21 +374,3 @@ marks all pools full, and then released PVs *cannot* self-delete, because freein
 needs metadata writes that the full flag blocks. Break the deadlock by raising
 `full-ratio` to 0.97, deleting the released PVs, then **restoring 0.95/0.90 in the same
 session**.
-
-## Current state (2026-08-09)
-
-**Verified end-to-end:** the remastered ISO boots into Setup with zero keypresses on two
-different clusters; disk-first boot order survives Setup's reboots; offline Win32-OpenSSH
-installs in ~1 minute without touching Windows Update; `PreventDeviceEncryption` keeps the
-volume NTFS; the bake seals itself and the seal verifies offline; export → cross-cluster
-ship → import → snapshot works and produces a byte-identical 6.35 GiB artifact; a clone of
-the candidate provisions instantly and boots to a connected guest agent reporting
-Windows 11 build 26100.
-
-**Open:** the clone gate fails at PHASE 1 because RDP 3389 never answered within 45
-minutes. The gate reports this as "genuine boot failure", which is wrong here. The
-guest agent connected on the same VM, so Windows did boot. Either RDP is not coming up in
-the image or it is not reachable from where the gate probes; until that is resolved
-**nothing has been promoted** and the incumbent golden still serves every project. The
-gate should also check the agent before RDP, since the agent is the stronger and faster
-boot proof.

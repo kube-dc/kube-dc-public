@@ -36,14 +36,13 @@ dependency to understand for restricted-egress clusters:
   source at all. This is the "green install, VM will not boot" trap.
 
 On a restricted-egress cluster, **object storage is not optional**. It is the
-substrate the image planes stand on. The installer now verifies the raw OSD
+substrate the image planes stand on. The installer verifies that the raw OSD
 block devices exist and are empty before install, precisely because a
 silently failed OSD takes object storage down, and with it both image planes.
 
-> **Known limitation.** There is no object-storage-free image route today: a
-> local-path-backed golden-image path (for clusters that run VMs without Rook)
-> is tracked as a follow-up, not shipped. Until then, a VM-capable
-> restricted-egress cluster needs a working RGW.
+> **Known limitation.** There is no image route without object storage. A
+> VM-capable restricted-egress cluster needs a working RGW, even if its VMs
+> use local-path storage.
 
 ## Tenant internet egress still needs a live gateway
 

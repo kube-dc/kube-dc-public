@@ -29,9 +29,9 @@ flowchart TB
   end
 
   subgraph API["Kubernetes API"]
-    ProductCRDs["Organization and Project CRDs<br/>Organization, Project, OrganizationGroup"]
-    NetworkCRDs["Network CRDs<br/>EIp, FIp"]
-    SecurityCRDs["Security CRDs<br/>ManagedSecret, ManagedCertificate,<br/>KMSKey"]
+    ProductCRDs["Organization and Project CRDs<br/>Organization, Project, OrganizationGroup,<br/>EventWebhook, MachineIdentity, VerifiedDomain, MCPApp"]
+    NetworkCRDs["Network CRDs<br/>EIp, FIp, address reservations,<br/>tenant VLANs, Routed Networks"]
+    SecurityCRDs["Security CRDs<br/>ManagedSecret, ManagedCertificate, KMSKey,<br/>ObjectBucketKeyRotation"]
     CoreResources["Core resources<br/>Service, Secret, ConfigMap, Namespace"]
   end
 
@@ -87,13 +87,24 @@ flowchart TB
 
 ## Controller groups
 
+The kube-dc manager runs these controller groups:
+
 | Controller group | Watches | Main responsibility |
 | --- | --- | --- |
-| Organization and Project controllers | Organizations, Projects, OrganizationGroups | Create backing namespaces, identity mappings, RBAC, default Project networking, quotas, and Project lifecycle state. |
+| Organization and Project controllers | Organizations, Projects, OrganizationGroups | Create backing namespaces, identity mappings, RBAC, default Project networking, quotas, and Project lifecycle state. Project reconciliation also reads GoldenImageSelections to choose which golden image each family seeds from. |
+| Organization integration controllers | EventWebhooks, MachineIdentities, VerifiedDomains, MCPApps | Deliver an Organization's platform-event webhooks, issue non-human Keycloak identities, verify domain ownership with a DNS TXT record, and register AI apps for the hosted MCP endpoint. |
 | Network controllers | EIp and FIp resources, LoadBalancer Services | Allocate and bind external addresses, program Kube-OVN objects, and keep service load balancers attached to the right routers and switches. |
+| Addressing controllers | AddressReservations, AddressArenas, PodIPConflicts | Keep reserved ranges of a Project subnet out of Kube-OVN IPAM, serialize claims on each subnet, and record and remediate Pod addresses that another host already answers for. |
+| Tenant VLAN controllers | FabricSegments, FabricSegmentAllocations, ProjectNetworks | Declare physical segments, offer them to Organizations, and attach Projects to a datacenter VLAN. ProjectNetwork owns the VlanReservation that proves one Project holds a segment. The manager registers these controllers only when the tenant VLAN CRDs are installed. |
+| Routed network controllers | RoutingFabrics, RoutedNetworkAllocations, ProjectRouteAttachments | Define the routing fabric, grant it to Organizations, and connect a Project VPC to a Routed Network. ProjectRouteAttachment owns the generated ProjectRoutingGateway. The manager registers these controllers only when `routedNetwork.enabled` is true and the CRDs are installed. |
 | Platform endpoint controllers | Annotated selectorless platform Services and Nodes | Probe eligible node backends and maintain companion EndpointSlices; charts and Fleet own the VIP, Gateway, routes, and certificates. |
-| Security controllers | ManagedSecrets, ManagedCertificates, KMSKeys, DatabaseCredentialPolicies | Bridge project security resources to OpenBao, cert-manager, projected Kubernetes Secrets, and status rollups. |
+| Security controllers | ManagedSecrets, ManagedCertificates, KMSKeys, ObjectBucketKeyRotations, KdcClusters | Bridge Project security resources to OpenBao, cert-manager, projected Kubernetes Secrets, and status rollups. They rotate object bucket keys and reconcile the OpenBao policy and role for each Managed Cluster's etcd encryption. |
+| Application and infrastructure controllers | Deployments, Secrets, CronJobs, the gateway and trust resources | Record application releases for rollback, restart workloads after a referenced Secret changes, follow application images in CronJobs, maintain the per-Project infra-attachment security group, distribute the platform trust bundle, and issue Gateway TLS certificates through cert-manager (ACME). |
+| Managed-service provider controllers | ServiceDatabaseConnections, ServiceDatabaseRoles, ServicePlaneTrusts | Provider-only records in the managed-services namespace. They hold the OpenBao database connection and roles behind each ServiceBinding, and enroll service runners with OpenBao. |
 | Status aggregation | Project security and platform state | Roll child-resource readiness into higher-level Project and Organization status so operators and UI users see one clear state. |
+
+A ServiceCredentialPolicy is a managed-services resource. The managed services
+hub reconciles it, not the kube-dc manager.
 
 ## Project lifecycle
 
@@ -204,7 +215,7 @@ Kube-OVN owns the low-level routing, NAT, and load-balancer programming.
 ```mermaid
 flowchart TB
   accTitle: Project secret and certificate flow
-  accDescr: Project-scoped managed resources are validated and reconciled to Kubernetes secrets and certificates without exposing platform credentials to Project users.
+  accDescr: Project-scoped managed resources are validated and reconciled to Kubernetes secrets and certificates without exposing platform credentials to Project users. The managed services hub, outside the kube-dc manager, reconciles ServiceCredentialPolicy.
   subgraph ProjectNS["Project<br/>(backing namespace)"]
     MS["ManagedSecret"]
     MC["ManagedCertificate"]
@@ -218,8 +229,11 @@ flowchart TB
     SecretCtl["Secret sync"]
     CertCtl["Certificate sync"]
     KMSCtl["KMS key sync"]
-    DBPolicyCtl["Managed services hub"]
     StatusCtl["Project status aggregation"]
+  end
+
+  subgraph Services["Managed services"]
+    DBPolicyCtl["Managed services hub"]
   end
 
   subgraph Backends["Security backends"]

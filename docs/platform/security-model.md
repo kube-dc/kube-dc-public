@@ -125,7 +125,7 @@ every Organization realm's `kube-dc` client. The manager registers the console
 (`<console_url>/*`), the API reference (`<backend_url>/*`, rendered by the
 chart from the backend hostname) and the CLI's loopback callback
 (`http://localhost:*`, `http://127.0.0.1:*`), and converges existing realms to
-that list — and the client's web origins to the console's origin — on each
+that list (and the client's web origins to the console's origin) on each
 Keycloak sync, so an entry added by hand in Keycloak does not survive. Extras
 must be absolute `http(s)` URIs without user-info; a trailing `*` must follow
 a `/`. A bare `*`, a host-prefix wildcard or another scheme is ignored and
@@ -232,8 +232,8 @@ What that means in practice for an operator:
   engine operator's keys is refused outright; a null selector is left alone
   (in `policy/v1` it matches no pods).
 
-  Two consequences worth knowing. A budget written **before** this shipped is
-  not changed until something updates it. `hack/audit-managed-service-boundary.sh`
+  Two consequences are worth knowing. A budget written **before** the platform
+  installed this rule is not changed until something updates it. `hack/audit-managed-service-boundary.sh`
   lists those and `--apply` narrows them (a compare-and-swap patch; it exits
   non-zero if any budget could not be narrowed, and 2 if it could not audit at
   all). And a GitOps tool that compares live objects against its source sees
@@ -244,16 +244,10 @@ What that means in practice for an operator:
   server-side diff alone does not account for mutating webhooks) as the
   alternative. See [Scaling and performance](/cloud/scaling-performance).
 
-  **Decided 2026-09-05: narrowing stays.** The alternative, REFUSING a budget
-  that lacks the requirements, ends the *mutation* drift, because admission
-  stops adding anything the source did not declare. It does not make desired
-  and live state agree by itself: a rejected apply leaves the old object live
-  and the new one unapplied, which is a different divergence and a louder one.
-  Drift is noise; a broken apply is an incident. Revisit at a major version,
-  and only when both are true: `hack/audit-managed-service-boundary.sh --apply`
-  has been run fleet-wide (live objects), **and** tenant sources have been
-  checked to carry the two requirements (a repaired live object does not fix
-  the manifest that will overwrite it on the next sync).
+  Admission narrows a budget instead of refusing it. Refusal would end the
+  mutation drift, but a refused apply leaves the old object live and the updated
+  one unapplied. That is a louder divergence than drift: drift is noise, a
+  broken apply is an incident.
 - **Protection needs its enforcement.** `projectPolicies.protectManagedServices`
   requires `manager.webhook.enabled` and `Deny` in `validationActions`; the
   chart refuses the contradictory combinations rather than rendering an
@@ -268,24 +262,22 @@ What that means in practice for an operator:
 ### Which managed-service families are supported here
 
 Protection is generic: the platform marks what it manages and the policies key
-on that marker, whatever the engine. Four families ship today: `postgresql`,
-`kafka`, `valkey`, and `forgejo`. All four are supported. Three things are
-**not** generic, and they are what a new family has to be checked against:
+on that marker, whatever the engine. The families an installation offers are
+the ones its catalog publishes. See [Publish the catalog](managed-services-catalog.md).
+Four things are **not** generic, and a family has to be checked against each:
 
-- **The management-API route.** Where Tenant Networking v2 (`infraAttachment`)
-  is enabled, a pod reaches the Kubernetes API only when the platform can prove
-  what it is, and that proof walks a compiled list of engine roots: CNPG
-  `Cluster` and `MariaDB` today. Everything else gets the plain lock.
+- **The management-API route.** Where `manager.infraAttachment` is enabled, a
+  pod reaches the Kubernetes API only when the platform can prove what it is.
+  That proof walks the list of engine roots: CNPG `Cluster` and `MariaDB` by
+  default, plus the roots of registered families. Every other pod gets the
+  plain lock. An ordinary tenant pod lands in the Project's workload security
+  group (from the `manager.infraAttachment.securityGroup` template, for example
+  `infra-lock-<project-namespace>`) and **cannot reach `kubernetes.default` at
+  all**. A managed CNPG engine's pod lands in the `-api-client` variant of that
+  group, which has an extra route.
 
-  This is measured, not theoretical. On the production cluster (2026-09-05, all
-  46 project namespaces opted in): an ordinary tenant pod lands in security
-  group `infra-lock-<project>` and **cannot reach `kubernetes.default` at all**
-  (connection times out; the internet is reachable), while the managed CNPG
-  engine's pod lands in `infra-lock-<project>-api-client` with an extra route.
-
-  A family whose pods consume the Kubernetes API therefore **will not work on
-  such a cluster** until its engine root
-  is in that list.
+  A family whose pods consume the Kubernetes API therefore **does not work on
+  such a cluster** until its engine root is in that list.
 - **Operation CRs and reserved selector keys.** Each engine's own operation
   API is named explicitly in the reference gate (CNPG's `Backup`,
   `ScheduledBackup`, `Publication`, `Subscription`; MariaDB's backup, restore
@@ -295,102 +287,118 @@ on that marker, whatever the engine. Four families ship today: `postgresql`,
 - **Quota attribution.** The same classifier splits a Project's CPU into
   workload and platform overhead; an unclassified engine's pods count as tenant
   workload.
-
 - **Retained-engine identity.** When an instance is retained, its ManagedService
   is gone but its pods must still be classifiable. The runner writes an
   attestation the platform reads from a fixed namespace, and the same engine
-  roots decide what it proves. A family that is retained on a
-  Tenant-Networking-v2 cluster needs the same entry as above.
+  roots decide what it proves. A family that is retained on a cluster where
+  `manager.infraAttachment` is enabled needs the same entry as the
+  management-API route.
 
-**Families are registered per cluster, not compiled in.** From chart v0.6.34
-the manager loads a service-family registry rendered from
-`serviceFamilies.extra` in the chart's values: which engine kinds a pod's owner
-chain may lead to (and through which controller kinds), which operator selector
-keys are reserved, and which operation CRs are gated by their target. CNPG and
-MariaDB are the built-in defaults; adding a family is a values change that
-rolls the manager, not a kube-dc release. Trust is unchanged: every hop is
-still UID-verified and the root still has to carry the platform's marker with
-a ManagedService (or a retained-engine attestation) behind it; the registry
-only says what a chain may look like, and it says so per root: the hops a
-chain walked must all be in the through list of the root it reaches. The
-registry is validated at load (strict decoding, unique roots and operations,
-every through kind guarded by the owner-forgery policy by its resource, label
-references reserved), and a manager whose configured registry file is
-missing or invalid does not start. An operator that creates the children of
-a through kind itself (Strimzi's pod sets) is admitted under that kind by an
-explicit flag, never under Deployments or ReplicaSets, whose children are
-kube-system's. Every identifier and every semantic rule in a family entry
-is validated by the chart before a policy renders and by the manager when
-it loads the file; a family may not claim the platform's own kinds as roots
-or hops. Install the operator before registering the family: at startup
-the manager checks each declared plural against API discovery and refuses
-to start on one the server does not serve as declared; the check repeats
-every minute, and a hop whose mapping stops matching is walked by nobody
-until it matches again. A family also declares its whole API surface: the
-entire group/version of its operations is routed to the reference gate,
-which admits the resources the family lists as passthrough and refuses the
-rest to tenants, so an operation renamed by an operator upgrade is
-unknown, not unguarded, and a new API version of it is refused until the
-registry names it. The family's operator ServiceAccounts are trusted inside
-those groups only at the reference gate; their namespace is, like
-`cnpg-system`, an exempt platform identity for the marker policies and the
-child mutator, derived from the registry so that registering a family is
-the whole of the configuration. Two kinds of trusted owner edge: the
-platform's own kinds and apps/batch workloads through *controller*
-references only (a tenant's garbage-collection reference to their own
-Deployment is theirs), and the engine kinds (CNPG Cluster, MariaDB, and every
-registered family's roots and custom via kinds) through *any* reference,
-because Strimzi owns its pod sets through a non-controller reference to the
-node pool and a tenant has no business referencing a platform engine as an
-owner at all; the classifier follows the same edges. A managed CNPG Cluster's *status* is written by its own
-instance and nobody else: the managed-services policy excludes that
-subresource and the reference gate judges it with UID-verified provenance
-(the instance ServiceAccount marked and owned by the Cluster, the token
-bound to a pod the Cluster owns), because a name alone is something a
-tenant can pre-own. The judge answers on its own webhook path so that an
-older manager pod, during a rolling upgrade, refuses rather than waves the
-write through; the policy stays unchanged in the chart that introduces the
-stanza and excludes the subresource only in the next one, once every
-cluster runs the stanza. The two are separate objects the API server
-caches independently, and a relaxation observed before the stanza would
-admit the write unjudged. CNPG does not adopt a pre-existing ServiceAccount, so a
-tenant may not create one under a name the platform has claimed for an
-engine; an account created before the claim leaves that engine's instance
-refused with the reason named, and it is the platform's job to detect the
-collision before building the engine. The reference gate refuses a tenant
-object that names no engine at all unless the family declared such an object
-inert, and refuses a resource it has no rule for instead of guessing. The
-one surface still written per family in CEL is the per-instance
-ServiceAccount authorization, which only an operator that runs instances
-under a per-instance account needs.
+**Families are registered per cluster, not compiled in.** The manager loads a
+service-family registry rendered from `serviceFamilies.extra` in the chart's
+values. CNPG and MariaDB are the built-in defaults. Adding a family is a values
+change that rolls the manager, not a Kube-DC release. A registry entry declares
+these things:
+
+- which engine kinds a pod's owner chain may lead to, and through which
+  controller kinds;
+- which operator selector keys are reserved;
+- which operation CRs are gated by their target.
+
+Trust is unchanged. Every hop is still UID-verified, and the root still has to
+carry the platform's marker with a ManagedService (or a retained-engine
+attestation) behind it. The registry only says what a chain may look like, and
+it says so per root: the hops a chain walked must all be in the through list of
+the root it reaches.
+
+The registry is validated by these rules:
+
+- The manager decodes it strictly at load. Roots and operations must be unique,
+  every through kind must be guarded by the owner-forgery policy by its
+  resource, and label references must be reserved. A manager whose configured
+  registry file is missing or invalid does not start.
+- The chart validates every identifier and every semantic rule in a family
+  entry before a policy renders. The manager validates them again when it
+  loads the file.
+- A family may not claim the platform's own kinds as roots or hops.
+- An operator that creates the children of a through kind itself (Strimzi's
+  pod sets) is admitted under that kind by an explicit flag. It is never
+  admitted under Deployments or ReplicaSets, whose children are kube-system's.
+
+Install the operator before you register the family. At startup the manager
+checks each declared plural against API discovery and refuses to start on one
+the server does not serve as declared. The check repeats every minute. A hop
+whose mapping stops matching is walked by nobody until it matches again.
+
+A family also declares its whole API surface. The entire group/version of its
+operations is routed to the reference gate. The gate admits the resources the
+family lists as passthrough and refuses the rest to tenants. An operation that
+an operator upgrade renames is therefore unknown, not unguarded, and a later
+API version of it is refused until the registry names it.
+
+The family's operator ServiceAccounts are trusted inside those groups only at
+the reference gate. Their namespace is, like `cnpg-system`, an exempt platform
+identity for the marker policies and the child mutator. The registry derives
+it, so registering a family is the whole of the configuration.
+
+The platform trusts two kinds of owner edge:
+
+- the platform's own kinds and apps/batch workloads, through *controller*
+  references only (a tenant's garbage-collection reference to their own
+  Deployment is theirs);
+- the engine kinds (CNPG Cluster, MariaDB, and every registered family's roots
+  and custom through kinds), through *any* reference, because Strimzi owns its
+  pod sets through a non-controller reference to the node pool, and a tenant
+  has no business referencing a platform engine as an owner.
+
+The classifier follows the same edges.
+
+A managed CNPG Cluster's *status* is written by its own instance and nobody
+else. The managed-services policy excludes that subresource, and the reference
+gate judges it with UID-verified provenance: the instance ServiceAccount is
+marked and owned by the Cluster, and the token is bound to a pod the Cluster
+owns. A name alone is not proof, because a tenant can pre-own a name. The
+judge answers on its own webhook path, so an older manager pod refuses the
+write during a rolling upgrade instead of admitting it. The policy and the
+webhook are separate objects that the API server caches independently. The
+policy excludes the subresource only after every cluster serves the judge,
+because a relaxation observed before the judge exists would admit the write
+unjudged.
+
+CNPG does not adopt a pre-existing ServiceAccount, so a tenant may not create
+one under a name the platform has claimed for an engine. If an account was
+created before the claim, the platform refuses that engine's instance and
+names the reason. The platform must detect the collision before it builds the
+engine.
+
+The reference gate refuses a tenant object that names no engine at all unless
+the family declared such an object inert. It also refuses a resource it has no
+rule for instead of guessing. The one surface still written per family in CEL
+is the per-instance ServiceAccount authorization. Only an operator that runs
+instances under a per-instance account needs it.
 
 **The supported boundary is therefore a conjunction, not one test.** A family
-ships from kube-dc-services alone only if **all** of these hold (clauses 1, 3
-and 4 through a registry entry; clause 2 through a registry entry unless the
-operator needs per-instance authorization):
+ships from the managed-services release alone only if **all** of these hold
+(clauses 1, 3 and 4 through a registry entry; clause 2 through a registry entry
+unless the operator needs per-instance authorization):
 
 1. its engine pods do not need the Kubernetes API *on clusters where
-   `infraAttachment` is enabled* (they may anywhere else);
+   `manager.infraAttachment` is enabled* (they may anywhere else);
 2. it brings no operation CRs of its own that act on the engine, or they are
    already named in the reference gate;
 3. it introduces no selector keys that must be reserved against tenants;
-4. it needs no retained-engine classification on a Tenant-Networking-v2
-   cluster.
+4. it needs no retained-engine classification on a cluster where
+   `manager.infraAttachment` is enabled.
 
-Of the four shipped families, **PostgreSQL is the one proven on a
-Tenant-Networking-v2 cluster**. CNPG is named explicitly, so it satisfies all
-four clauses. `kafka`, `valkey` and `forgejo` satisfy (2), (3) and (4) but are
-**not** in the engine-root list, so clause (1) is open for any of their pods
-that need the Kubernetes API: qualify a family on such a cluster before
-offering it there. Anything that fails a clause is a joint kube-dc +
-kube-dc-services release, not a kube-dc-services-only change. The design that
-would remove the coupling is in
-`docs/prd/service-family-integration-contract.md`; it is deliberately not built
-until a family needs it.
+CNPG is a built-in engine root, so PostgreSQL satisfies all four clauses. For
+every other family, check each clause on a cluster where
+`manager.infraAttachment` is enabled before you offer the family there. A
+family that fails a clause needs a Kube-DC platform release together with the
+managed-services release.
 
 **Placement:** a managed service runs either in the tenant's Project namespace
-(shared, protected as described above) or on a **separate data plane**. Private
-per-instance namespaces inside a Project are not implemented. A sibling
+(shared, protected as this section describes) or on a **separate data plane**.
+Private per-instance namespaces inside a Project are not implemented. A sibling
 namespace does not inherit the Project's networking, quota accounting or
 identity, and adding a label does not create them.
 
@@ -403,141 +411,170 @@ data plane when a tenant must not be able to read its engine's credentials.
 
 **An operator that runs inside the Project.** Some operators (Strimzi's
 entity operator) run in the project namespace under an account they create
-per instance. The policies see that account as a tenant. A registered
-family therefore declares the account's shape and the few writes it must
-make (the status of the family's operation objects, and the Secrets it
-derives from them), and the manager admits exactly those, on a webhook
-path of its own, with the same UID-verified provenance as a managed
-PostgreSQL's status write: the account marked and owned by the marked
-root, the token bound to a pod the classifier recognises as that
-instance's, the object marked with the instance. The policies hand those
-writes to the webhook only in the chart after the one that introduces the
-stanza, once every cluster serves it. All of these proofs read the object
-as it is now, so a marker is only ever stamped when the platform creates
-an object and is never added to one that already exists: the policy
+per instance. The policies see that account as a tenant. A registered family
+therefore declares the account's shape and the few writes it must make: the
+status of the family's operation objects, and the Secrets it derives from
+them. The manager admits exactly those writes, on a webhook path of its own,
+with the same UID-verified provenance as a managed PostgreSQL's status write:
+
+- the account is marked and owned by the marked root;
+- the token is bound to a pod the classifier recognizes as that instance's;
+- the object is marked with the instance.
+
+The policies hand those writes to the webhook only after every cluster serves
+that path.
+
+All of these proofs read the object as it is at admission. A marker is
+therefore only ever stamped when the platform creates an object, and is never
+added to one that already exists. The policy
 `protect-managed-service-marker-introduction-in-projects` refuses that
-transition on UPDATE, on every resource and subresource, for every
-identity except cluster admins. No service account is exempt, the
-platform's own included. An operator whose reconcile meets a name a tenant
-pre-created fails on it instead of adopting it, and neither the object's UID
-nor any token minted against it ever becomes the platform's. Databases that
-predate markers are migrated below that chart with
-`hack/migrate-managed-db-markers`, which recreates every authority-bearing
-child under new UIDs rather than labelling what exists.
+transition on UPDATE, on every resource and subresource, for every identity
+except cluster admins. No service account is exempt, the platform's own
+included. An operator whose reconcile meets a name a tenant pre-created fails
+on it instead of adopting it. Neither the object's UID nor any token minted
+against it ever becomes the platform's.
+
+To migrate databases created before markers existed, run
+`hack/migrate-managed-db-markers`. It recreates every authority-bearing child
+under fresh UIDs instead of labeling what exists.
 
 ### Continuous enforcement is the invariant
 
-Every trust decision above that reads an owner reference or an ownership
-marker (a pod's chain to a managed engine through controller references,
-the marked root itself, and a registered family's non-controller edge) rests
-on one platform invariant: **the owner-forgery guard
-(`reserve-platform-identities-in-projects`), the marker policy
-(`protect-managed-service-markers-in-projects`) and their `Deny` bindings
-are continuously enforced, for CREATE and UPDATE, on every write-serving
-apiserver and in every project namespace.** A tenant object admitted while
-that was not true can carry a marker or an owner reference the platform
-never granted, and nothing in the classifier can tell it apart later. The
-manager does not prove this invariant; it checks it. Every minute each
-manager replica dry-run creates, as a fixed synthetic tenant
-(`owner-guard-probe@kube-dc.internal`) in the platform-owned canary
-namespace `kube-dc-owner-guard-canary`, a plain Deployment that must be
-admitted, one with a non-controller owner reference to a managed engine
-kind that the guard must refuse, one carrying a marker key that the marker
-policy or the object-protection policy must refuse (both deny it, and the
-apiserver names only the first binding that denied, in no stable order),
-and a marker stamped onto the chart's unmarked zero-replica target
-Deployment in the canary, refused the same way (the UPDATE path); the non-controller edge is climbed only for
-objects created after the *owner-guard epoch*, the server-set creation time
-of an immutable ConfigMap `owner-guard-epoch` in the manager's namespace
-plus ten minutes, recorded the first time the probes pass. A lapse the
-probes observe retires that epoch (a later one is recorded when enforcement
-is observed again); an inconclusive tick withholds the edge. What the probes
-cannot see: a lapse between two ticks, one overlapping an inconclusive tick,
-or one while no manager runs.
+Every trust decision in this section that reads an owner reference or an
+ownership marker rests on one platform invariant. That covers a pod's chain to
+a managed engine through controller references, the marked root itself, and a
+registered family's non-controller edge. The invariant: **the owner-forgery
+guard (`reserve-platform-identities-in-projects`), the marker policy
+(`protect-managed-service-markers-in-projects`) and their `Deny` bindings are
+continuously enforced, for CREATE and UPDATE, on every write-serving apiserver
+and in every project namespace.** A tenant object admitted while that was not
+true can carry a marker or an owner reference the platform never granted, and
+nothing in the classifier can tell it apart later.
 
-Operate accordingly. Policy maintenance follows the order below. Maintenance
-means rolling the chart back below the guard's any-edge generation, editing
-either policy or its binding, or disabling
-`projectPolicies.reservePlatformIdentities`.
+The manager does not prove this invariant; it checks it. Every minute each
+manager replica runs dry-run probes as a fixed synthetic tenant
+(`owner-guard-probe@kube-dc.internal`) in the platform-owned canary namespace
+`kube-dc-owner-guard-canary`. The probes are these:
 
-1. Set `manager.nonControllerOwnerEdges: off` and wait for
-   `kubectl -n kube-dc rollout status deployment/kube-dc-manager` to report
-   the Deployment rolled out. The same upgrade installs the *off fence*, a
-   ValidatingAdmissionPolicy (`owner-guard-off-fence`) that refuses any
-   manager pod created in the manager's namespace without the literal knob
-   in its `manager` container, whoever creates it. Leader election is
-   unfenced, so an old controller-manager leader could otherwise still
-   create an attested pod after every observation the off manager can
-   make. An off manager retires the epoch record every minute (its first
-   tick must succeed or it exits, so a completed rollout means retired).
-   The maintenance boundary, the ConfigMap `owner-guard-boundary` in the
-   manager's namespace, is a *lease*: each off replica acknowledges it
-   (`ack.<pod UID>`, a timestamp) only on a tick that observed everything
-   holding: the Deployment satisfying the controller's own
-   DeploymentComplete condition (at least as strict on replica counts as
-   `rollout status`), none of its ReplicaSets desiring, holding or still
-   able to create a pod without the knob (their controllers have observed
-   the generation that zeroed them), no manager pod without it listed (the
-   knob read from the `manager` container alone), and the fence refusing an
-   attested manager pod (a server-side dry run). The acknowledgement comes only after all of
-   that has held on that replica for a full ten-minute settle since the
-   fence was first observed refusing (one apiserver's denial says nothing
-   about another's policy cache). Any break, any inconclusive tick, a
-   restart, all start that replica's window over and drop its
-   acknowledgement; if the drop itself cannot be written, the
-   acknowledgement expires. A replica that sees every listed manager pod
-   acknowledged within the last three minutes marks the boundary
-   `complete`.
-2. **Before weakening either policy, run
-   `hack/owner-guard-boundary-check.sh` and require READY.** It is one
+- a plain Deployment create, which must be admitted;
+- a Deployment with a non-controller owner reference to a managed engine kind,
+  which the guard must refuse;
+- a Deployment carrying a marker key, which the marker policy or the
+  object-protection policy must refuse (both deny it, and the apiserver names
+  only the first binding that denied, in no stable order);
+- a marker stamped onto the chart's unmarked zero-replica target Deployment in
+  the canary, refused the same way (the UPDATE path).
+
+The non-controller edge is climbed only for objects created after the
+*owner-guard epoch*. The epoch is the server-set creation time of an immutable
+ConfigMap `owner-guard-epoch` in the manager's namespace, plus ten minutes. The
+manager records it the first time the probes pass. A lapse the probes observe
+retires that epoch, and a later one is recorded when enforcement is observed
+again. An inconclusive tick withholds the edge. The probes cannot see a lapse
+between two ticks, one overlapping an inconclusive tick, or one while no
+manager runs.
+
+Operate accordingly. Policy maintenance follows the order in this procedure.
+Maintenance means any of these:
+
+- rolling the chart back to a release whose owner guard does not cover
+  non-controller owner references;
+- editing either policy or its binding;
+- disabling `projectPolicies.reservePlatformIdentities`.
+
+1. Set `manager.nonControllerOwnerEdges: off`, and wait until
+   `kubectl -n kube-dc rollout status deployment/kube-dc-manager` reports the
+   Deployment rolled out. The same upgrade does these things:
+   - It installs the *off fence*, a ValidatingAdmissionPolicy
+     (`owner-guard-off-fence`). The fence refuses any manager pod created in
+     the manager's namespace without the literal knob in its `manager`
+     container, whoever creates it. Leader election is unfenced, so without
+     the fence an old controller-manager leader could still create an
+     attested pod after every observation the off manager can make.
+   - An off manager retires the epoch record every minute. Its first tick
+     must succeed or it exits, so a completed rollout means the epoch is
+     retired.
+   - The maintenance boundary, the ConfigMap `owner-guard-boundary` in the
+     manager's namespace, is a *lease*. Each off replica acknowledges it
+     (`ack.<pod-uid>`, a timestamp) only on a tick that observed all of these
+     conditions hold:
+     - the Deployment satisfies the controller's own DeploymentComplete
+       condition (at least as strict on replica counts as `rollout status`);
+     - none of its ReplicaSets desires, holds or can still create a pod
+       without the knob (their controllers have observed the generation
+       that zeroed them);
+     - no manager pod without the knob is listed (the knob is read from the
+       `manager` container alone);
+     - the fence refuses an attested manager pod (a server-side dry run).
+   - The acknowledgment comes only after all of that has held on that replica
+     for a full ten-minute settle since the fence was first observed
+     refusing. One apiserver's denial says nothing about another's policy
+     cache.
+   - Any break, any inconclusive tick, or a restart starts that replica's
+     window over and drops its acknowledgment. If the drop itself cannot be
+     written, the acknowledgment expires.
+   - A replica that sees every listed manager pod acknowledged within the
+     last three minutes marks the boundary `complete`.
+2. **Before you weaken either policy, run
+   `hack/owner-guard-boundary-check.sh` and require READY.** Expect READY no
+   earlier than ten minutes after the rollout completed. The check is one
    stateful operation with two samples ninety seconds apart (longer than a
-   tick plus jitter): each sample is bracketed by two reads of the manager
-   Deployment that must agree on UID, generation and revision, with the
-   rollout status pinned to that revision, so every accepted sample held
-   at a single point in time; in each sample it checks that the
-   boundary's `stamp` equals that sample's manager Deployment UID and
-   rollout revision, that `complete` and every manager pod's
-   acknowledgement are within three minutes and every manager pod runs
-   off; and, the part two separate checks cannot give, that between the
-   samples the Deployment (UID, generation, revision), the boundary object,
-   its stamp and the manager pod set are unchanged while `complete` (a new
-   aggregate write) and every pod's acknowledgement are strictly newer:
-   renewal, not survival (an acknowledgement a replica could no longer drop
-   would otherwise pass twice). An off manager
-   deletes a boundary of any other stamp (a previous maintenance's, or a
-   previous incarnation of the Deployment). Expect READY no earlier than
-   ten minutes after the rollout completed. Never force-delete a manager
-   pod, and never delete a Node object whose death is unproven, during
-   this procedure: both remove the Pod object before the process has
-   stopped, and the quiescence check would then miss a live attested
-   writer. If either happened, abort until the process or its node is
-   proven stopped (fence the node first).
-3. Do the maintenance, restore the policies, confirm they are applied.
-4. Clear the knob. The same upgrade removes the fence; attested pods that
-   Helm rolls a few seconds before that deletion lands are refused and
-   then retried by their ReplicaSet. An attested manager that finds the
-   boundary retires whatever record stands behind it, removes the boundary
-   and only then records anew, on every tick including its first, so no
-   epoch from before or during the maintenance is ever adopted, not even
-   one written by a replica that overlapped the rollout.
+   tick plus jitter):
+   - Each sample is bracketed by two reads of the manager Deployment that
+     must agree on UID, generation and revision, with the rollout status
+     pinned to that revision. Every accepted sample therefore held at a single
+     point in time.
+   - In each sample, the boundary's `stamp` must equal that sample's manager
+     Deployment UID and rollout revision. `complete` and every manager pod's
+     acknowledgment must be within three minutes, and every manager pod must
+     run off.
+   - Between the samples, the Deployment (UID, generation, revision), the
+     boundary object, its stamp and the manager pod set must be unchanged,
+     while `complete` (a fresh aggregate write) and every pod's
+     acknowledgment must be strictly newer. This proves renewal, not
+     survival, which two separate checks cannot give: an acknowledgment that
+     a replica could no longer drop would otherwise pass twice.
+   - An off manager deletes a boundary of any other stamp (from a previous
+     maintenance, or from a previous incarnation of the Deployment).
 
-The ten-minute settle is the bound that must hold for policy-cache
-convergence across apiservers plus clock skew; keep the control plane
-NTP-synced. Two more invariants the reasoning uses: a namespace is a
-project (carries `kube-dc.com/project`) for the whole tenant-writable life
-of every object in it (a namespace must not become, or become again, a
-project while it holds objects tenants created when the selector was
-absent), and objects reach the store only through admission (a storage
-restore that bypasses it is outside the claim). The synthetic probe user
-`owner-guard-probe@kube-dc.internal` is issued by no authentication
-provider and tenants cannot impersonate it (project roles carry no
-`impersonate`); the canary admits nothing but dry runs from user
-identities regardless. An unplanned lapse of either policy is an
-incident, not a state the classifier detects: after it, run
-`hack/audit-owner-edges.sh --apply` (registered custom-via objects with
-non-controller owners are recreated by their operators) and
-`hack/audit-managed-service-boundary.sh` (marked objects predating the
-rules), and treat anything marked during the lapse as untrusted.
+   During this procedure, never force-delete a manager pod, and never delete
+   a Node object whose death is unproven. Both remove the Pod object before
+   the process has stopped, and the quiescence check would then miss a live
+   attested writer. If either happened, abort until the process or its node
+   is proven stopped (fence the node first).
+3. Do the maintenance, restore the policies, and confirm they are applied.
+4. Clear the knob. The same upgrade removes the fence. Attested pods that Helm
+   rolls a few seconds before that deletion lands are refused and then
+   retried by their ReplicaSet. An attested manager that finds the boundary
+   retires whatever record stands behind it, removes the boundary, and only
+   then records a fresh epoch. It does this on every tick, including its
+   first, so no epoch from before or during the maintenance is ever adopted,
+   not even one written by a replica that overlapped the rollout.
+
+The ten-minute settle is the bound that must hold for policy-cache convergence
+across apiservers plus clock skew. Keep the control plane NTP-synced. The
+reasoning uses two more invariants:
+
+- A namespace is a project (carries `kube-dc.com/project`) for the whole
+  tenant-writable life of every object in it. A namespace must not become, or
+  become again, a project while it holds objects tenants created when the
+  selector was absent.
+- Objects reach the store only through admission. A storage restore that
+  bypasses admission is outside the claim.
+
+The synthetic probe user `owner-guard-probe@kube-dc.internal` is issued by no
+authentication provider, and tenants cannot impersonate it (project roles
+carry no `impersonate`). The canary admits nothing but dry runs from user
+identities regardless.
+
+An unplanned lapse of either policy is an incident, not a state the classifier
+detects. After a lapse, do these steps:
+
+1. Run `hack/audit-owner-edges.sh --apply`. Registered custom-through objects
+   with non-controller owners are recreated by their operators.
+2. Run `hack/audit-managed-service-boundary.sh` to find marked objects that
+   predate the rules.
+3. Treat anything marked during the lapse as untrusted.
 
 ## Boundaries and residual risk
 

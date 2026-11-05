@@ -5,7 +5,7 @@ When both the plan's `backup.enabled` and the service's
 backups and archives its write-ahead log (WAL) continuously to object storage.
 This page covers the backup policy, on-demand backups, the backup history, and
 the two ways to restore: into a new service, or in place over the existing
-service, from a selected backup or a point in time.
+service where the plan allows it, from a selected backup or a point in time.
 
 :::warning Test your restores
 Restore a backup into a new service and check your data before you depend on
@@ -218,7 +218,7 @@ The two restore paths use different requests:
 | Data | Creates another service | Replaces existing data. Later changes are lost |
 | Identity | New service name, UID, and credentials | Existing service identity remains |
 | Backup selection | Exact `ServiceBackup` name and UID, with optional `targetTime` | Physical `backupID` or `targetTime` |
-| Plan policy | Target plan must support the family, version, and `RestoreToNew` | Existing plan must permit `RestoreInPlace` |
+| Plan policy | Target plan must support the family, version, and `RestoreToNew` | Existing plan must permit `RestoreInPlace`. The standard Development and Production plans do not |
 
 ## Restore into a new service
 
@@ -416,6 +416,16 @@ compare the number of services on the target plan with the plan's limit.
 A `RestoreInPlace` operation replaces the database engine and data of an
 existing service from a backup of the same service, and keeps the service and
 its connection identity.
+
+:::info Your plan must allow in-place restore
+The standard `postgresql-development`, `postgresql-production` and
+`postgresql-shared` plans do not allow `RestoreInPlace`. On those plans, the
+operation is `Rejected` with reason `PlanNotEntitled` and the message
+`plan <plan> does not allow RestoreInPlace`. Restore into a new service
+instead; see [Restore into a new service](#restore-into-a-new-service). For the
+operations each plan allows, see
+[Operations by plan](postgresql-operations.md#operations-by-plan).
+:::
 
 :::danger Data after the restore point is lost
 An in-place restore is destructive. Everything written after the selected

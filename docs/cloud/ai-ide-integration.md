@@ -3,7 +3,7 @@ import {AiMcpFlowDiagram} from '@site/src/components/Diagram/CloudFlowDiagrams';
 # AI IDE integration
 
 :::tip Agent Skills
-Kube-DC ships **16 Agent Skills**: structured procedures and templates that help compatible coding agents generate Kube-DC manifests. Skills complement MCP servers, which provide live cluster access. See [Agent skills setup](#agent-skills-setup) below.
+Kube-DC ships **18 Agent Skills**: structured procedures and templates that help compatible coding agents generate Kube-DC manifests. Skills complement MCP servers, which provide live cluster access. See [Agent skills setup](#agent-skills-setup).
 :::
 
 AI coding assistants such as Claude Code, Cursor, Devin Desktop (formerly Windsurf), and VS Code with Copilot can connect to the Kube-DC management cluster in a Project context, through the **Model Context Protocol (MCP)**. After they connect, they can manage workloads, inspect logs, and diagnose resources within the permissions of that Project context.
@@ -74,20 +74,18 @@ Run it again to update them. Apps without skills (ChatGPT, Claude web,
 Le Chat) need nothing extra: the MCP server itself serves the guides (see
 **Guides** below).
 
-**Tools (20).** Read: `whoami`, `list`, `get_vm`, `get_quota`, `get_logs`,
-`get_resources`. `list` takes a kind: `projects`, `vms`, `disks`,
-`snapshots`, `services`, `floating_ips`, `external_ips`, `buckets`,
-`managed_services` (with the plans the project may order), `clusters`,
-`os_images`, `storage_classes` or `events`. `get_quota` shows a project's
-quota and, for organization administrators, the organization's usage.
-Change: `create_project`, `create_vm`, `vm_power` (start, stop, restart),
-`create_floating_ip`, `create_external_ip`, `expose_vm`, `create_disk`,
-`attach_disk`, `detach_disk`, `restore_snapshot`, `create_bucket`,
-`create_managed_service`, `apply_manifest` and `delete` (a project, VM,
-disk, floating IP or external IP, or any Kubernetes object by kind and
-apiVersion). `create_managed_service` goes through the console's own
-path: its first call returns the price, and the service is created only when
-the app calls it again to confirm. Kubernetes clusters are listed; create them
+**Tools.** The server offers 32 tools. The eight read tools are `whoami`,
+`list`, `get_vm`, `get_quota`, `get_logs`, `get_resources`, `rollout_status`,
+and `list_secrets`. The change tools manage projects, VMs, disks, IPs,
+buckets, managed services, secrets, apps, jobs, previews, webhooks, GitHub
+repository connections, and, where your provider offers a container
+registry, registry logins. `apply_manifest` and `delete`
+work on any Kubernetes object you may change. For every tool and its effect,
+see
+[Hosted MCP for administrators](mcp-for-administrators.md#what-the-tools-can-do).
+`create_managed_service` goes through the console's own path: its first call
+returns the price, and the service is created only when the app calls it
+again to confirm. Kubernetes clusters are listed; create them
 in the console. VMs get the project key pair, as in the console. Tools that delete or stop something are marked so your app
 asks you first. Everything runs as you: what you may not do in the console,
 the assistant may not do either.
@@ -287,7 +285,7 @@ kube-dc-public/
 ├── AGENTS.md                          # Universal instructions (all IDEs)
 ├── CLAUDE.md                          # Claude Code instructions
 ├── _agent-instructions.md             # Canonical source (edit here)
-├── skills/                            # 16 workflow skills
+├── skills/                            # 18 workflow skills
 ├── knowledge/
 │   └── index.md                       # Master catalog of CRDs, skills, docs
 ├── .agents/skills → ../skills         # Shared skill discovery
@@ -387,9 +385,9 @@ Claude Code chains several `kubectl` operations automatically. When a pod is cra
 Open the `kube-dc-public` repo in Claude Code. It contains:
 
 - `CLAUDE.md`: loaded automatically, references `@_agent-instructions.md` and `@knowledge/index.md`
-- `.claude/skills/`: 16 workflow skills (symlink to `skills/`)
+- `.claude/skills/`: 18 workflow skills (symlink to `skills/`)
 
-With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent skills setup](#agent-skills-setup) above.
+With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent skills setup](#agent-skills-setup).
 
 ### Restrict destructive tools
 
@@ -445,7 +443,7 @@ Instead of a generic `.cursorrules` file, open the `kube-dc-public` repo in Curs
 - `AGENTS.md`: Cursor reads this automatically for Kube-DC context
 - `.cursor/rules/kube-dc-conventions/RULE.md`: always-on rules for namespace patterns, CRD naming, and safety constraints
 
-Cursor then knows the Kube-DC CRDs, annotations, and naming conventions, which a hand-written rules file does not cover. See [Agent skills setup](#agent-skills-setup) above.
+Cursor then knows the Kube-DC CRDs, annotations, and naming conventions, which a hand-written rules file does not cover. See [Agent skills setup](#agent-skills-setup).
 
 ---
 
@@ -558,7 +556,7 @@ With this enabled, you can ask Copilot in the chat panel (`Ctrl+Alt+I`):
 
 ```
 @workspace show me all crashlooping pods and suggest fixes
-@workspace generate a Deployment for nginx with resource limits matching our Dev Pool plan
+@workspace generate a Deployment for nginx with resource limits matching our plan
 ```
 
 ### Alternative: Red Hat Kubernetes MCP server

@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         'networking-external',
         'routed-networks',
         'tenant-vlan-attachment',
+        'exposure-source-policy',
         'deploy-metallb-ha',
       ],
     },
@@ -52,6 +53,7 @@ const sidebars: SidebarsConfig = {
         'certificates',
         'private-ca-enterprise-install',
         'smtp-gmail-app-password',
+        'keycloak-migration',
       ],
     },
     {
@@ -73,6 +75,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'gpu-capacity-reservations',
+        'gpu-capacity-without-billing',
         'gpu-node-mode-transitions',
         'gpu-node-upgrades',
         'gpu-supply-chain',
@@ -86,6 +89,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'managed-k8s-etcd-backup-restore',
         'managed-k8s-etcd-encryption',
+        'managed-k8s-loadbalancer-vips',
       ],
     },
     {
@@ -95,6 +99,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'managed-services-overview',
         'managed-services-enable',
+        'managed-services-local-ha',
         'managed-services-catalog',
         'managed-services-tenant-clusters',
         'managed-services-operations',
@@ -137,6 +142,7 @@ const sidebars: SidebarsConfig = {
         'cluster-cli-overview',
         'cluster-cli-fleet',
         'cluster-cli-admin-login',
+        'cli-ca-discovery',
         'cluster-cli-context-manager',
         'cluster-cli-break-glass',
         'cluster-cli-troubleshooting',

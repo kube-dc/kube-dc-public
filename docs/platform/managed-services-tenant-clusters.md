@@ -41,7 +41,7 @@ A plane whose profile does not exist stays `Bootstrapping` with reason `Provider
 :::warning Run one ProviderProfile per installation
 Project admins can write labels on their CAPI Clusters, including `kube-dc.com/infrastructure-provider`.
 With a second, less restrictive profile on the same hub, a tenant could select that profile for their cluster.
-Keep exactly one `ProviderProfile` for tenant clusters on each installation.
+Until you enforce [provider verification](#provider-verification), keep exactly one `ProviderProfile` for tenant clusters on each installation.
 :::
 
 ```yaml
@@ -69,6 +69,7 @@ spec:
   - https://<image-registry>/v2/
   controlPlane: Hosted
   qualifiedFamilies: [postgresql]
+  machineInfrastructureKinds: [<provider-machine>]
   minWorkerCPU: "3"
   minWorkerMemory: 6Gi
 ```
@@ -79,10 +80,40 @@ spec:
 | `storageClasses[].planeStorageBudget` | Copied into every generated plane's `spec.storageBudgets`. Without any budget the capacity ledger treats the plane's storage as unknown and refuses every revision that grows. Once one class has a budget, a class without one has a budget of zero |
 | `defaultEgressProbeURLs` | Egress every instance needs, such as image pulls. Do not list the object store here: it has its own probe, and a failure here takes the whole plane out of service |
 | `controlPlane: Hosted` | The API servers run outside the data plane, so the hub attests backup admission instead of the runner. Required for destructive deletion and `RestoreToNew` on Kamaji-hosted planes |
-| `qualifiedFamilies` | Records the families with completed drills on this provider. It is qualification metadata: the controllers do not enforce it. A plane's families are the cluster's annotated families, intersected with the grant's families and the cell's family bundles, so publish tenant plans only for qualified families |
+| `qualifiedFamilies` | Families with completed drills on this provider. A tenant plane serves only these; placement of another family is refused with `FamilyNotQualified`. An empty list, or a missing profile, qualifies no family. A plane's families are the cluster's annotated families, intersected with the grant's families and the cell's family bundles |
+| `machineInfrastructureKinds` | The CAPI Machine infrastructure kinds a tenant cluster of this provider may run. Used by [provider verification](#provider-verification) |
 | `minWorkerCPU`, `minWorkerMemory` | Minimum average allocatable per worker, checked by `WorkerShapeQualified`. Allocatable sits below the VM size |
 
 Profile edits reach existing planes on the registrar's next periodic pass, within about five minutes.
+
+The registrar never adds an unqualified family to a plane, and records a
+`FamilyNotQualified` Event on the `KdcCluster` that names the families it left
+out. Families already on a plane, their operators and placed instances stay.
+
+### Provider verification
+
+The registrar selects a plane's profile from the CAPI provider label, which Project admins can write on their CAPI Clusters.
+Provider verification corroborates it with objects the tenant does not control.
+The registrar does the following:
+
+- It records `status.registration.providerVerification` and reports the `ProviderVerified` condition. The condition is `True` when the CAPI label, the provider derived from the `KdcCluster` workers and every Machine's `spec.infrastructureRef.kind` agree with the profile.
+- It reports `False` with one of these reasons: `ProviderUnverified`, `ProviderMismatch`, `ProviderProfileMissing`, `MachineKindsUndeclared`, `MachinesAbsent` or `MachineKindsUnverified`.
+
+The admission policy `reserve-capi-provenance-labels` reserves `kube-dc.com/infrastructure-provider` and `kube-dc.com/kdccluster-uid` on CAPI Clusters for k8-manager, the hub and the operator groups.
+The chart value `admissionPolicy.provenanceValidationActions` sets its actions. The default is `[Warn, Audit]`.
+
+Verification is report-only by default.
+With `registrar.enforceProviderVerification: true`, a cluster that fails verification gets no data plane, and a plane that fails takes no further placements.
+Placed instances keep being served.
+A profile without `machineInfrastructureKinds` then refuses only planes that do not exist yet.
+
+To enforce verification on an installation, follow these steps:
+
+1. Deploy the release with enforcement off.
+2. Add `machineInfrastructureKinds` to every deployed provider profile.
+3. Confirm `ProviderVerified=True` on every existing tenant plane.
+4. Set `registrar.enforceProviderVerification: true`.
+5. Optional: switch `provenanceValidationActions` to `[Deny]`. Do this only after you confirm the identity k8-manager runs as, and that CAPI moves or restores run as an exempt identity.
 
 ### 2. Publish tenant-cluster plans
 
@@ -290,11 +321,11 @@ kubectl patch servicedataplane dp-<uid> --type merge -p '{"spec":{"declareLost":
 If the remote release can never complete, `spec.abandonRemoteRelease: <reason>` ends it as `Abandoned`. Both fields are reserved to the operator groups.
 After `declareLost`, the instance namespace stays on a live cluster; resolve its disposition to free the name.
 
-## Features not supported on tenant clusters
+## Self-plane-only features
 
-Credential inputs and runner execution profiles are not supported on tenant clusters.
-Their admission checks run against the provider's own data plane, and placement does not stop such a service from landing on a tenant cluster on an installation that also has its own data plane.
-Do not publish tenant-cluster plans for services that need them, and tell tenants not to use them there.
+Credential inputs and runner execution profiles are resolved against the provider's own data plane.
+Services that use them are placed only on the hub's configured self data plane.
+A `clusterRef` or another target is refused with `SelfDataPlaneRequired`.
 
 Credentials reach tenant planes only as Secrets in the tenant cluster: `OpenBao` delivery and dynamic database credentials are refused there, and tenant plans carry no `ManagedSecret` delivery entitlement.
 
@@ -303,7 +334,7 @@ Credentials reach tenant planes only as Secrets in the tenant cluster: `OpenBao`
 - **The tenant administers the data plane.** Cluster administrators can read every credential the hub delivers there, including the key of the Project's backup bucket, which can read, overwrite and delete every object in that bucket, including backups of other Project services that use it. They can stop backups and delete fences, guards and records. The grant's `disclosure` records the tenant's acknowledgement.
 - **Consent and binding.** Only a Project admin can create a grant. The registrar binds a plane to the cluster's CAPI Cluster and `TenantControlPlane` UIDs, and the connector refuses a kubeconfig Secret not controlled by the bound control plane. A recreated cluster is never registered by an old grant.
 - **Scoped instructions.** The hub signs work for the plane's audience and registration generation; the runner refuses other audiences, earlier generations and revisions for detached instances.
-- **Reserved labels.** `reserve-service-selection-labels` keeps tenants from adding family selection labels to their clusters. `servicedataplane-registration-protection` reserves `spec.source`, `declareLost` and `abandonRemoteRelease`, and `servicedisposition-protection` keeps disposition specs immutable and resolutions operator-only. The CAPI label that selects the `ProviderProfile` is not reserved; see the warning under [Publish a provider profile](#1-publish-a-provider-profile).
+- **Reserved labels.** `reserve-service-selection-labels` keeps tenants from adding family selection labels to their clusters. `servicedataplane-registration-protection` reserves `spec.source`, `declareLost` and `abandonRemoteRelease`, and `servicedisposition-protection` keeps disposition specs immutable and resolutions operator-only. `reserve-capi-provenance-labels` reserves the CAPI label that selects the `ProviderProfile`, and warns and audits by default; see [Provider verification](#provider-verification).
 - **Destructive effects need an active binding.** Deleting an instance requires an `Active` plane, a reachable cluster under a valid binding and a signed deletion grant. Every other phase only fences, holds and records.
 - **What leaves the management cluster.** The Project bucket credential, the control-plane addresses in the backup-admission record and the runner trust bundle are copied into the tenant cluster.
 - **Observed values come from the tenant's cluster.** The runner on a tenant plane runs under the tenant's control, so status values it reports, such as versions, endpoints and messages, are tenant-supplied. The managed-services API leaves condition messages out of its data-plane listing for this reason; treat other status text of these services the same way.

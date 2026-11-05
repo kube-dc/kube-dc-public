@@ -92,15 +92,15 @@ peer address or TCP-MD5 password to a public repository.
 
 ## Enable the feature
 
-Set the chart value only on the intended validation or production cluster:
+Set the chart value only on the intended validation or production cluster.
+Keep the chart's `gatewayImage` and `frrImage` defaults, which match the chart
+release:
 
 ```yaml
 routedNetwork:
   enabled: true
   backend: frr-project-gateway
   namespace: kube-dc-routing
-  gatewayImage: shalb/kube-dc-routing-gateway:v0.1.13
-  frrImage: quay.io/frrouting/frr:10.4.1
   routingLinkPool: 100.65.0.0/16
 ```
 
@@ -284,10 +284,8 @@ withdrawal removes them. Readiness proves both the accepted BGP routes and
 their `proto bgp` entries in the kernel; zebra VTY loss fails liveness so the
 pod restarts instead of remaining a silent black hole. It does not run `bfdd`. Even when BFD is requested,
 status therefore reports `degraded-no-bfd` and failover follows the BGP hold
-timer plus cached exporter readiness. The FRR generator
-and API retain BFD configuration for a future qualified runtime, but operators
-must never report BFD as active until both the peer and Kube-OVN next-hop path
-are proven live.
+timer plus cached exporter readiness. The API accepts BFD settings, but the
+gateway does not run them. Never report BFD as active.
 
 ## Inspect operation
 

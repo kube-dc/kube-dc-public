@@ -79,8 +79,7 @@ on top of the FS tier and adds:
 the Block `VolumeSnapshot`; Flux recreates them and re-snapshots.
 
 The converter is a deliberately minimal privileged surface (no API token, no host
-namespaces, sha256-verified pinned source, default-deny egress). Engineers: the
-as-built internals are in the private `rbd-block-golden-and-seeding` doc.
+namespaces, sha256-verified pinned source, default-deny egress).
 
 ## Live migration
 

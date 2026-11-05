@@ -1,8 +1,8 @@
 # OpenSearch
 
 Use the `opensearch` class for application search indexes over verified HTTPS.
-Cloud offers the Development and Production plans below. Other installations
-choose which qualified service families to enable in their catalog.
+Your installation's catalog lists the plans it offers. The standard catalog
+publishes the following Development and Production plans:
 
 | Plan | Data nodes | Cluster managers | Starting allocation per data node |
 | --- | --- | --- | --- |

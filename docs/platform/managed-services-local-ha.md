@@ -1,9 +1,22 @@
 # Install managed services with local HA storage
 
-Use a separate local-path class for HA databases and Kafka while keeping an
-expandable block class for development services. Require three distinct Ready,
-schedulable hosts, a project bucket provider, and a managed-services
-release.
+As a platform operator, use this page to install managed services with
+node-local storage for the replicated Production plans. After you follow it,
+those plans use a `local-path` class through the `database-ha` storage role.
+The Development plans, except OpenSearch, keep an expandable block class
+through the `database` role.
+
+The installation needs the following:
+
+- Three distinct Ready, schedulable hosts.
+- A Project bucket provider.
+- A managed-services release.
+
+The `local-ha-storage` catalog component moves the Production plans of
+PostgreSQL, MySQL, MariaDB, ClickHouse, Valkey and Kafka to `database-ha`.
+With an HA class, the installer also keeps both OpenSearch plans and the
+RabbitMQ Production plan on `database-ha`. See
+[Storage roles and backups](managed-services-catalog.md#storage-roles-and-backups).
 
 Add these options to your reviewed `kube-dc bootstrap init` invocation:
 

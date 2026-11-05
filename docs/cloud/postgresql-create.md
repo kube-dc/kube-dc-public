@@ -98,11 +98,11 @@ kubectl get managedservice orders-db -n my-project -o jsonpath='{.metadata.uid}{
 | `spec.planRef.name` | Yes | The plan, for example `postgresql-production`. Cannot change |
 | `spec.placement.mode` | Yes | Set `ProviderShared`, which runs the service inside your Project. Your plan's `allowedPlacementModes` must include it. If you omit the field, the API default `TenantCluster` is used and the published plans refuse it. Cannot change |
 | `spec.connectivity.classRef.name` | Yes | The connectivity class, `tenant-native`. Your plan's `allowedConnectivityClasses` must include it. Cannot change |
-| `spec.engineVersion` | No | The PostgreSQL major version, for example `"17"`. It must equal the plan's `engineVersion`, so the simplest choice is to omit it. Changes only through a `MinorUpgrade` or `MajorUpgrade` operation |
+| `spec.engineVersion` | No | The full PostgreSQL release, for example `"17.11"`. It must equal the plan's `engineVersion`, or its exact image must be in the plan's `allowedImages`. A major version alone, such as `"17"`, is refused on plans that pin a full release. Omit the field to take the plan's version. Changes only through a `MinorUpgrade` or `MajorUpgrade` operation |
 | `spec.topology.instances` | No | One primary plus replicas, within the plan's `topology` bounds. Default: the plan's `topology.defaultInstances`. Changes only through a `Scale` operation |
 | `spec.compute.cpu`, `spec.compute.memory` | No | Requests and limits per instance, as quantity strings (`500m`, `1Gi`). Only within the plan's `capacity.computeBounds`; a plan without bounds accepts only its defaults. Change through a `Resize` operation |
 | `spec.storage.size` | No | The data volume per instance, at most the plan's `capacity.maxStorage`. Default: the plan's `capacity.storage`. Grows through an `ExpandStorage` operation; never shrinks |
-| `spec.storage.class` | No | The plan default or one of its `capacity.allowedStorageClasses`. Cannot change; existing volumes never move to another class |
+| `spec.storage.class` | No | Omit this field when the plan sets `capacity.storageRole`; the standard `postgresql-development` and `postgresql-production` plans do. The platform then selects the class from the storage role, and a set value is refused. On a plan without a storage role, use the plan default or one of its `capacity.allowedStorageClasses`. Cannot change; existing volumes never move to another class |
 | `spec.parameters` | No | Engine parameters of the class. See [Parameter reference](#parameter-reference) |
 | `spec.maintenance.applyImmediately` | No | Apply declarative changes now instead of waiting for the plan's maintenance window. It never bypasses approval |
 | `spec.retry` | No | Request one new attempt for a failed declarative change, naming its attempt ID from status |
@@ -237,7 +237,7 @@ console:
 | `spec.topology.instances` | `Scale` | `instances` | Within `topology` bounds |
 | `spec.compute.cpu`, `spec.compute.memory` | `Resize` | `cpu`, `memory` (either one may be omitted to keep its current value) | `capacity.computeBounds` and `capacity.allocationProtocol: v1` |
 | `spec.storage.size` | `ExpandStorage` | `size`, larger than the current size | At most `capacity.maxStorage`, and the service's `status.engineDetails.storageExpansion` must be `"true"`. Refused on storage that cannot expand |
-| `spec.engineVersion` | `MinorUpgrade`, `MajorUpgrade` | `imageName` from the plan's `allowedImages` | See [Upgrades](postgresql-operations.md#upgrades) |
+| `spec.engineVersion` | `MinorUpgrade`, `MajorUpgrade` | `imageName` from the plan's `allowedImages` | The plan must allow the upgrade type. See [Operations by plan](postgresql-operations.md#operations-by-plan) and [Upgrades](postgresql-operations.md#upgrades) |
 | `spec.parameters.postgresql.parameters` | `UpdateParameters` | `parameters`, `resetParameters` | None beyond the allow-list |
 
 Every operation type must also be in the plan's `operations.allowed`. This

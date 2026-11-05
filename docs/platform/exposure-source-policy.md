@@ -11,12 +11,14 @@ For tenant manifests and list semantics, see
 
 ## Controls and their scope
 
+These chart values control source policies:
+
 | Chart value | Purpose |
 |---|---|
 | `manager.fipSourcePolicy.enabled` | Enable Floating IP source enforcement after traffic and lifecycle acceptance |
 | `manager.fipSourcePolicy.namespaceUIDs` | Optionally limit restrictive Floating IP qualification to exact current namespaces |
 | `backend.exposureSourcePolicy` | Publish console/API availability for each qualified method; these flags do not configure OVN or Envoy |
-
+| `backend.managedK8sPublicAPISourcePolicy` | Offer client IPv4 restrictions on the public HTTPS API endpoint of Managed Clusters; `backend.managedK8sPublicAPISourcePolicyNamespaces` optionally limits it to listed Project namespaces. Enable it only after you verify the k8-manager and core versions, Gateway publication, and that the original client IP is preserved |
 | `manager.defaultTLSIssuerRef` | Select the platform issuer for Service certificates, for example `ClusterIssuer/letsencrypt-prod-http` |
 
 Floating IP availability requires its enforcement gate. A Service with both a
@@ -111,10 +113,25 @@ perform admission or packet acceptance.
    console, API, CLI, tenant documentation and agent skills agree with the
    installation's supported methods.
 
-Check physical address-pool headroom as well as Organization quota before
-allocating a test EIP. The allocator reserves the last available address; a quota
-increase alone does not add routed addresses.
+## Check address-pool headroom
+
+Check physical address-pool headroom as well as Organization quota before you
+allocate a test EIP. The external-subnet allocator keeps one address in reserve,
+because status updates and concurrent allocations can race for the last address.
+A known `v4availableIPs` value of zero or one blocks any further allocation. Before you
+request one EIP, confirm that the selected subnet reports at least two available
+addresses. This check is advisory and does not reserve an address.
+
+A quota increase alone does not add routed addresses. Deleting a Floating IP
+frees its address only when the associated EIP allocation is also released.
+
+## Roll back
 
 On rollback, preserve restrictive intent, current ownership and normal cleanup.
 Disabling a console availability flag alone neither removes nor proves retention
 of a dataplane policy. Inspect the actual routes, listeners, policies and packets.
+
+Before you downgrade or disable a gate, inventory the restricted resources. Keep
+a controller that enforces them, or withdraw their external exposure. Verify
+that the exposure is unreachable before you install an older version. Never
+delete protection while a restricted endpoint is still reachable.

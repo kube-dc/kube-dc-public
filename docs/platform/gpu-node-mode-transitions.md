@@ -1,12 +1,26 @@
 # GPU node-mode transitions
 
-`kube-dc bootstrap gpu transition` performs the holder-safe day-two switch
-between Shared Pod GPU (`pod-hami`) and Dedicated GPU VM
-(`vm-passthrough`). It updates the generated fleet `NodeFeatureRule`; it does
-not patch ownership labels directly.
+This page is for platform operators who change what a GPU node is used for
+after installation. After you read it, you can move one GPU node between
+Shared Pod GPU and Dedicated GPU VM modes without disturbing running GPU
+workloads, and check the DRA shared-GPU backend.
 
-The transition is deliberately unavailable for `vm-vgpu` until the licensed
-driver, registry, SOPS, and mdev path is qualified.
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
+
+`kube-dc bootstrap gpu transition` performs the holder-safe day-two switch
+between these node modes:
+
+| Mode | Use |
+|---|---|
+| `pod-hami` | Shared Pod GPU with the HAMi device-plugin allocator (`--gpu-shared-allocator=hami-device-plugin`). |
+| `pod-hami-dra` | Shared Pod GPU with the Dynamic Resource Allocation (DRA) allocator (`--gpu-shared-allocator=dra` or `auto`). |
+| `vm-passthrough` | Dedicated GPU VM. |
+
+It updates the generated fleet `NodeFeatureRule`; it does not patch ownership
+labels directly. The command does not support `vm-vgpu`.
 
 ## Safety contract
 
@@ -18,7 +32,8 @@ Before cordoning, the command requires:
 - a clean fleet checkout whose generated node-mode rule agrees with both live
   active and expected mode labels;
 - zero running native GPU holders on the node, including HAMi Pod resources,
-  init/ephemeral-container resources, and KubeVirt `virt-launcher` resources.
+  init/ephemeral-container resources, KubeVirt `virt-launcher` resources, and
+  any Pod with a DRA resource claim.
 
 Apply order is fixed:
 
@@ -67,7 +82,8 @@ kube-dc bootstrap gpu transition <cluster> <gpu-node> \
 ```
 
 The reverse direction uses `--from vm-passthrough --to pod-hami` and has the
-same gates. A Dedicated GPU VM must be stopped, not migrated: GPU-backed VMIs
+same gates. A node that uses the DRA allocator uses `pod-hami-dra` in `--from`
+or `--to`. A Dedicated GPU VM must be stopped, not migrated: GPU-backed VMIs
 are intentionally non-live-migratable.
 
 ## Failure and resume
@@ -98,3 +114,34 @@ kube-dc bootstrap gpu transition <cluster> <gpu-node> \
 `--resume-cordoned` authorizes this workflow to uncordon after the target is
 fully verified. Never use it for a node cordoned by an unrelated maintenance
 or safety incident.
+
+## Check the DRA shared-GPU backend
+
+`kube-dc bootstrap gpu dra` is a read-only workflow for the DRA allocator. Each
+subcommand needs `--kubeconfig <admin-kubeconfig>`, and accepts
+`--output json`. The subcommands are:
+
+| Command | What it does |
+|---|---|
+| `status`, `detect` | Show the live DRA snapshot. |
+| `doctor` | Validate the Kubernetes version, driver image digest, device inventory, ownership, and allocation canary. |
+| `plan` | Run the `doctor` checks, and also require both creation gates closed and zero legacy device-plugin holders. Run it before you migrate to DRA. |
+| `rollback-plan` | Require both creation gates closed and zero DRA holders and claims. Run it before you roll back from DRA. |
+| `postflight` | Run the full `doctor` checks again after you upgrade each GPU node, and show the state of the driver Pods. |
+| `recovery-plan` | Print one exact kubelet-plugin Pod deletion when the driver DaemonSet is degraded, its DRA inventory is empty, and an old unready Pod remains on a Ready node. It does not run the deletion. |
+
+To validate DRA before you migrate, run this command:
+
+```bash
+kube-dc bootstrap gpu dra plan --kubeconfig <admin-kubeconfig>
+```
+
+The subcommands change nothing. `kube-dc bootstrap init` with
+`--gpu-shared-allocator=dra` (or `auto`) applies DRA after a saved plan
+passes. No subcommand falls back to the legacy device-plugin allocator.
+
+DRA needs Kubernetes 1.36 or later. The default RKE2 version that
+`kube-dc bootstrap init` installs is v1.35.9, so upgrade the cluster before you
+select DRA. With `--gpu-shared-allocator=auto`, `init` runs the DRA checks and
+stops when one fails. It does not select the device-plugin allocator instead;
+choose `hami-device-plugin` explicitly for that.

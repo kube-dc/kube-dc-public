@@ -1,5 +1,10 @@
 # GPU capacity reservations
 
+:::note Pilot
+GPU support is a pilot capability. Hardware and profile support is
+deployment-specific. See [Roadmap](roadmap.md).
+:::
+
 GPU quota and GPU reservation are different products in kube-dc:
 
 - a GPU add-on grants concurrent-use **entitlement** through organization and

@@ -199,23 +199,27 @@ flowchart LR
    affected Managed Cluster.
 
 2. **Only if you have no existing baseline to preserve**, create a component
-   that loads the portable baseline without selecting it in Alertmanager:
+   that loads the portable baseline without selecting it in Alertmanager.
+   Create it in your cluster directory. The shared `platform/` tree is
+   vendor-managed and tracked by `.starter-manifest`, so do not add files to it.
+   Create the component directory:
 
    ```bash
-   mkdir -p platform/monitoring/prom-operator/components/incident-notifications/seed
+   mkdir -p clusters/INSTALLATION/components/incident-notifications-seed
    ```
 
-   Create `platform/monitoring/prom-operator/components/incident-notifications/seed/kustomization.yaml`
+   Create `clusters/INSTALLATION/components/incident-notifications-seed/kustomization.yaml`
    with this content, unless an equivalent seed component already exists:
 
    ```yaml
    apiVersion: kustomize.config.k8s.io/v1alpha1
    kind: Component
    resources:
-     - ../baseline.yaml
+     - ../../../../platform/monitoring/prom-operator/components/incident-notifications/baseline.yaml
    ```
 
-   This references the starter's credential-free policy. Its
+   This references the starter's credential-free policy in the shared tree
+   without changing it. Its
    `alerting.kube-dc.io/default-slack-enabled: "false"` annotation tells the
    backend to seed a runtime configuration with delivery disabled. Do not point
    Alertmanager directly at this placeholder baseline.
@@ -225,11 +229,12 @@ flowchart LR
 
    ```yaml
    - ./monitoring/prom-operator/components/incident-alerting
-   - ./monitoring/prom-operator/components/incident-notifications/seed
+   - ../clusters/INSTALLATION/components/incident-notifications-seed
    - ./kube-dc/components/alerting-console
    ```
 
-   Omit the `seed` entry if Fleet already supplies your compatible baseline.
+   The `seed` entry is relative to the `./platform` path, like the other
+   entries. Omit it if Fleet already supplies your compatible baseline.
    Keep Alertmanager's configuration selector unchanged in this phase. The
    console component enables `ALERTING_SETTINGS_ENABLED=true` and connects the
    backend to the baseline and runtime Secret names.

@@ -18,9 +18,12 @@ Three pages, three jobs. Read them in this order only if you need all three.
 | **[Installation overview](installation-overview.md)** | *What am I choosing, and what will it change?* | Before the quickstart, to pick a topology and understand the network model and what Flux installs. Concepts, not copy-paste. |
 | **[Installation guide](installation-guide.md)** | *What are all the options, and what if it goes wrong?* | For alternative topologies, the manual RKE2 fallback, per-flag reference, day-2 migrations, and recovery. |
 
-All three describe the **same installer**. Where they overlap, the Quickstart is
-the tested happy path, verified against the real command tree on every
-build, so its commands and config keys cannot drift.
+All three describe the **same installer**. Where they overlap, follow the
+Quickstart: it is the tested path. A CLI test checks that the command and
+long flags of every line that starts with `kube-dc` on these three pages exist
+in the CLI. The same test
+checks a few key names in the Quickstart example config. It does not check
+values or results.
 :::
 
 ## Before you begin
@@ -40,10 +43,14 @@ The CLI exposes topology presets so network requirements are explicit:
 
 | Preset | External networks | Typical use |
 |---|---|---|
-| `internal-only` | No dedicated external VLAN | Evaluation or a private environment with an existing reachable ingress path |
-| `cloud-vlan` | Private cloud provider network | Private external addresses and outbound SNAT |
+| `internal-only` | Private cloud provider network `ext-cloud` (default `100.65.0.0/16`) on a VLAN. No public network | Evaluation or a private environment with an existing reachable ingress path |
+| `cloud-vlan` | Private cloud provider network, with the same defaults as `internal-only` | Private external addresses and outbound SNAT |
 | `cloud+public-vlan` | Private cloud and public provider networks | Separate private and internet-routable address pools |
 | `custom` | Operator-defined | Existing clusters or datacenter-specific routing |
+
+Every preset except `custom` requires `EXT_NET_VLAN_ID` and `EXT_NET_INTERFACE`.
+`cloud+public-vlan` also requires `EXT_PUBLIC_VLAN_ID`, `EXT_PUBLIC_CIDR`, and
+`EXT_PUBLIC_GATEWAY`. `internal-only` does not add a no-egress policy.
 
 These presets describe networking, not cluster size. A private environment can
 still be highly available, and a public-network lab can still be single-node.

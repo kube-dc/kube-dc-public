@@ -112,15 +112,16 @@ record. Then inspect a received message with Gmail's **Show original**. The DNS
 check does not establish which key the provider used or whether the message passed
 authentication.
 
-The cloud test on 2026-09-10 passed SPF, DKIM and DMARC, but Google signed with
-`kube-dc-cloud.20251104.gappssmtp.com`; DMARC passed through SPF alignment with
-the rewritten `console@kube-dc.cloud` sender. Cloud now configures that From address
-explicitly. To add aligned DKIM, a Google Workspace administrator should open
-**Apps → Google Workspace → Gmail → Authenticate email**, select `kube-dc.cloud`,
-check that the displayed selector/key matches the published DNS record, and use
-**Start authentication** if it is not enabled. If already enabled, investigate why
-this sending path still uses the Google signing domain. Verify a new received
-message has a passing signature with `d=kube-dc.cloud`. See
+DMARC can pass through SPF alignment while Google signs the message with its
+own `gappssmtp.com` domain. In that case, DKIM is not aligned with your sender
+domain. To add aligned DKIM, a Google Workspace administrator opens
+**Apps → Google Workspace → Gmail → Authenticate email** and selects your sender
+domain. Check that the displayed selector and key match the published DNS
+record. If authentication is not enabled, select **Start authentication**. If it
+is already enabled, investigate why this sending path still uses the Google
+signing domain. Then verify that a received message has a passing signature
+with `d=<sender-domain>`, where `<sender-domain>` is the domain of your From
+address. See
 [Google's DKIM setup instructions](https://knowledge.workspace.google.com/admin/security/set-up-dkim)
 and [DMARC alignment](https://knowledge.workspace.google.com/admin/security/set-up-dmarc#dmarc-alignment).
 

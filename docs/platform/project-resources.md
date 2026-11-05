@@ -24,18 +24,57 @@ spec:
   egressNetworkType: cloud
 ```
 
+The Project spec has these fields:
+
 | Field | Meaning |
 |---|---|
-| `spec.cidrBlock` | Required workload subnet for the Project VPC. It must not overlap networks the workloads need to reach. |
+| `spec.cidrBlock` | Optional workload subnet for the Project VPC. When omitted, the controller allocates one from the Project CIDR pool. An explicit value must not overlap networks the workloads need to reach. |
 | `spec.egressNetworkType` | Required, immutable external network selection: `cloud` or `public`. |
 | `spec.gwLanIp` | Optional Project gateway address inside `cidrBlock`; normally omitted. |
+| `spec.quota.hard` | Optional cap for this Project inside the Organization's shared quota. It uses ResourceQuota names, such as `requests.cpu`, `requests.memory`, `requests.storage`, and `pods`, or an accelerator dimension of the Organization quota. Admission refuses a dimension the Organization quota does not have, or a value above it. The controller writes the Project's ResourceQuota from it only when `projectQuota.source` is `spec`; otherwise the field is ignored. |
+| `spec.network.loadBalancerBlocks` | Optional number (0 to 64) of 16-address ranges to pre-allocate for Managed Cluster LoadBalancer pools. The value can only grow. |
 
 `public` Projects are accepted only when the operator has configured a public
 external network and enabled `allow_public_projects`. Fresh installations keep
 that gate disabled by default.
 
-The generated backing namespace is `{organization}-{project}`. For the example
-above it is `acme-production`.
+The generated backing namespace is `<organization>-<project>`. For the example
+it is `acme-production`.
+
+## Project CIDR allocation
+
+When a Project has no `spec.cidrBlock`, the Project controller picks the first
+free block of the Project CIDR pool, in address order. A block is free when it
+overlaps no other Project's `spec.cidrBlock` and no reserved range. The
+controller writes the block to `spec.cidrBlock` before it builds the network. It
+never changes an explicit `spec.cidrBlock`.
+
+Configure the pool with the `backend.projectCidr` chart values. The manager and
+the console backend read the same values:
+
+| Value | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `backend.projectCidr.pool` | `PROJECT_CIDR_POOL` | `10.0.0.0/8` | IPv4 supernet that Project blocks come from. |
+| `backend.projectCidr.prefix` | `PROJECT_CIDR_PREFIX` | `22` | Prefix length of each Project block. `22` gives 1024 addresses. |
+| `backend.projectCidr.reserved` | `PROJECT_CIDR_RESERVED` | `10.100.0.0/16`, `10.101.0.0/16` | Ranges the allocator never uses. The defaults are the system pod network (`ovn-default`) and the Service CIDR. |
+
+Add your underlay networks and any other routed networks to `reserved`.
+
+If the controller cannot allocate a block, it sets the Project condition
+`CIDRAllocated` to `False` with one of these reasons:
+
+| Reason | Meaning | Action |
+|---|---|---|
+| `InvalidPoolConfig` | `PROJECT_CIDR_PREFIX` is not an integer. | Fix `backend.projectCidr.prefix`. |
+| `AllocationFailed` | The pool is not an IPv4 prefix, the prefix length is outside the pool, or a claimed or reserved CIDR cannot be parsed. | Fix the pool values, or the Project with the unparseable `spec.cidrBlock`. |
+| `PoolExhausted` | No free block of the configured size remains in the pool. | Set `spec.cidrBlock` on the Project, or widen the pool. |
+
+To read the condition, run this command:
+
+```bash
+kubectl -n <organization> get project <project> \
+  -o jsonpath='{.status.conditions[?(@.type=="CIDRAllocated")]}'
+```
 
 ## What reconciliation provides
 
