@@ -10,7 +10,8 @@ With a GitHub App configured, Kube-DC:
   `deploy_app`);
 - **connects repositories.** The hosted MCP tool `connect_repository` opens a
   pull request with the deploy workflows and sets the repository variables,
-  in repositories whose admins allowed it (see below). Needs the backend
+  in repositories whose admins allowed it (see
+  [Connecting a repository](#connecting-a-repository)). Needs the backend
   worker (`backend.worker.enabled`); without it the tool returns the files
   instead;
 - **removes previews at once** when their pull request closes, private
@@ -22,22 +23,11 @@ from GitHub**: managed runners plus a managed registry (recommended, no token
 stored), or their own registry with a token Secret they create themselves.
 
 The feature is off unless configured. Each installation registers **its own**
-App: the App's name is what customers see on their commits and pull requests,
-and its private key belongs to the operator of that installation. A GitHub
-App has one webhook URL, so one App serves one installation.
-
-| Installation | App |
-|---|---|
-| Kube-DC cloud (operated by SHALB) | [kube-dc-cloud](https://github.com/apps/kube-dc-cloud), owned by the `kube-dc` GitHub organization |
-| Kube-DC stage (operated by SHALB) | `stage-kube-dc-com`, owned by the `kube-dc` GitHub organization |
-| A provider (white label) or a self-hosted installation | One you register as below, under your own name; or leave the feature off |
-
-With Fleet, `scripts/set-github-app.py <cluster> <app-id> <key.pem>` checks a
-key against GitHub, stores it as the SOPS-encrypted Secret and sets the App ID.
-With `--client-secret-file F` (and `--webhook-secret-file F
---webhook-secret-in-client`, `--client-id <id>`) it also writes the client
-secret (and webhook secret) to their own Secret `github-app-client`; see
-[Give the cluster the key](#give-the-cluster-the-key).
+App under its own name, as described in [Register the App](#register-the-app).
+The App's name is what customers see on their commits and pull requests, and
+its private key belongs to the operator of that installation. A GitHub App has
+one webhook URL, so one App serves one installation. A provider that runs a
+white-label installation registers the App under its own brand.
 
 ## Required setup
 
@@ -51,7 +41,7 @@ Each feature needs everything in the rows above it.
 | `connect_repository` | Permissions **Contents**, **Pull requests**, **Variables**, **Workflows** (write) | Backend worker on (`backend.worker.enabled`) |
 | Builds on push, PR previews, check runs | Events **Push**, **Pull request**, **Check run**, **Repository**; **Checks** (write) | `githubApp.builds.enabled` |
 | Allow this organization (console sets `KUBE_DC_ORGANIZATION`) | Callback URL `https://<backend host>/github/callback`; **Request user authorization (OAuth) during installation**; **Redirect on update**; a client secret | `githubApp.clientId`; the client secret under `client-secret` (in `github-app` or a Secret named by `githubApp.clientSecretName`); restart the backend worker |
-| Managed registry pushes from builds, docker login button | — | `manager.registry.enabled` (default on); the docker login button also needs the hosted MCP endpoint (`backend.mcp.enabled`) |
+| Managed registry pushes from builds, docker login button | None | `manager.registry.enabled` (default on); the docker login button also needs the hosted MCP endpoint (`backend.mcp.enabled`) |
 
 Per repository, before builds or `connect_repository`: the App is installed on
 it, and `KUBE_DC_ORGANIZATION` names the organization (set by a repository
@@ -68,7 +58,7 @@ GitHub Apps → New GitHub App**.
 | GitHub App name | Your product's name, for example `Example Cloud Deploys` |
 | Homepage URL | Your product's site |
 | Webhook | **Active**. URL `https://<backend host>/github/webhook` (the chart's `backend.gateway.hostname`). Secret: a random value, for example `openssl rand -hex 32` |
-| Repository permissions (Read and write) | **Contents**, **Deployments**, **Commit statuses**, **Checks**, **Packages**, **Pull requests**, **Variables**, **Workflows**. Metadata (read) is added by GitHub. Checks: build check runs on commits; Packages: lets builds try GHCR without a registry token (not yet proven to work, see below) |
+| Repository permissions (Read and write) | **Contents**, **Deployments**, **Commit statuses**, **Checks**, **Packages**, **Pull requests**, **Variables**, **Workflows**. Metadata (read) is added by GitHub. Checks: build check runs on commits. Packages: optional; GHCR refuses pushes with an App token, so builds into GHCR need a push Secret (see [Builds on push](#builds-on-push)) |
 | Callback URL | `https://<backend host>/github/callback`, with **Request user authorization (OAuth) during installation** checked. GitHub returns the user there after installing the App or signing in through it; the backend finishes **Allow this organization** (below) and returns them to the console |
 | Setup URL | Leave empty (the Callback URL is used) |
 | Post installation | **Redirect on update** checked: GitHub then returns to the console also after a user changes the repositories of an existing installation (otherwise only after a new installation) |
@@ -124,13 +114,7 @@ python3 -c 'import json; print(json.dumps({"apiVersion":"v1","kind":"Secret",
 shred -u client-secret.txt webhook-secret.txt
 ```
 
-`scripts/set-github-app.py <cluster> <app-id> <key.pem> --client-secret-file
-client-secret.txt --webhook-secret-file webhook-secret.txt
---webhook-secret-in-client --client-id <id>` does the same (it never prints a
-value, lists the file in the cluster's `kustomization.yaml` and, when
-`platform.yaml` already enables `githubApp`, sets the values below).
-
-By hand: list the file in the cluster's `kustomization.yaml`, set `githubApp.clientId`,
+List the file in the cluster's `kustomization.yaml`, set `githubApp.clientId`,
 `githubApp.clientSecretName` and `githubApp.webhook.secretName` (both
 `github-app-client` here), and restart the backend worker (or the API
 pod without a worker): the secret is read at start.
@@ -278,7 +262,7 @@ repository. An app opts in through the hosted MCP tool `deploy_app` with
 | label `build.kube-dc.com/on-push` | `"true"` |
 | `build.kube-dc.com/repository` | `owner/repo` |
 | `build.kube-dc.com/image` | registry path without a tag; images are tagged with the commit |
-| `build.kube-dc.com/push-secret` | not needed for a managed registry of the organization (below). Otherwise a `kubernetes.io/dockerconfigjson` Secret in the project that may push there. Required in practice: GHCR refuses pushes with a GitHub App token (`installation not allowed to Write organization package`, checked 2026-11-01 with Packages: write accepted), so for GHCR use a classic personal access token with `write:packages`. Without it the App pushes `ghcr.io/<repository owner>/<name>` and keeps a pull Secret `<app>-ghcr` fresh, which works only if GitHub lifts that limit |
+| `build.kube-dc.com/push-secret` | not needed for a managed registry of the organization (below). Otherwise a `kubernetes.io/dockerconfigjson` Secret in the project that may push there. Required in practice: GHCR refuses pushes with a GitHub App token (`installation not allowed to Write organization package`), even with Packages: write accepted, so for GHCR use a classic personal access token with `write:packages`. Without it the App pushes `ghcr.io/<repository owner>/<name>` and keeps a pull Secret `<app>-ghcr` fresh, which works only if GitHub lifts that limit |
 | `build.kube-dc.com/dockerfile` | optional, default `Dockerfile` |
 | `build.kube-dc.com/previews` | optional, a project namespace of the same organization: every pull request is built into `<app>-pr-<n>` there |
 | `build.kube-dc.com/preview-hours` | optional, default 72: a preview without a new build is removed after this |
@@ -299,8 +283,8 @@ last lines of the build log, which the kubelet keeps after the log is gone.
 Build pods request 200m CPU, 1Gi memory and 4Gi of node disk, and may use up
 to 2 CPU, 2Gi memory, 24Gi of BuildKit state (26Gi of node disk in all) and
 60 minutes. They count against the project's quota and are removed after a
-day. A cold build of a Rust and Node app (rws `starters/fullstack`) needs
-more than 8Gi of state; plan node disk for one build per pushing app. Build
+day. A cold build of a Rust and Node app needs more than 8Gi of
+state; plan node disk for one build per pushing app. Build
 pods prefer nodes without the `node-role.kubernetes.io/control-plane` label,
 so unpacking base images doesn't put a control-plane node under disk
 pressure; a cluster of control-plane nodes only still builds.
@@ -350,35 +334,3 @@ the log tail. It needs the Checks permission; without it builds still run.
 The build Pod runs with Unconfined seccomp and AppArmor, like the runners'
 BuildKit sidecar; the pod baseline policies admit it because the manager
 creates it. The manager mounts the App's private key only with builds on.
-
-## Reference: Kube-DC stage
-
-The stage installation, set up as above on 2026-11-02:
-
-- App `stage-kube-dc-com` (App ID 5567652, owned by the `kube-dc` GitHub
-  organization), installed on `bohdaq/rws-fullstack-e2e`.
-- Fleet: `clusters/stage/github-app.enc.yaml` (private key, webhook secret),
-  `clusters/stage/github-app-client.enc.yaml` (client secret), values in the
-  `githubApp` patch of `clusters/stage/platform.yaml` (`appId`, `slug`,
-  `clientId`, `clientSecretName`, `webhook`, `builds`).
-- `/github/callback` is served by the backend (chart from kube-dc d0e43984a);
-  before that the manager answered it. The manager no longer has a callback
-  handler; it serves only `/github/webhook`.
-
-## Reference: Kube-DC cloud (prepared, not enabled)
-
-- App `kube-dc-cloud` (App ID 5555168, owned by the `kube-dc` GitHub
-  organization), Client ID `Iv23liMULhfOFFkc7Ioe`.
-- Fleet branch `cloud/github-app` (not on main, so Flux does not apply it):
-  `clusters/cloud/github-app-client.enc.yaml` (client secret, webhook secret),
-  listed in `clusters/cloud/kustomization.yaml`, and the `githubApp` patch in
-  `clusters/cloud/platform.yaml` (`slug`, `clientId`, `clientSecretName`,
-  `webhook.secretName`, `builds`). The private key is already on main in
-  `clusters/cloud/github-app.enc.yaml`.
-- Merge the branch only together with a cloud chart, manager, backend and
-  consoles that carry these values (kube-dc >= 6e37ad154); cloud runs chart
-  `v0.9.11-rc.19` today, which knows none of them.
-- On GitHub, before enabling: webhook URL `https://backend.<cloud domain>/github/webhook`
-  with the webhook secret, Callback URL `https://backend.<cloud domain>/github/callback`,
-  **Request user authorization (OAuth) during installation**, **Redirect on
-  update**, the permissions and events in [Register the App](#register-the-app).

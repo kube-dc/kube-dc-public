@@ -134,35 +134,6 @@ export function MetalLbHaDiagram(): React.JSX.Element {
   );
 }
 
-export function InternalEndpointDiagram(): React.JSX.Element {
-  return (
-    <ExplainerDiagram
-      caption="Project DNS selects the internal VIP, while a selectorless Service and manager-owned EndpointSlice keep the public hostname and TLS identity unchanged and route only to healthy control-plane backends."
-      description="A Managed Cluster or Project workload resolves a platform hostname through vpc-dns to an internal MetalLB VIP on ext-cloud. The VIP fronts an annotated selectorless Service. PlatformEndpointReconciler probes eligible control-plane nodes every five seconds and writes only healthy addresses into a companion EndpointSlice. kube-proxy translates Service traffic to one of those healthy backends for the Kubernetes API or Envoy Gateway."
-      diagramId="internal-endpoint-explainer"
-      minWidth={900}
-      title="Internal platform endpoint pattern"
-      viewBox="0 0 900 650"
-    >
-      <DiagramEdge d="M230 116 H280" />
-      <DiagramEdge d="M500 116 H550" />
-      <DiagramEdge d="M650 152 C650 180 530 180 530 210 V320 H450 V340" />
-      <DiagramEdge d="M700 292 C700 320 450 320 450 328 V340" kind="control" />
-      <DiagramEdge d="M450 422 V470" />
-      <DiagramEdge d="M450 552 V560" />
-      <DiagramSectionLabel label="PROJECT-REACHABLE PLATFORM PATH" lineTo={872} x={28} y={28} />
-      <DiagramNode detail={['Managed Cluster', 'or Pod']} height={72} icon={ApplicationIcon} title="Project client" tone="external" width={200} x={30} y={80} />
-      <DiagramNode detail="hostname rewrite" height={72} icon={NetworkIcon} title="vpc-dns" width={220} x={280} y={80} />
-      <DiagramNode detail="ext-cloud address" height={72} icon={NetworkIcon} title="MetalLB internal VIP" tone="accent" width={300} x={550} y={80} />
-      <DiagramBoundary height={232} kind="network" label="SELECTORLESS SERVICE ENDPOINT" labelWidth={300} width={820} x={40} y={190} />
-      <DiagramNode detail="no Pod selector" height={82} icon={ApiIcon} title="Platform Service" width={300} x={300} y={340} />
-      <DiagramNode detail={['health probes every 5s', 'manager-owned addresses']} height={82} icon={ControllerIcon} title="EndpointSlice" width={300} x={550} y={210} />
-      <DiagramNode detail="healthy endpoint DNAT" height={82} icon={NetworkIcon} title="kube-proxy" width={300} x={300} y={470} />
-      <DiagramNode detail={['control-plane nodes', 'API :6443 or Envoy :443']} height={82} title="Healthy backends" width={500} x={200} y={560} />
-    </ExplainerDiagram>
-  );
-}
-
 export function EtcdEncryptionDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
