@@ -8,7 +8,8 @@ This page tells you whether your installation needs the feature, how to decide, 
 
 | Section | What's in it |
 |---|---|
-| [Do you need this?](#do-you-need-this) | Three topology classes + decision rule |
+| [How Project Pods reach the platform](#how-project-pods-reach-the-platform) | Dual-homed Pods, which NIC a destination uses, Project DNS |
+| [Do you need this?](#do-you-need-this) | Four topology classes + decision rule |
 | [How it works](#how-it-works) | The platform-endpoint pattern, anchors, Envoy front-door |
 | [Enable the feature on a cluster](#enable-the-feature-on-a-cluster) | Helm values + fleet wiring + vpc-dns Corefile |
 | [Verify the result](#verify-the-result) | Smoke tests for the four hostnames |
@@ -22,9 +23,65 @@ This page tells you whether your installation needs the feature, how to decide, 
 
 ---
 
+## How Project Pods reach the platform
+
+Read this first: it decides which of the classes below applies to you.
+
+### Two network interfaces per Project Pod
+
+With infra attachment enabled (`INFRA_ATTACHMENT_ENABLED=true`, the default for
+new installations), newly created Pods in a Project namespace get two NICs:
+
+| NIC | Network | Routes | Policed by |
+|---|---|---|---|
+| `net1` | the Project VPC subnet | the **default route**: internet, the external network, everything not listed below | the Project VPC: SNAT/EIP, egress policy routes, Project and global allowlists |
+| `eth0` | the shared infra subnet (`INFRA_ATTACHMENT_SUBNET`, default `infra-net`, CIDR `INFRA_ATTACHMENT_CIDR`, default `100.66.0.0/16`) | only `INFRA_ATTACHMENT_ROUTES` (node subnet, join subnet, pod CIDR) and, for platform API clients, the management API ServiceIP | a per-Project kube-ovn SecurityGroup (`infra-lock-<namespace>`) |
+
+The node subnet has to be routed over `eth0`; otherwise kubelet probe replies
+leave on the wrong NIC. Host-network and KubeVirt `virt-launcher` Pods are not
+dual-homed, and a VM sees only its Project NIC.
+
+The kernel picks the NIC by longest prefix. **A platform address inside
+`INFRA_ATTACHMENT_ROUTES` is dialled over `eth0`; any other address over
+`net1`.**
+
+### The `eth0` lock
+
+The SecurityGroup on `eth0` is reply-only except for exact grants, chosen from
+the Pod's controller-proven owner:
+
+| Role | Pods | New connections allowed on `eth0` |
+|---|---|---|
+| workload | ordinary tenant Pods | same-Project peers; the front door (`<VIP>:443`) only with `INFRA_ATTACHMENT_PLATFORM_INGRESS_WORKLOAD_EGRESS=true` |
+| management API client | managed service engines (CNPG, MariaDB, ...) and tenant cloud-shell Jobs, in `MANAGEMENT_API_MODE=service`; otherwise they are workloads | the management API ServiceIP:443, same-Project workload peers |
+| control plane | Managed Cluster apiservers and etcd-backup Jobs | the Cluster's etcd (TCP/2379); the front door `<VIP>:443` when `INFRA_ATTACHMENT_PLATFORM_INGRESS_VIP` is set |
+| datastore | Managed Cluster etcd | etcd peers |
+
+Everything else that leaves `eth0` is dropped. So a Project Pod dials a
+platform hostname over `net1`, exactly like a VM, **unless that hostname
+resolves to an address inside `INFRA_ATTACHMENT_ROUTES`**. Choosing `net1`
+does not by itself guarantee success: the destination must also pass the
+Project's egress policy routes and allowlists and be announced.
+
+### Project DNS
+
+Inside each Project VPC the cluster DNS address (`CLUSTER_DNS`, e.g.
+`10.101.0.11`) is a kube-ovn SwitchLBRule to that Project's own resolver
+(`vpc-dns-<project>` in `kube-system`). Pods and VMs in a Project both resolve
+through it, using the shared `vpc-dns-corefile` ConfigMap. The `hosts` block
+described below therefore applies to Project Pods and VMs alike; platform Pods
+use `rke2-coredns`.
+
+Exception: managed GitHub runner workers use public resolvers and a policy that
+denies private and CGNAT destinations unless granted, so a Project DNS rewrite
+does not apply to them. Their builds reach the platform through the runner
+profile's platform endpoints instead.
+
+---
+
 ## Do you need this?
 
-There are three topology classes that matter. Pick the one that matches your cluster.
+There are four topology classes that matter. Pick the one that matches your cluster.
 
 ### Use the CLI classifier first
 
@@ -47,7 +104,13 @@ Classification: Class B  (confidence: high)
 Internal Platform Endpoints: not-needed
 ```
 
-If the classifier returns Class A/B/C with `confidence: high`, you can skip the following manual decision aid, because the recommended verdict is reliable. For `confidence: medium` or the `ambiguous` verdict, read on and use the manual 5-line smoke test as the authoritative check.
+The classifier does not yet inspect `INFRA_ATTACHMENT_ROUTES` and cannot
+report Class D: on any installation with infra attachment enabled, run the
+manual check below from an ordinary Project Pod even when it reports Class B
+with high confidence.
+
+If the classifier returns Class A/B/C with `confidence: high` and infra
+attachment is off, you can skip the following manual decision aid, because the recommended verdict is reliable. For `confidence: medium` or the `ambiguous` verdict, read on and use the manual 5-line smoke test as the authoritative check.
 
 ### Class A: single public IP behind 1:1 NAT (hairpin breaks)
 
@@ -87,6 +150,39 @@ which stays valid either way.
 
 Typical hardware: a colo or hosted environment that delivers a small public `/<N>` to your CP nodes directly. With the host-bind front door this is either the node's own address carried on the Service's `externalIPs` (layer `none`), or a MetalLB VIP inside that same broadcast domain (layer `metallb-l2`). Both are L2-local to the announcing node, which is what makes this Class B.
 
+Class B holds only while the front-door address is **outside**
+`INFRA_ATTACHMENT_ROUTES`. If it is inside the node subnet those routes carry,
+you have Class D.
+
+### Class D: front door on the node network, dual-homed Project Pods
+
+| Symptom | Decision |
+|---|---|
+| The front door is a MetalLB VIP (or node address) on the **node network**, and that network is in `INFRA_ATTACHMENT_ROUTES`. Platform Pods, hosts and Project VMs reach `https://login.<DOMAIN>`; Project **Pods** time out on every platform hostname: S3 buckets, managed database WAL archiving and backups, Keycloak OIDC from applications, the console API, registry pushes. | **You MUST give Project Pods a front door outside the infra routes**: enable the `envoyGateway` internal endpoint with a VIP on the external network and map the platform hostnames to it in the Project DNS (the same pattern as Class A). |
+
+`kube-dc bootstrap init` (CLI 0.9.17 and later) configures this itself for a
+new installation when all of these hold: managed services on, ingress layer
+`metallb-l2` with the VIP inside the infra routes, and Envoy on control-plane
+nodes (the endpoint's backends). It prints `front door ... is inside the infra
+routes`, reserves the VIP and anchors right after `EXT_NET_EXCLUDE_IPS`, and
+makes Project DNS answer every name under the domain except `kube-api` with
+it. When Envoy runs on dedicated ingress workers it prints a WARNING; for
+other front-door layers (`none`, `metallb-bgp`) it does nothing. In those
+cases configure the endpoint by hand. Existing installations are not changed.
+
+The failure is the `eth0` lock above, not routing: the hostname resolves to an
+address inside the infra routes, the Pod dials it over `eth0`, and no role but
+the Managed Cluster control plane may open connections to the front door there.
+A VM in the same Project, which has only `net1`, reaches it.
+
+Managed Cluster control planes are the exception that works today: they hold
+the front-door grant on `eth0`. When you add the internal endpoint, decide
+their path explicitly: `INFRA_ATTACHMENT_PLATFORM_INGRESS_VIP` must stay an
+address inside the infra routes (the manager refuses one outside them), so
+either keep it at the node-network VIP and let control planes resolve `bao`
+and `s3` to it, or move them to the Project path and verify encrypted startup
+and etcd backups under the Project's egress policy.
+
 ### Class C: cloud-provider LoadBalancer
 
 | Symptom | Decision |
@@ -109,7 +205,10 @@ curl -sk -m 6 -o /dev/null -w "HTTP=%{http_code}\n" https://login.<DOMAIN>/realm
 | Result | Topology hint |
 |---|---|
 | `HTTP=200` (or any 2xx/3xx/4xx response in well under 6s) | **Class B or C.** You do not need this feature. |
-| Hangs and times out at 6s | **Class A.** You need this feature. |
+| Hangs and times out at 6s | **Class A or D.** You need this feature. Class D when `ip route get <address>` in the Pod says `dev eth0`. |
+
+Run it from an ordinary Pod (not a VM, not a host-network Pod): only a
+dual-homed Pod shows Class D.
 
 If you cannot run the diagnostic inside a Project Pod, use this equivalent **structural** check:
 
@@ -119,7 +218,8 @@ ip -4 -br addr show br-ext-cloud  # does this show a routable public IP?
 ip -4 route get $PUBLIC_IP        # does this say "dev br-ext-cloud" (L2-local)?
 ```
 
-If both answers are yes → Class B. If the public IP doesn't appear on any node and the route goes through an upstream gateway you don't control → likely Class A.
+If both answers are yes → Class B, unless the address is inside
+`INFRA_ATTACHMENT_ROUTES` (then Class D). If the public IP doesn't appear on any node and the route goes through an upstream gateway you don't control → likely Class A.
 
 ---
 
@@ -222,12 +322,29 @@ The per-Project resolver (`vpc-dns-<project>` Deployment) is configured for each
 ```corefile
 hosts {
     ${KUBE_API_INTERNAL_VIP} kube-api.${DOMAIN}
-    ${ENVOY_GATEWAY_INTERNAL_VIP} login.${DOMAIN} backend.${DOMAIN} console.${DOMAIN} billing.${DOMAIN} s3.${DOMAIN}
+    ${ENVOY_GATEWAY_INTERNAL_VIP} login.${DOMAIN} backend.${DOMAIN} console.${DOMAIN} admin.${DOMAIN} billing.${DOMAIN} bao.${DOMAIN} grafana.${DOMAIN} s3.${DOMAIN} recovery.${DOMAIN} registry.${DOMAIN}
     fallthrough
 }
 ```
 
-`s3.${DOMAIN}` (the cluster's Rook-Ceph RGW front-door) sits in the same list because per-Managed-Cluster etcd backup CronJobs upload snapshots there. Without an internal-DNS override they hit the public IP and hairpin-fail on Class A topologies.
+Every hostname a Project workload may dial belongs in the list:
+
+| Hostname | Dialled from Projects by |
+|---|---|
+| `s3` | managed database WAL archiving and backups, application buckets, Managed Cluster etcd backups |
+| `recovery` | managed-services restores into shared Projects |
+| `registry` | builds that push to the managed registry |
+| `bao` | the Managed Cluster KMS plugin (etcd encryption) |
+| `login` | OIDC from applications and Managed Clusters |
+| `console`, `backend`, `admin`, `billing`, `grafana` | the CLI, cloud shell and API clients inside Projects |
+
+A hostname missing from the list resolves through public DNS and fails the
+same way it would without the feature. Fixed lists do not cover generated
+names: managed registries (`<instance>-<namespace>.<DOMAIN>`) and Services
+exposed through the Gateway get their own hostnames. Where Projects call those
+over HTTPS, answer the whole zone with the internal VIP (a CoreDNS `template`
+for `<DOMAIN>`, with `kube-api` mapped first) instead of listing names. The
+internal endpoint serves port 443 only.
 
 External resolution (laptop `kubectl`, browser hitting `console.<DOMAIN>`) is unaffected. Public DNS still points at the cluster's public IP, the public path keeps working for external clients.
 
@@ -298,10 +415,13 @@ Add the platform hostnames to the per-cluster Corefile (typically a per-cluster 
 ```corefile
 hosts {
     100.64.0.30 kube-api.example.com
-    100.64.0.31 login.example.com backend.example.com console.example.com billing.example.com s3.example.com
+    100.64.0.31 login.example.com backend.example.com console.example.com admin.example.com billing.example.com bao.example.com grafana.example.com s3.example.com recovery.example.com registry.example.com
     fallthrough
 }
 ```
+
+See [vpc-dns Corefile rewrite](#vpc-dns-corefile-rewrite) for the full list and
+for generated hostnames.
 
 ### 6. Restart per-Project vpc-dns Deployments
 

@@ -1,5 +1,14 @@
 # kube-dc CLI changelog
 
+## v0.9.17 — 2026-11-05
+
+Installs platform bundle 0.9.16 (`oci://ghcr.io/kube-dc/fleet-starter:v0.9.16`, the starter accepted by a clean ten-host installation with this CLI's front-door fix).
+
+- A new installation with managed services on, whose `metallb-l2` front-door VIP is on the node network (inside `INFRA_ATTACHMENT_ROUTES`) and whose Envoy runs on control-plane nodes, gets an internal front door for Projects: dual-homed Project Pods otherwise reach the VIP only over the locked infra NIC, so S3, managed database backups, Keycloak and the console timed out from Projects. `bootstrap init` reserves an internal Envoy VIP and anchors on the external network, adds the VIP to both global allowlists, binds the anchors during finalization and answers every name under the domain except `kube-api` with it in Project DNS. With Envoy on dedicated ingress workers it warns instead; `none` and `metallb-bgp` layouts are left to the operator. Existing installations are not changed.
+- `bootstrap anchors apply` accepts `user@host` in `EXT_NET_ANCHOR_SSH_HOSTS` and `--ssh-host-map`.
+- The `bootstrap init` panel has a Certificates section: TLS mode (`acme`, `acme-dns01-route53`, `acme-dns01-cloudflare`, `byo-wildcard`), the wildcard certificate and key files, a private CA bundle and the DNS-01 settings, including Cloudflare DNS-01 for the wildcard only under `acme`. Before, these were reachable only as raw keys in the environment editor. File rows accept only an absolute path, and Review applies the same TLS and DNS-01 checks as the flags. `--gpu-kubeconfig` no longer stops the panel from opening, so an enabled GPU platform can be chosen there.
+- The panel keeps every Ceph node of a multi-node layout (up to 16, "More Ceph nodes"); before, a configuration with more than three lost the rest. PAYG and site components set in a configuration now survive panel edits and appear in the equivalent command.
+
 ## v0.9.16 — 2026-11-04
 
 Installs platform bundle 0.9.16 by default (`oci://ghcr.io/kube-dc/fleet-starter:v0.9.16`). The bundle rebuilds every platform image and chart from one set of sources: manager, routing gateway, KMS plugin, backend, tenant and admin consoles, Kubernetes manager, managed services, OS mirror and the cloud shell. Legacy db-manager is not part of it.

@@ -653,7 +653,7 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 	cmd.Flags().StringSliceVar(&o.IngressNodes, "ingress-node", nil,
 		"Node that should carry the ingress label and bind :80/:443 (repeatable). Two or more for production. With a VIP layer these nodes must also run a MetalLB speaker and reach the VIP's L2/BGP fabric")
 	cmd.Flags().StringVar(&o.TLSMode, "tls-mode", clusterinit.TLSModeACME,
-		"Platform TLS mode: 'acme' (cert-manager via the ACME ClusterIssuer, HTTP-01 through the Gateway), 'acme-dns01-route53' (same issuer, DNS-01 via Route53 — for private/VPN-only clusters; requires --dns01-route53-*), or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
+		"Platform TLS mode: 'acme' (cert-manager via the ACME ClusterIssuer, HTTP-01 through the Gateway), 'acme-dns01-route53' or 'acme-dns01-cloudflare' (same issuer, DNS-01 — for private/VPN-only clusters; requires --dns01-route53-* or --dns01-cloudflare-*), or 'byo-wildcard' (operator-supplied *.<domain> certificate, SOPS-committed, ACME Certificates suppressed; requires --tls-cert/--tls-key). See docs/platform/certificates.md")
 	cmd.Flags().StringVar(&o.DNS01Route53ZoneID, "dns01-route53-zone-id", "",
 		"Route53 hosted-zone ID (Z…) the DNS-01 solver writes challenge records into; acme-dns01-route53 only")
 	cmd.Flags().StringVar(&o.DNS01Route53Region, "dns01-route53-region", "",
@@ -2352,10 +2352,12 @@ func bareInitInvocation(cmd *cobra.Command) bool {
 	bare := true
 	cmd.Flags().Visit(func(f *pflag.Flag) {
 		switch f.Name {
-		case "repo", "config", "save-config":
+		case "repo", "config", "save-config", "gpu-kubeconfig":
 			// Context/prefill flags, not content — the wizard preseeds from
 			// them (repo = fleet context; config = prefill source; save-config
-			// = where to persist). `init --config x.env` opens the panel
+			// = where to persist; gpu-kubeconfig = the target cluster an
+			// enabled GPU platform is checked against, a local path with no
+			// panel row). `init --config x.env` opens the panel
 			// PRE-FILLED; mixing in a content flag (--name, …) still routes to
 			// the flag path per the reviewer-P2 rule below.
 		default:

@@ -45,6 +45,11 @@ func (s *State) editedConfig(key, value string, remove bool) (State, error) {
 	if err := clusterinit.ValidateInputSpec(values); err != nil {
 		return State{}, err
 	}
+	if !remove && value != "" && clusterinit.IsCredentialFileKey(key) {
+		if err := validateCredentialFile(value); err != nil {
+			return State{}, fmt.Errorf("%s: %w", key, err)
+		}
+	}
 	o := &clusterinit.InitOptions{}
 	if ignored := clusterinit.ImportMap(o, values, func(string) bool { return false }); len(ignored) > 0 {
 		return State{}, fmt.Errorf("unsupported input key %s", key)
@@ -57,6 +62,7 @@ func (s *State) editedConfig(key, value string, remove bool) (State, error) {
 		next.HostID = s.HostID
 	}
 	next.FromOptions(o)
+	next.carryDroppedCredentialRefs(s.DroppedCredentialRefs, key)
 	return next, nil
 }
 

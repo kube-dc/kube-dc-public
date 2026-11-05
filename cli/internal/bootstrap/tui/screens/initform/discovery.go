@@ -51,7 +51,7 @@ func (m *PanelModel) resourceRequests() ([]setup.ResourceRequest, error) {
 		}
 	}
 	if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-		for _, pair := range []string{m.st.CephNode1, m.st.CephNode2, m.st.CephNode3} {
+		for _, pair := range m.st.cephPairs() {
 			if node, _, ok := strings.Cut(pair, "="); ok {
 				if _, exists := targets[node]; !exists {
 					targets[node] = ""

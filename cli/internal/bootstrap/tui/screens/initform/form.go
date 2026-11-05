@@ -99,6 +99,9 @@ type State struct {
 	CephNode1 string
 	CephNode2 string
 	CephNode3 string
+	// CephNodesMore holds servers 4 to 16 as NODE=DEVICE,... (the flag path
+	// and --config accept 16).
+	CephNodesMore string
 	// CephReplicationSize → CEPH_REPLICATION_SIZE: OSD replica count (disk
 	// durability pointer — copies also need separate failure domains). Empty = fleet default.
 	CephReplicationSize string
@@ -146,8 +149,14 @@ type State struct {
 	ExtraSets map[string]string
 	// Non-panel inputs, such as TLS file references, VM goldens, and the
 	// starter reference, must survive form previews, drafts, and handoff.
-	RetainedInputs    map[string]string
-	ExplicitEmptySets map[string]bool
+	RetainedInputs map[string]string
+	// retainedEdited marks a panel row that wrote RetainedInputs, so Apply
+	// honours a cleared last value instead of keeping the prefilled one.
+	retainedEdited bool
+	// DroppedCredentialRefs names prefilled credential file keys whose value
+	// is not an existing file here: never shown or saved, entered again.
+	DroppedCredentialRefs []string
+	ExplicitEmptySets     map[string]bool
 }
 
 // fieldBackedOverlayKeys are the o.Sets/--set keys that HAVE a dedicated
@@ -169,7 +178,7 @@ var fieldBackedOverlayKeys = map[string]bool{
 // the cobra layer can surface them cleanly (the per-field validators
 // make them near-impossible, but Apply must not trust that).
 func (s *State) Apply(o *clusterinit.InitOptions) error {
-	if len(s.RetainedInputs) > 0 {
+	if len(s.RetainedInputs) > 0 || s.retainedEdited {
 		retained := &clusterinit.InitOptions{}
 		clusterinit.ImportMap(retained, s.RetainedInputs, func(string) bool { return false })
 		// Replace the input fields that have no dedicated form row. In
@@ -184,6 +193,8 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 		o.DNS01CloudflareAPITokenFile = retained.DNS01CloudflareAPITokenFile
 		o.VMGoldens, o.VMGoldensBlock = retained.VMGoldens, retained.VMGoldensBlock
 		o.GPUSharedAllocator = retained.GPUSharedAllocator
+		o.PAYG = retained.PAYG
+		o.SiteComponents = retained.SiteComponents
 	}
 	// REPLACEMENT model (reviewer P1): State is the complete post-panel
 	// truth, so Apply REBUILDS every panel-owned field rather than layering
@@ -309,7 +320,9 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 		o.RookOSDDevice = strings.TrimSpace(s.OSDDevice)
 	case clusterinit.RookCephMultiNode:
 		nodes := map[string]string{}
-		for i, raw := range []string{s.CephNode1, s.CephNode2, s.CephNode3} {
+		entries := []string{s.CephNode1, s.CephNode2, s.CephNode3}
+		entries = append(entries, strings.Split(s.CephNodesMore, ",")...)
+		for i, raw := range entries {
 			raw = strings.TrimSpace(raw)
 			if raw == "" {
 				continue
@@ -318,7 +331,11 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 			if !ok {
 				return fmt.Errorf("ceph node %d: expected NODE=DEVICE", i+1)
 			}
-			nodes[strings.TrimSpace(node)] = strings.TrimSpace(dev)
+			node = strings.TrimSpace(node)
+			if _, dup := nodes[node]; dup {
+				return fmt.Errorf("ceph node %s is listed twice", node)
+			}
+			nodes[node] = strings.TrimSpace(dev)
 		}
 		if len(nodes) > 0 {
 			o.CephNodes = nodes
@@ -402,6 +419,7 @@ func (s *State) Apply(o *clusterinit.InitOptions) error {
 // clobbering them with zero values. Pure.
 func (s *State) FromOptions(o *clusterinit.InitOptions) {
 	s.RetainedInputs = clusterinit.ExportMap(o)
+	s.dropUnverifiedCredentialRefs()
 	set := func(dst *string, v string) {
 		if strings.TrimSpace(v) != "" {
 			*dst = strings.TrimSpace(v)
@@ -520,11 +538,15 @@ func (s *State) FromOptions(o *clusterinit.InitOptions) {
 		}
 		sort.Strings(nodes)
 		slots := []*string{&s.CephNode1, &s.CephNode2, &s.CephNode3}
+		var more []string
 		for i, n := range nodes {
 			if i < len(slots) {
 				*slots[i] = n + "=" + o.CephNodes[n]
+			} else {
+				more = append(more, n+"="+o.CephNodes[n])
 			}
 		}
+		s.CephNodesMore = strings.Join(more, ",")
 	}
 	set(&s.StorageClass, o.CephStorageClass)
 	if o.CephOSDCount > 0 {
@@ -678,6 +700,7 @@ func (s *State) EquivalentFlags(o *clusterinit.InitOptions) string {
 	if o.PAYG {
 		b.WriteString("  --payg \\\n")
 	}
+	add("site-components", o.SiteComponents)
 	// VM root-disk storage — only emit when non-default (local is the
 	// default; omitting the flag is equivalent). Goldens come from the CLI
 	// (not the TUI) but round-trip here so a prefilled invocation reproduces.

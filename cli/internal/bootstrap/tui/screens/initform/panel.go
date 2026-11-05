@@ -232,6 +232,33 @@ func panelFields() []panelField {
 		txt("Network", "BGP hold time", "empty = default; otherwise 0 or 3..65535 whole seconds", false,
 			func(s *State) string { return s.MetalLBHoldTime }, func(s *State, v string) { s.MetalLBHoldTime = v }, nil).with(isBGP),
 
+		// --- Certificates ---
+		// These inputs have no State field of their own: they are the same
+		// environment keys the "Environment settings" editor writes, so Apply,
+		// --save-config and the equivalent-flags line treat them identically.
+		sel("Certificates", "TLS mode", "acme = HTTP-01 via the Gateway (public DNS and port 80); acme-dns01-* = DNS-01 for private or VPN-only clusters; byo-wildcard = your own *.<domain> certificate",
+			[]string{clusterinit.TLSModeACME, clusterinit.TLSModeACMEDNS01Route53, clusterinit.TLSModeACMEDNS01Cloudflare, clusterinit.TLSModeBYOWildcard},
+			func(s *State) string { return s.tlsMode() },
+			func(s *State, v string) { s.setTLSMode(v) }),
+		txt("Certificates", "Wildcard certificate file", "PEM chain for *.<domain>; committed SOPS-encrypted", true,
+			retainedGet(keyTLSCert), retainedSet(keyTLSCert), validateCredentialFile).with(tlsModeIs(clusterinit.TLSModeBYOWildcard)),
+		txt("Certificates", "Wildcard key file", "PEM private key for that certificate; committed SOPS-encrypted", true,
+			retainedGet(keyTLSKey), retainedSet(keyTLSKey), validateCredentialFile).with(tlsModeIs(clusterinit.TLSModeBYOWildcard)),
+		txt("Certificates", "Private CA bundle file", "PEM CA that signed a certificate browsers and Pods do not already trust (empty = public CA)", false,
+			retainedGet(keyTrustedCA), retainedSet(keyTrustedCA), validateCredentialFile),
+		txt("Certificates", "Route53 hosted zone ID", "Z…; the DNS-01 solver writes challenge records here", true,
+			retainedGet(keyRoute53Zone), retainedSet(keyRoute53Zone), nil).with(tlsModeIs(clusterinit.TLSModeACMEDNS01Route53)),
+		txt("Certificates", "Route53 region", "empty = us-east-1", false,
+			retainedGet(keyRoute53Region), retainedSet(keyRoute53Region), nil).with(tlsModeIs(clusterinit.TLSModeACMEDNS01Route53)),
+		txt("Certificates", "Route53 access key ID", "IAM key limited to that zone", true,
+			retainedGet(keyRoute53AccessKey), retainedSet(keyRoute53AccessKey), nil).with(tlsModeIs(clusterinit.TLSModeACMEDNS01Route53)),
+		txt("Certificates", "Route53 secret key file", "file holding the secret key (or set KUBE_DC_DNS01_ROUTE53_SECRET_KEY)", false,
+			retainedGet(keyRoute53SecretFile), retainedSet(keyRoute53SecretFile), validateCredentialFile).with(tlsModeIs(clusterinit.TLSModeACMEDNS01Route53)),
+		txt("Certificates", "Cloudflare zone", "apex zone the token is scoped to; with acme, setting it adds DNS-01 for the wildcard only", false,
+			retainedGet(keyCloudflareZone), retainedSet(keyCloudflareZone), nil).with(cloudflareRows),
+		txt("Certificates", "Cloudflare API token file", "file holding a Zone:DNS:Edit token (or set KUBE_DC_DNS01_CLOUDFLARE_API_TOKEN)", false,
+			retainedGet(keyCloudflareTokenFile), retainedSet(keyCloudflareTokenFile), validateCredentialFile).with(cloudflareRows),
+
 		// --- Object storage ---
 		sel("Storage", "Object storage", "Required for metrics, logs, tenant buckets, and backups. Inspect hosts to choose a layout.", []string{"rook-ceph-multi-node", "rook-ceph-local", "rook-ceph-pvc"},
 			func(s *State) string { return s.OSMode }, func(s *State, v string) { s.OSMode = v }),
@@ -247,6 +274,8 @@ func panelFields() []panelField {
 			func(s *State) string { return s.CephNode2 }, func(s *State, v string) { s.CephNode2 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "Ceph node 3", "NODE=DEVICE (optional third server)", false,
 			func(s *State) string { return s.CephNode3 }, func(s *State, v string) { s.CephNode3 = v }, clusterinit.ValidateNodeDevicePairField).with(osIs("rook-ceph-multi-node")),
+		txt("Storage", "More Ceph nodes", "NODE=DEVICE, comma-separated: servers 4 to 16", false,
+			func(s *State) string { return s.CephNodesMore }, func(s *State, v string) { s.CephNodesMore = v }, validateCephNodesMore).with(osIs("rook-ceph-multi-node")),
 		txt("Storage", "StorageClass", "backing SC for OSD PVCs", false,
 			func(s *State) string { return s.StorageClass }, func(s *State, v string) { s.StorageClass = v }, clusterinit.ValidateStorageClassField).with(osIs("rook-ceph-pvc")),
 		txt("Storage", "OSD count", "number of PVC-backed OSDs (empty = fleet default)", false,
@@ -535,6 +564,18 @@ func (m *PanelModel) validationErrors() []string {
 	if err := clusterinit.ValidatePresetRequiredKeys(scratch); err != nil {
 		errs = append(errs, "Network: "+err.Error())
 	}
+	if err := clusterinit.ValidateTLSMode(scratch.TLSMode, scratch.TLSCert, scratch.TLSKey); err != nil {
+		errs = append(errs, "Certificates: "+err.Error())
+	} else if err := clusterinit.ValidateDNS01Inputs(scratch); err != nil {
+		errs = append(errs, "Certificates: "+err.Error())
+	} else if m.st.cloudflareWildcardZoneMissing() {
+		errs = append(errs, "Certificates: Cloudflare DNS-01 with acme covers the wildcard only and needs the Cloudflare zone")
+	}
+	for _, k := range m.st.DroppedCredentialRefs {
+		if m.st.credentialKeyApplies(k) {
+			errs = append(errs, "Certificates: "+k+" from the prefill is not a file on this workstation; enter its path again, or clear it")
+		}
+	}
 	return errs
 }
 
@@ -564,6 +605,12 @@ func (m *PanelModel) MarkEmbedded() {
 func (m *PanelModel) saveDraft() {
 	if m.workflow != nil && m.workflow.services.Demo != nil {
 		m.saveDemoDraft()
+		return
+	}
+	if k := m.st.unresolvedCredentialRef(); k != "" {
+		// A saved draft cannot carry the marker: saving now would drop the
+		// input without a trace.
+		m.notice = "save refused: enter the path for " + k + " (Certificates), or clear it, first"
 		return
 	}
 	scratch, err := m.st.draftOptions()

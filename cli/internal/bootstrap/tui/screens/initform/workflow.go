@@ -124,7 +124,7 @@ func (m *PanelModel) requestForHost(node string) setup.ResourceRequest {
 		h.Disk = "/dev/" + strings.TrimPrefix(nonEmpty(m.st.OSDDevice, "loop0"), "/dev/")
 	}
 	if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-		for _, pair := range []string{m.st.CephNode1, m.st.CephNode2, m.st.CephNode3} {
+		for _, pair := range m.st.cephPairs() {
 			node, disk, ok := strings.Cut(pair, "=")
 			if ok && node == h.ID {
 				h.Disk = "/dev/" + disk
@@ -401,29 +401,23 @@ func (m *PanelModel) activateWorkflow(action string) tea.Cmd {
 		if m.st.OSMode == string(clusterinit.RookCephLocal) {
 			m.st.OSDNode, m.st.OSDDevice = node, device
 		} else if m.st.OSMode == string(clusterinit.RookCephMultiNode) {
-			slots := []*string{&m.st.CephNode1, &m.st.CephNode2, &m.st.CephNode3}
+			pairs := m.st.cephPairs()
 			found := false
-			for _, slot := range slots {
-				assignedNode, _, ok := strings.Cut(*slot, "=")
-				if ok && assignedNode == node {
-					*slot = node + "=" + device
+			for i, pair := range pairs {
+				if assignedNode, _, ok := strings.Cut(pair, "="); ok && assignedNode == node {
+					pairs[i] = node + "=" + device
 					found = true
 					break
 				}
 			}
 			if !found {
-				for _, slot := range slots {
-					if *slot == "" {
-						*slot = node + "=" + device
-						found = true
-						break
-					}
+				if len(pairs) >= maxCephNodes {
+					m.notice = "All Ceph node slots are filled. Edit the intended node explicitly."
+					return nil
 				}
+				pairs = append(pairs, node+"="+device)
 			}
-			if !found {
-				m.notice = "All Ceph node slots are filled. Edit the intended node explicitly."
-				return nil
-			}
+			m.st.setCephPairs(pairs)
 		} else {
 			m.notice = "Choose local or multi-node raw Ceph storage before selecting a disk."
 			return nil

@@ -12,6 +12,11 @@ Three pages, three jobs. Read them in this order only if you need all three.
 All three describe the **same installer**. Where they overlap, the Quickstart is
 the tested happy path, verified against the real command tree on every
 build, so its commands and config keys cannot drift.
+
+An AI agent can drive the same path with the `install-kube-dc` agent skill
+(`npx skills add kube-dc/kube-dc-public --skill install-kube-dc`): it gathers the
+site facts, runs read-only host and disk checks, proposes the network, storage
+and certificate decisions for you to confirm, and runs the CLI.
 :::
 
 This guide walks you through deploying Kube-DC on three bare-metal servers from scratch. By the end, you will have a fully operational cloud platform with HA control plane, virtual machine support, Managed Clusters, and public IP networking.
@@ -30,7 +35,7 @@ baseline. The storage prerequisite gate holds Ceph installation if a node fails
 these checks. See [Rook's CephX client requirements](https://rook.github.io/docs/rook/v1.19/Storage-Configuration/Advanced/cephx-key-rotation/).
 Other RKE2-supported systems can be used with object storage disabled.
 
-Use CLI 0.9.16 for platform bundle 0.9.16. Their versions are independent;
+Use CLI 0.9.17 for platform bundle 0.9.16. Their versions are independent;
 `--starter-ref` pins the platform bundle, and its metadata declares the minimum
 supported CLI version.
 
@@ -976,7 +981,7 @@ and skip the public-VLAN `--set` flags. A dedicated MetalLB VIP is **not** requi
 
 On one node, object storage runs a single Ceph OSD, so the RBD pool is
 provisioned at replica **`size 1`** automatically (no redundancy, which is correct for a
-lab; multi-node installs use 3), and Ceph settles at `HEALTH_OK` instead of the
+lab; with more storage servers the unset default is two copies, so set `CEPH_REPLICATION_SIZE=3` for three), and Ceph settles at `HEALTH_OK` instead of the
 `HEALTH_WARN` a size-2 pool would show on one OSD. One caveat: the front-door
 Envoy PodDisruptionBudget wants two healthy replicas, so a voluntary node drain
 (for example, an RKE2 upgrade) blocks on a one-box cluster and the front door has a brief
@@ -988,8 +993,8 @@ gap while the single Envoy restarts, so plan upgrades for a maintenance window.
 Run `kube-dc bootstrap` and select **New Cluster**. On a workstation without
 a Fleet checkout, this tab opens first. `kube-dc bootstrap init` with no
 flags opens the same form as a standalone panel. The sections are Basics,
-Hosts, Fleet, Network, Storage, Accelerators, Gates, Configuration, Readiness,
-and Review.
+Hosts, Fleet, Network, Certificates, Storage, Accelerators, Gates,
+Configuration, Readiness, and Review.
 
 Use `Tab` to switch between sections and fields. Use `↑` and `↓` to move,
 `Enter` to edit or select, and `←` and `→` to change a choice. `n` runs the
@@ -1008,6 +1013,19 @@ and routes; **Use suggested interfaces** fills unambiguous per-server mappings.
 Use **Show network details** for evidence and **More network settings** for
 advanced inputs. See [Choose an installation network layout](installer-network-layouts.md)
 for physical patterns, public pools, VIPs, anchors, and configuration limits.
+
+In Certificates, choose the TLS mode ([Certificates](certificates.md)):
+`acme` (HTTP-01 through the Gateway), `acme-dns01-route53` or
+`acme-dns01-cloudflare` (DNS-01, for private or VPN-only clusters) or
+`byo-wildcard` (your own `*.<domain>` certificate and key files). Set
+**Private CA bundle file** when the certificate is not publicly trusted. The
+fields show only for the selected mode and write the same inputs as
+`--tls-mode`, `--tls-cert`, `--tls-key`, `--trusted-ca-bundle` and the
+`--dns01-*` flags. Credentials stay in files or environment variables.
+
+To enable a GPU platform from the panel, start it with
+`kube-dc bootstrap init --gpu-kubeconfig PATH`: that flag names the target
+cluster the GPU checks run against and still opens the panel.
 
 Open **Configuration** to edit the environment input map. **Find setting**
 filters keys already present. **Set KEY=VALUE** adds a key, such as
@@ -1396,6 +1414,7 @@ matches the generated resources before moving DNS.
 | `METALLB_MODE` | **derived from the address layer, not an independent choice.** `metallb-l2` → `IPAddressPool` + `L2Advertisement` on `METALLB_INTERFACE`; `metallb-bgp` → `IPAddressPool` + `BGPPeer` + `/32` `BGPAdvertisement`. Setting it against the layer is refused rather than silently overridden, because the addon tree that gets wired is chosen from the layer |
 | `METALLB_FLOATING_IP` | explicit Envoy Service `loadBalancerIPs` request (the pool has `autoAssign: false`) and, when different from the node address, the Gateway address patch |
 | `EXT_NET_EXCLUDE_IPS` (+ `EXT_NET_GATEWAY`) | `EXT_NET_MGMT_SNAT_IP`, the management VPC's SNAT address, the first host after the reserved block (`.1` → `.2`; a `.1...100` block → `.101`), with the block widened to cover it, and the `infra-mgmt-snat` Flux layer that declares it as `OvnEip ovn-cluster-<ext>` **before** `infra-core` wakes kube-ovn's external-gateway handler. Without this the handler picks and never records an address: the first tenant EIP can be handed the same one, and every Project stays `NotReady` on "no management SNAT address" (webdock, 2026-08-31). Set it explicitly only to a free host inside `EXT_NET_CIDR` that the exclusion covers |
+| a `metallb-l2` front-door VIP inside the node subnet carried by `INFRA_ATTACHMENT_ROUTES`, with Envoy on control-plane nodes and managed services on | an internal front door for Projects: an Envoy platform endpoint with a VIP and one anchor per gateway node right after `EXT_NET_EXCLUDE_IPS` on the external network (reserved, added to both global allowlists, anchors bound during finalization), and a generated `vpc-dns-front-door` component on `infra-core` that answers every name under the domain except `kube-api` with it in Project DNS. Dual-homed Project Pods otherwise cannot reach S3, Keycloak or the console ([Class D](internal-platform-endpoints.md#class-d-front-door-on-the-node-network-dual-homed-project-pods)) |
 | `EXT_NET_EXTRA_EXCLUDE_IPS` | further reserved addresses or `a..b` ranges of the external network (comma-separated), checked against `EXT_NET_CIDR` in the plan, as a generated `ext-net-exclusions` component on `infra-core` that keeps `EXT_NET_EXCLUDE_IPS` first. Kube-OVN never hands them to tenants |
 | three or more nodes labelled `kube-dc-manager=true` (every server `bootstrap install` creates) | Grafana's and Keycloak's PostgreSQL on those nodes, one instance per node, on `local-path` (`platform/components/platform-state-on-managers`); with `OPENBAO_REPLICAS` of three or more, OpenBao's members too, started in parallel (`openbao-on-managers`) |
 | `--object-storage-mode=rook-ceph-multi-node` with the S3 endpoint exposed | Keycloak's PostgreSQL archived and backed up daily like Grafana's, and the `rke2-etcd-backups` bucket (`platform-backups`); with `--trusted-ca-bundle` and operator-supplied TLS, both databases' backups trust that CA (`platform-backup-ca`, Secret `platform-s3-ca`) |

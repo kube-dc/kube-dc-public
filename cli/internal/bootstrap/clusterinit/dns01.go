@@ -359,6 +359,10 @@ var dns01SecretSetKeys = []string{
 	"DNS01_CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_TOKEN",
 }
 
+// ValidateDNS01Inputs is validateDNS01Flags for callers outside the flag
+// path (the init panel's Review gate).
+func ValidateDNS01Inputs(o *InitOptions) error { return validateDNS01Flags(o) }
+
 func validateDNS01Flags(o *InitOptions) error {
 	for _, k := range dns01SecretSetKeys {
 		if _, ok := o.Sets[k]; ok {

@@ -1866,6 +1866,11 @@ func TestBareInitInvocation_Gate(t *testing.T) {
 	if !bareInitInvocation(build([]string{"--repo=/tmp"})) {
 		t.Error("--repo only → still bare (context flag)")
 	}
+	// The panel offers GPU platform "enabled", which init refuses without
+	// the target kubeconfig: that path must still open the panel.
+	if !bareInitInvocation(build([]string{"--gpu-kubeconfig=/tmp/kubeconfig"})) {
+		t.Error("--gpu-kubeconfig only → still bare (context flag)")
+	}
 	if bareInitInvocation(build([]string{"--provider=gitlab", "--fleet-mode=new-repo", "--no-tty", "--dry-run"})) {
 		t.Error("partial invocation must NOT be bare")
 	}

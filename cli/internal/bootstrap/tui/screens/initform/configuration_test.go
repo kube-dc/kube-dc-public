@@ -12,11 +12,12 @@ import (
 
 func TestConfigurationEditSaveReloadPreservesAllInputKinds(t *testing.T) {
 	s := validE2EState()
+	certs := secureDir(t)
 	for key, value := range map[string]string{
 		"NODE_CIDR": "192.0.2.0/24", "SMTP_HOST": "smtp.example.test", "EXT_NET_MTU": "1400",
 		"KUBE_DC_BACKEND_DIGEST": "", "METALLB_INTERFACE": "", "TLS_MODE": "byo-wildcard",
-		clusterinit.InitPrefix + "TLS_CERT": "/certs/cert.pem", clusterinit.InitPrefix + "TLS_KEY": "/certs/key.pem",
-		clusterinit.InitPrefix + "TRUSTED_CA_BUNDLE": "/certs/ca.pem", clusterinit.InitPrefix + "STARTER_REF": "oci://example.test/starter:v1",
+		clusterinit.InitPrefix + "TLS_CERT": certs + "/cert.pem", clusterinit.InitPrefix + "TLS_KEY": certs + "/key.pem",
+		clusterinit.InitPrefix + "TRUSTED_CA_BUNDLE": certs + "/ca.pem", clusterinit.InitPrefix + "STARTER_REF": "oci://example.test/starter:v1",
 	} {
 		next, err := s.editedConfig(key, value, false)
 		if err != nil {
@@ -38,7 +39,7 @@ func TestConfigurationEditSaveReloadPreservesAllInputKinds(t *testing.T) {
 	}
 	var restored clusterinit.InitOptions
 	clusterinit.ImportMap(&restored, env.AsMap(), func(string) bool { return false })
-	if restored.TLSKey != "/certs/key.pem" || restored.Sets["NODE_CIDR"] != "192.0.2.0/24" || restored.StarterRef == "" {
+	if restored.TLSKey != certs+"/key.pem" || restored.Sets["NODE_CIDR"] != "192.0.2.0/24" || restored.StarterRef == "" {
 		t.Fatal("configuration lost on reload")
 	}
 	preview, err := clusterinit.RenderSpec(&restored)

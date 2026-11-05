@@ -61,7 +61,7 @@ func (s *State) storageReplication() string {
 
 func (s *State) storageDevices() map[string]string {
 	devices := map[string]string{}
-	for _, pair := range []string{s.CephNode1, s.CephNode2, s.CephNode3} {
+	for _, pair := range s.cephPairs() {
 		if node, device, ok := strings.Cut(pair, "="); ok && strings.TrimSpace(node) != "" && strings.TrimSpace(device) != "" {
 			devices[strings.TrimSpace(node)] = strings.TrimSpace(device)
 		}
@@ -75,19 +75,19 @@ func (s *State) setStorageDevice(node, device string) error {
 	if device != "" {
 		devices[node] = device
 	}
-	if len(devices) > 3 {
-		return fmt.Errorf("Select at most three storage servers.")
+	if len(devices) > maxCephNodes {
+		return fmt.Errorf("Select at most %d storage servers.", maxCephNodes)
 	}
 	names := make([]string, 0, len(devices))
 	for name := range devices {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	s.CephNode1, s.CephNode2, s.CephNode3 = "", "", ""
-	slots := []*string{&s.CephNode1, &s.CephNode2, &s.CephNode3}
-	for i, name := range names {
-		*slots[i] = name + "=" + devices[name]
+	pairs := make([]string, 0, len(names))
+	for _, name := range names {
+		pairs = append(pairs, name+"="+devices[name])
 	}
+	s.setCephPairs(pairs)
 	return nil
 }
 
@@ -201,7 +201,7 @@ func (m *PanelModel) selectStorageLayout(id string) {
 		}
 		m.st.OSMode = string(layout.Mode)
 		m.st.DisabledConsent = false
-		m.st.CephNode1, m.st.CephNode2, m.st.CephNode3 = "", "", ""
+		m.st.setCephPairs(nil)
 		m.st.OSDNode, m.st.OSDDevice, m.st.OSDSizeGB = "", "", ""
 		if layout.Mode == clusterinit.RookCephLocal {
 			m.st.OSDNode = layout.Assignments[0].Node
@@ -215,10 +215,11 @@ func (m *PanelModel) selectStorageLayout(id string) {
 			}
 		}
 		if layout.Mode == clusterinit.RookCephMultiNode {
-			slots := []*string{&m.st.CephNode1, &m.st.CephNode2, &m.st.CephNode3}
-			for i, assignment := range layout.Assignments {
-				*slots[i] = assignment.Node + "=" + strings.TrimPrefix(assignment.Device, "/dev/")
+			pairs := make([]string, 0, len(layout.Assignments))
+			for _, assignment := range layout.Assignments {
+				pairs = append(pairs, assignment.Node+"="+strings.TrimPrefix(assignment.Device, "/dev/"))
 			}
+			m.st.setCephPairs(pairs)
 		}
 		m.changed()
 		m.notice = "Mapping selected. Inspect again before installation."

@@ -2,6 +2,7 @@ package clusterinit
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -56,6 +57,9 @@ func ValidateInputSpec(src map[string]string) error {
 		}
 		if IsSecretConfigKey(k) && strings.TrimSpace(v) != "" {
 			return fmt.Errorf("%s contains credential material; use a credential file or encrypted Secret", k)
+		}
+		if credentialFileKeys[k] && looksLikeCredentialContents(v) {
+			return fmt.Errorf("%s must name a file, not contain its contents", k)
 		}
 		if err := validateKnownSetting(k, v); err != nil {
 			return err
@@ -117,4 +121,39 @@ func IsSecretConfigKey(k string) bool {
 		strings.HasSuffix(k, "_SECRET") || strings.HasSuffix(k, "_SECRET_KEY") ||
 		strings.HasSuffix(k, "_SECRET_ACCESS_KEY") || strings.HasSuffix(k, "_PRIVATE_KEY") ||
 		strings.HasPrefix(k, "OPENBAO_UNSEAL_KEY_")
+}
+
+// credentialFileKeys name a file holding a certificate, key or token. The
+// value is a path; a pasted credential would be shown, saved and committed.
+var credentialFileKeys = map[string]bool{
+	InitPrefix + "TLS_CERT":                        true,
+	InitPrefix + "TLS_KEY":                         true,
+	InitPrefix + "TRUSTED_CA_BUNDLE":               true,
+	InitPrefix + "DNS01_ROUTE53_SECRET_KEY_FILE":   true,
+	InitPrefix + "DNS01_CLOUDFLARE_API_TOKEN_FILE": true,
+}
+
+// IsCredentialFileKey reports a key whose value names a credential file.
+func IsCredentialFileKey(k string) bool { return credentialFileKeys[k] }
+
+// looksLikeCredentialContents refuses a value that is not an existing file
+// and carries a strong credential signal: PEM text, whitespace, base64
+// padding characters, or a long bare token (no directory separator and no
+// file extension). An existing regular file is always accepted, whatever its
+// name. The panel goes further and accepts only existing files.
+func looksLikeCredentialContents(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" || IsExistingRegularFile(v) {
+		return false
+	}
+	if strings.Contains(v, "-----BEGIN") || strings.ContainsAny(v, " \t+=") {
+		return true
+	}
+	return !strings.ContainsAny(v, "/.") && len(v) >= 20
+}
+
+// IsExistingRegularFile reports a path naming a regular file on this machine.
+func IsExistingRegularFile(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular()
 }

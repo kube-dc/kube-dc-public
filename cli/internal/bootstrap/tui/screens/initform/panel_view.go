@@ -254,7 +254,7 @@ func (m *PanelModel) activate() (tea.Model, tea.Cmd) {
 		m.editError = ""
 		m.editing = true
 		m.input.CharLimit = 512
-		if f.Section == "Configuration" {
+		if f.Section == "Configuration" || f.Label == "More Ceph nodes" {
 			m.input.CharLimit = 1 << 20
 		}
 		m.input.SetValue(f.Get(m.st))

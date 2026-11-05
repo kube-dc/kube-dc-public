@@ -431,6 +431,15 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		if err := ResolveManagedServicesInternalNetwork(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.IngressNodes, out); err != nil {
 			return fmt.Errorf("scaffold: %w", err)
 		}
+	} else if opts.Plan.ManagedServicesMode == "on" {
+		// Class D: a dedicated front-door VIP on the node network, which
+		// dual-homed Project Pods reach only over the locked infra NIC.
+		// Finalize applies the anchors (managed services' finalize step).
+		if _, err := ResolveProjectFrontDoor(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.IngressNodes, opts.ControlPlaneNodes, opts.Sets[ExtraExcludeKey], out); err != nil {
+			return fmt.Errorf("scaffold: %w", err)
+		}
+	} else if front := projectFrontDoorBlockedIn(envPath); front != "" {
+		fmt.Fprintf(out, "[scaffold] WARNING: front door %s is inside the infra routes; Project Pods cannot reach platform hostnames. Enable managed services, or configure an internal front door (docs/platform/internal-platform-endpoints.md, Class D)\n", front)
 	}
 
 	// (9) VM root-disk storage wiring — rbd-vm.yaml (base + goldens Flux

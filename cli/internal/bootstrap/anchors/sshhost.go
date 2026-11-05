@@ -42,6 +42,11 @@ func NewHostResolver(overrides map[string]string) HostResolver {
 			// Alias when set). Hostname forces the dial target;
 			// resolveHostConfig in adapters/ssh honours Hostname
 			// over Alias-resolved HostName.
+			// A `user@host` value names the login user too, so a site
+			// needs no ~/.ssh/config entry for the gateway nodes.
+			if user, host, ok := strings.Cut(strings.TrimSpace(h), "@"); ok && user != "" && host != "" {
+				return ports.SSHHost{Alias: node, Hostname: host, User: user}
+			}
 			return ports.SSHHost{Alias: node, Hostname: h}
 		}
 		return ports.SSHHost{Alias: node}

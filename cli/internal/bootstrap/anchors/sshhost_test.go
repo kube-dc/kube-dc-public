@@ -154,3 +154,11 @@ func TestNewHostResolver_PartialOverride(t *testing.T) {
 		t.Errorf("srv6 should fall through to alias-only, got %+v", got)
 	}
 }
+
+func TestNewHostResolver_UserAtHost(t *testing.T) {
+	r := NewHostResolver(map[string]string{"node-a": "kube-dc@10.0.0.5"})
+	got := r("node-a")
+	if got.Alias != "node-a" || got.Hostname != "10.0.0.5" || got.User != "kube-dc" {
+		t.Fatalf("got %+v", got)
+	}
+}

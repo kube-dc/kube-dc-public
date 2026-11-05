@@ -98,6 +98,14 @@ to use the gateway set, or enter a reviewed subset under **More network
 settings**. Avoid a mix of control-plane and worker ingress nodes: the
 management API listener has different port ownership on those roles.
 
+A floating L2 VIP on the node network needs more cloud-network addresses when
+managed services are on and Envoy runs on the control-plane nodes. Project
+Pods cannot open connections to the node network, so `bootstrap init` derives
+an internal front door for Projects: the addresses right after
+`EXT_NET_EXCLUDE_IPS` become the internal VIP and one return-path anchor per
+gateway node (`KUBE_OVN_GW_NODES`), reserved from tenant IPAM. They are
+calculated, not checked free: reserve them with your network operator. See [How Project Pods reach the platform](internal-platform-endpoints.md#how-project-pods-reach-the-platform).
+
 For an L2 VIP in the public pool, the generator can propose public anchor
 addresses next to the VIP and reserve them in tenant IPAM. Confirm that the
 whole range is allocated to this cluster. These are calculated addresses,

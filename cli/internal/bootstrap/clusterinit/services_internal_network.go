@@ -15,6 +15,14 @@ import (
 // The Fleet scaffold selects this path only for managed services behind 1:1
 // NAT, where tenant traffic cannot hairpin through the public address.
 func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingressNodes []string, out io.Writer) error {
+	return resolveInternalGateway(fleetRepo, clusterName, ingressNodes, false, "", out)
+}
+
+// resolveInternalGateway reserves the VIP and anchors. projectRoute keeps the
+// VIP off the infra attachment: Project Pods reach it over their Project NIC,
+// as on installations with an internal front door today, so the infra routes,
+// the control-plane front-door grant and the workload grant stay unchanged.
+func resolveInternalGateway(fleetRepo, clusterName string, ingressNodes []string, projectRoute bool, extraExcludes string, out io.Writer) error {
 	if out == nil {
 		out = io.Discard
 	}
@@ -24,7 +32,7 @@ func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingres
 		return fmt.Errorf("managed-services internal network: read %s: %w", path, err)
 	}
 	env := string(content)
-	if envValue(env, "SERVICES_INTERNAL_GATEWAY_REQUIRED") != "true" {
+	if !projectRoute && envValue(env, "SERVICES_INTERNAL_GATEWAY_REQUIRED") != "true" {
 		return fmt.Errorf("managed-services internal network: the Fleet scaffold did not declare SERVICES_INTERNAL_GATEWAY_REQUIRED=true")
 	}
 	cidr := strings.TrimSpace(envValue(env, keyExtCIDR))
@@ -66,6 +74,17 @@ func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingres
 			return fmt.Errorf("managed-services internal network: reserved %s=%s overlaps the proposed HTTPS VIP/anchors", key, value)
 		}
 	}
+	// Addresses the site reserved for itself are never handed out.
+	for _, entry := range strings.Split(extraExcludes, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		a, z, ok := parseExcludeEntry(entry)
+		if ok && ip4ToU32(a) <= last && ip4ToU32(z) >= first {
+			return fmt.Errorf("managed-services internal network: %s entry %s overlaps the proposed HTTPS VIP/anchors %s..%s; move the reserved block or the site range", ExtraExcludeKey, entry, vip, final)
+		}
+	}
 	if value := strings.TrimSpace(envValue(env, "ENVOY_GATEWAY_INTERNAL_VIP")); value != "" {
 		return fmt.Errorf("managed-services internal network: ENVOY_GATEWAY_INTERNAL_VIP is already set; this new-install path cannot replace it")
 	}
@@ -105,6 +124,31 @@ func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingres
 	// SecurityGroup needs the corresponding exact TCP/443 grant. Without all
 	// three values, backups time out before reaching the local object store.
 	routes := strings.TrimSpace(envValue(env, "INFRA_ATTACHMENT_ROUTES"))
+	if projectRoute {
+		// Project Pods must reach the VIP over their Project NIC: an infra
+		// route covering it would send it down the locked infra NIC again.
+		if routeCoversIP(routes, vip.String()) {
+			return fmt.Errorf("project front door: the internal VIP %s is inside INFRA_ATTACHMENT_ROUTES %s; Project Pods would still dial it over the infra NIC", vip, routes)
+		}
+		updates := [][2]string{
+			{"KUBE_OVN_GW_NODES", strings.Join(nodes, ",")},
+			{keyExtExclude, start.String() + ".." + final.String()},
+			{"ENVOY_GATEWAY_INTERNAL_VIP", vip.String()},
+			{"PLATFORM_ENDPOINT_ENVOY_GATEWAY_ENABLED", "true"},
+			{"INGRESS_GLOBAL_ALLOWLIST", ingress},
+			{"EGRESS_GLOBAL_ALLOWLIST", egress},
+			{"EXT_NET_ANCHOR_IPS", strings.Join(anchors, ",")},
+			{"EXT_NET_ANCHOR_REQUIRED", "true"},
+			{KeyProjectFrontDoorDNS, "zone"},
+			// Finalize applies the anchors before the catalog is published.
+			{"SERVICES_INTERNAL_GATEWAY_REQUIRED", "true"},
+		}
+		if err := writeEnvUpdates(path, env, updates); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "[scaffold] Project front door: internal HTTPS VIP %s on %s, %d return-path anchor(s), reserved %s=%s..%s; Project DNS answers the zone with it\n", vip, cidr, len(nodes), keyExtExclude, start, final)
+		return nil
+	}
 	if routes == "" {
 		return fmt.Errorf("managed-services internal network: INFRA_ATTACHMENT_ROUTES is empty")
 	}
@@ -132,6 +176,15 @@ func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingres
 		{KeyPlatformIngressVIP, vip.String()},
 		{"INFRA_ATTACHMENT_PLATFORM_INGRESS_WORKLOAD_EGRESS", "true"},
 	}
+	if err := writeEnvUpdates(path, env, updates); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[scaffold] managed-services internal HTTPS VIP %s, %d return-path anchor(s), reserved %s=%s..%s\n", vip, len(nodes), keyExtExclude, start, final)
+	return nil
+}
+
+// writeEnvUpdates sets each key, appending keys the starter only documents.
+func writeEnvUpdates(path, env string, updates [][2]string) error {
 	lines := strings.Split(env, "\n")
 	for _, update := range updates {
 		key, value := update[0], update[1]
@@ -162,6 +215,5 @@ func ResolveManagedServicesInternalNetwork(fleetRepo, clusterName string, ingres
 	if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
 		return fmt.Errorf("managed-services internal network: write %s: %w", path, err)
 	}
-	fmt.Fprintf(out, "[scaffold] managed-services internal HTTPS VIP %s, %d return-path anchor(s), reserved %s=%s..%s\n", vip, len(nodes), keyExtExclude, start, final)
 	return nil
 }

@@ -205,6 +205,7 @@ A generic Kubernetes MCP server lets an AI assistant run `kubectl`, but it does 
 | `check-quota` | Inspect Organization and Project resource quotas before deploying |
 | `ssh-into-vm` | SSH into a VM using the project's auto-generated keypair |
 | `use-kube-dc-cli` | Authentication, context switching and Project selection through the kube-dc CLI |
+| `install-kube-dc` | For platform operators: plan and install a new Kube-DC platform (host and disk checks, network, front door, Ceph, DNS, certificates) with the kube-dc CLI |
 
 ### Install skills
 

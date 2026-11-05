@@ -64,6 +64,7 @@ type nodeLabelReader interface {
 // new overlay, in order:
 //
 //	infra-core:           generated ext-net-exclusions  EXT_NET_EXTRA_EXCLUDE_IPS set
+//	infra-core:           generated vpc-dns-front-door  Class D front door (PROJECT_FRONT_DOOR_DNS=zone)
 //	infra-core:           local-path not-default        multi-node ceph-block + VM disks on shared RBD
 //	infra-object-storage: ceph-block-default            (same)
 //	platform:             platform-backups              Ceph object storage exposed + Keycloak 26
@@ -114,6 +115,21 @@ func WriteProductComponents(ctx context.Context, opts ProductComponentOptions, o
 		}
 		comps = append(comps, SiteComponent{Layer: "infra-core", Path: rel})
 		fmt.Fprintf(out, "[scaffold] external network: also excluding %s from tenant allocation\n", extra)
+	}
+
+	if env(KeyProjectFrontDoorDNS) == "zone" {
+		dnsOpts := frontDoorDNSOptions{
+			KubeAPIInternal: strings.EqualFold(env("PLATFORM_ENDPOINT_KUBE_API_ENABLED"), "true") && env("KUBE_API_INTERNAL_VIP") != "",
+		}
+		if s3, domain := strings.TrimSuffix(env("S3_HOSTNAME"), "."), strings.TrimSuffix(env("DOMAIN"), "."); s3 != "" && s3 != domain && !strings.HasSuffix(s3, "."+domain) {
+			dnsOpts.ExtraS3Zone = s3
+		}
+		rel, err := writeProjectFrontDoorDNS(opts.FleetRepo, opts.ClusterName, dnsOpts)
+		if err != nil {
+			return err
+		}
+		comps = append(comps, SiteComponent{Layer: "infra-core", Path: rel})
+		fmt.Fprintf(out, "[scaffold] Project DNS: every name under the installation domain resolves to the internal front door %s\n", env("ENVOY_GATEWAY_INTERNAL_VIP"))
 	}
 
 	// Volumes that name no class move to replicated storage only where VM
