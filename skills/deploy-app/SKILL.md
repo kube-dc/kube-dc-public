@@ -173,6 +173,11 @@ Then choose how builds run (one per app; both would deploy every push twice):
        deploy instead. The platform's part takes about two minutes. When the
        source can't branch (the plan doesn't allow it, or an older service),
        the preview falls back to the latest backup.
+     - With `previewDatabaseFrom`, also pass `previewDatabaseGrant`: the
+       ServiceCopyGrant a Project admin created in that project (`app` = the
+       production app's name, the repository name in lower case; optional
+       masking, as for builds on push). The platform refuses copies by the
+       workflow's identity without one, so ask the user to create it first.
      A branch locks every login it copied except its own owner. While
      branches exist, the source can't be deleted, restored in place or
      upgraded to a new major version; tell the user that before they try.

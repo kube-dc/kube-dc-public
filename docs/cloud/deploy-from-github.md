@@ -122,6 +122,7 @@ options on `connect_repository`, or the matching repository variables:
 | `previewDatabase: postgresql-development` | `KUBE_DC_PREVIEW_DATABASE` | A new, empty database from that plan |
 | `previewDatabaseFrom: <service>` | `KUBE_DC_PREVIEW_DATABASE_FROM` | A copy of the service's latest backup (takes minutes; data as of that backup) |
 | also `previewDatabaseMode: branch` | `KUBE_DC_PREVIEW_DATABASE_MODE=branch` | A branch of the live service: a copy of its data as of the moment the preview deploys |
+| also `previewDatabaseGrant: <grant>` | `KUBE_DC_PREVIEW_DATABASE_GRANT` | The [ServiceCopyGrant](#copy-grants) the copy names (required for copies by the workflow) |
 
 The source service must be in the preview project. A branch starts from
 an online snapshot, so the source keeps serving, and the platform's part
@@ -142,10 +143,14 @@ annotation `build.kube-dc.com/preview-database-error`.
 
 #### Copy grants
 
-With builds on push, the platform makes the copy, not your CI, so a Project
-admin of the source's project must allow it first with a ServiceCopyGrant.
-Without one, a preview gets an empty database of the source's plan, and the
-error annotation says why.
+A Project admin of the source's project allows copies with a
+ServiceCopyGrant. With builds on push the platform makes the copy: without a
+grant, a preview gets an empty database of the source's plan, and the error
+annotation says why. With a workflow, the copy is made by the workflow's
+machine identity, and the platform refuses it unless it names a grant
+(`KUBE_DC_PREVIEW_DATABASE_GRANT`; `app` is the production app's name, the
+repository name in lower case). Pull request code can change the workflow,
+so a grant is not optional there. Machine identities cannot create grants.
 
 ```yaml
 apiVersion: services.kube-dc.com/v1alpha1
@@ -202,10 +207,12 @@ spec:
 - The digest pins the script: changing the ConfigMap afterwards fails the
   copy, so a new script needs a new grant (grants cannot be edited).
 - When any grant for a service and app masks, every copy for them masks.
-- If the script fails, the copy is deleted and the preview has no database;
+- If the script fails, the copy stays closed. With builds on push it is
+  deleted and the preview has no database;
   `build.kube-dc.com/preview-database-error` gives the SQL error (code and
   message, never row values). Fix the script, then close and reopen the pull
-  request.
+  request. With a workflow, `deploy.sh` fails with the same error; fix the
+  script, create a new grant, delete the copy and deploy again.
 - A copy keeps backups like its source, in the project's own object store,
   so they hold its data from before masking; they are readable like the
   source's own backups, by members of the project only.
