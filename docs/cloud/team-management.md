@@ -31,18 +31,22 @@ User authenticates  →  Organization Realm (OIDC)  →  JWT with Organization g
 
 This model separates Organization identity and membership from Project workload access. Kubernetes RBAC is the authorization boundary; Project networking, quotas, and platform policy add workload isolation.
 
-## Standard Roles
+## Standard roles
 
 When an organization and its projects are created, Kube-DC automatically provisions a set of standard roles. These cover the most common access scenarios without any manual configuration.
 
-### Organization-Level Roles
+### Organization-level roles
+
+The following table lists the two Organization roles. In the console, the
+`org-admin` group shows as **Organization administrator** and the `user` group
+shows as **Member**:
 
 | Role | Group | Permissions |
 |------|-------|-------------|
 | `{org}-admin` | `org-admin` | Manage members, billing, shared quota, Projects, and Organization Groups within this Organization; receives `admin` in every Project |
 | `{org}-user` | `user` | Read the Organization and Project list; receives `user` in every Project |
 
-### Project-Level Roles
+### Project-level roles
 
 Every project receives these four roles automatically:
 
@@ -53,9 +57,9 @@ Every project receives these four roles automatically:
 | `project-manager` | Operations and oversight | Read and monitor Project resources, use the VM console, update selected managed security resources, and create or update KMS keys; no Project membership or quota management |
 | `user` | Read-only access | Read Project resources and logs; no raw Secret access or VM console |
 
-### Automatic Role bindings
+### Automatic role bindings
 
-When a project is created, these bindings are configured automatically:
+When a Project is created, Kube-DC configures these bindings:
 
 | Subject | Role | Effect |
 |---------|------|--------|
@@ -67,106 +71,125 @@ Additional Project roles, including `admin`, `developer`, and
 
 ## Manage users
 
-The **Users** section in the console is available to organization administrators under the **Manage Organization** menu.
+You need the Organization Admin role. To open the user list, open the account
+menu, select **Manage organization**, and then click **Users**.
 
 ### User list
 
-The users page shows all members of the organization with their assigned roles, status, and join date. Organization admins can:
+The **Members** tab lists every member of the Organization with the
+**Organization access**, **Project groups**, **Status**, and **Joined**
+columns. From this page you can:
 
-- **Create User**: Add a new user directly to the organization
-- **Assign Groups**: Grant elevated per-project access through organization groups
-- **Delete**: Remove a user from the organization
-- **Pending Requests** tab: review and approve self-service join requests
+- Click **Create user** to add a user to the Organization
+- Use the **Manage groups** row action to grant or remove group access
+- Use the **Delete user** row action to remove a user from the Organization
+- Open the **Join requests** tab to review self-service join requests
 
-:::info Permission Required
-Only users with the `org-admin` role can create, delete, or modify other users. Regular users can view the list but cannot perform management actions.
+:::info Permission required
+Only users with the `org-admin` role can open Organization management and
+create, delete, or change other users. Other members do not see the **Users**
+page.
 :::
+
+If your provider manages members in an external portal, the **Users** page
+says so. Then you add and remove members in that portal, and **Create user**,
+**Delete user**, and the **Join requests** tab do not appear.
 
 ### Create a user
 
-Organization administrators can create users directly from the UI without any external tooling.
+1. On the **Users** page, click **Create user**. The **Create user** dialog
+   opens.
+2. Fill in the fields that the following table describes.
+3. Click **Create user**.
 
-**Steps:**
+![Create user dialog with the Username, Email, First name, Last name, Initial password, and Organization access fields and the Account enabled check box](images/create-new-user-view.png)
 
-1. Navigate to **Manage Organization → Users**
-2. Click **Create User** in the top-right corner
-3. Fill in the required fields:
-
-![Create new user form](images/create-new-user-view.png)
+The following table describes the fields of the **Create user** dialog:
 
 | Field | Description |
 |-------|-------------|
-| **Username** | Unique login name (letters, numbers, `.`, `_`, `-`; minimum 3 characters) |
-| **Email** | User's email address |
-| **First Name** | Given name |
-| **Last Name** | Family name |
-| **Password** | Initial password (minimum 8 characters) |
-| **Roles** | Initial Organization role: `User` (read-only) or `Organization Admin` (Organization management and full Project access) |
-| **Enable user account** | When checked, the user can log in immediately after creation |
+| **Username** | Unique sign-in name |
+| **Email** | The user's email address |
+| **First name** | Given name |
+| **Last name** | Family name |
+| **Initial password** | The first password. It must meet the password policy of your Organization. |
+| **Organization access** | **Member** (read-only access to every Project) or **Organization administrator** (Organization management and full Project access) |
+| **Account enabled** | When selected, the user can sign in right after creation |
 
-4. Click **Create User**
+Kube-DC creates the user in the Organization's Keycloak realm. A **Member**
+gets read-only access (the `user` role) to every Project. To grant more access,
+add the user to an Organization Group.
 
-The user is created in the organization's Keycloak realm and can log in to the Kube-DC console immediately. They receive automatic read-only access (`user` role) to all projects unless assigned to an organization group for elevated access.
+### Manage the groups of a user
 
-:::tip Default Role
-New users are created with the `User` role by default, which grants read-only access to all projects. To grant elevated project access, use **Organization Groups** after creation.
-:::
+After you create a user, you can add the user to Organization Groups to grant
+access to specific Projects.
 
-### Assign groups to a user
+1. In the **Users** list, open the row actions of the user.
+2. Select **Manage groups**. The **Manage groups** dialog opens.
+3. Select the groups to add, and clear the groups to remove. The list shows
+   the base groups (`org-admin` and `user`) and your Organization Groups.
+4. Click **Save groups**.
 
-After creating a user, you can assign them to organization groups to grant elevated access to specific projects.
-
-**Steps:**
-
-1. In the **Users** list, find the user and click **Assign Groups**
-2. Select the **action**: Assign groups or Remove groups
-3. Choose from the available groups:
-   - **Realm Groups** (`org-admin`, `user`): Organization-wide roles
-   - **Organization Groups**: Project-specific elevated access groups you have created
-4. Click **Assign Groups** to apply
-
-Group assignments and removals affect newly issued tokens. An access token that was already issued keeps its existing group claims until it expires, which is 15 minutes by default. Sign out and sign in again to obtain updated claims immediately.
+Group changes affect newly issued tokens. An access token that was already
+issued keeps its existing group claims until it expires, which is 15 minutes
+by default. To get the updated claims at once, the user signs out and signs in
+again.
 
 ### Handle join requests
 
-Users who discover Kube-DC independently can request to join an organization through the **Join Request** flow on the login page. Organization administrators are notified and can approve or deny these requests from the **Pending Requests** tab.
+Users can ask to join an Organization from the console start page. See
+[Sign up and sign in](sign-up-login.md). Organization Admins review these
+requests on the **Join requests** tab.
 
-**Steps:**
-
-1. Navigate to **Manage Organization → Users → Pending Requests**
-2. Review pending requests (name, email, requested date)
-3. Click **Approve** to add the user to the organization with the default `user` role, or **Deny** to reject the request
-
-Approved users are automatically added to the `user` group and receive read-only access to all projects.
+1. On the **Users** page, click the **Join requests** tab. It lists each
+   request with **Name**, **Email**, and **Requested** date.
+2. Click **Approve** or **Deny** next to the request.
+3. Optional: to approve, select the **Organization access** for the user:
+   **Member** or **Organization administrator**.
+4. Click **Approve** or **Deny** in the dialog to confirm.
 
 ### Delete a user
 
-1. In the **Users** list, click **Delete** next to the user
-2. Confirm the deletion in the dialog
+1. In the **Users** list, open the row actions of the user.
+2. Select **Delete user**. The **Delete user** dialog opens.
+3. Type the user name to confirm.
+4. Click **Delete**.
 
-The user is removed from the Organization's Keycloak realm, which blocks new logins and token refresh. An access token that was already issued can remain valid until its expiry, which is 15 minutes by default.
+Kube-DC removes the user from the Organization's Keycloak realm, which blocks
+new sign-ins and token refresh. An access token that was already issued can
+remain valid until its expiry, which is 15 minutes by default. The console does
+not offer **Delete user** for the Organization owner.
 
 ## Organization groups
 
 Organization Groups define elevated access per Project. Each group connects a Keycloak group claim to Kubernetes RoleBindings in the selected Projects' backing namespaces.
 
-**Use Organization Groups when you need to:**
+Use Organization Groups when you need to:
+
 - Grant `admin`, `developer`, or `project-manager` access to specific Projects
 - Manage teams: one group can span multiple Projects with a different role in each
 
 ### Create an Organization group in the console
 
-1. Navigate to **Manage Organization → Organization Groups**
-2. Click **Create Group** and provide a group name
-3. Configure project permissions:
+1. Open Organization management, then click **Organization groups**.
+2. Click **Create group**. The **Create organization group** dialog opens.
+3. In **Group name**, enter a unique name for the group.
+4. In **Display name**, enter the name that the console shows for the group.
+5. Optional: enter a **Description**.
+6. In **Project 1**, select the target Project.
+7. Select one or more roles to grant in that Project, such as `admin`,
+   `developer`, `project-manager`, or `user`.
+8. Optional: to grant access to another Project, click **Add project access**
+   and repeat steps 6 and 7.
+9. Click **Create group**.
 
-For each project permission entry:
-- **Project**: Select the target project from the dropdown
-- **Roles**: Select one or more roles to grant in that project (`admin`, `developer`, `project-manager`, `user`)
+To add users to the group, use **Manage groups** on the **Users** page. See
+[Manage the groups of a user](#manage-the-groups-of-a-user).
 
-You can add multiple project permissions to a single group. Click **Update Group** to save.
-
-4. Assign users to this group through **Users → Assign Groups**
+To change a group, use the **Edit group** row action, change the Project
+access, and click **Save group**. To remove a group, use the **Delete group**
+row action.
 
 ### Create an Organization group with kubectl
 
@@ -231,22 +254,36 @@ OrganizationGroup deleted
 
 <OrganizationGroupLifecycleDiagram />
 
-## Custom Project Roles
+## Custom Project roles
 
 The four standard Project roles cover most scenarios. A holder of the Project `admin` role can create a custom Kubernetes Role when a narrower permission set is required.
 
-### Edit roles in the console
+### Create a role in the console
 
-Navigate to **Manage Organization → Project Roles** to view and edit roles per project:
+1. Open Organization management, then click **Project roles**.
+2. In **Project**, select the Project for the role.
+3. Click **Create role**. The **Create project role** dialog opens.
+4. In **Role name**, enter a name for the role.
+5. Optional: enter a **Description**.
+6. Fill in the fields of **Rule 1**, separating values with commas:
 
-![Edit Role interface](images/role-edit.png)
+   - **API groups (empty for core)**: the API groups, such as `apps` or
+     `kubevirt.io`. Leave it empty for core resources such as pods and
+     Services.
+   - **Resources**: the resource types, such as `pods`, `configmaps`, or
+     `services`.
+   - **Verbs**: the allowed operations, such as `get`, `list`, `watch`,
+     `create`, `update`, `patch`, or `delete`.
+   - **Resource names (optional)**: limits the rule to named objects.
 
-In the role editor, define permission rules by:
-- **API Group**: select `Core API Group` for pods and services, or `apps`, `kubevirt.io`, or another group
-- **Resources**: select the resource types, such as configmaps, secrets, and services
-- **Verbs (Actions)**: Select allowed operations: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`
+7. Optional: click **Add rule** to add another rule.
+8. Click **Save role**.
 
-Multiple permission rules can be added to a single role. Click **Review** to preview before saving.
+![Create project role dialog with Role name, Description, and one rule with API groups, Resources, Verbs, and Resource names fields](images/role-edit.png)
+
+To change a role, use the **Edit role** row action. The **Edit project role**
+dialog opens the role as YAML. Change it and click **Save changes**. To remove a
+role, use the **Delete role** row action.
 
 ### Create a custom Role with kubectl
 
@@ -316,11 +353,11 @@ exceeds. The group picks the Role up as soon as it exists or is narrowed.
 
 ## Troubleshooting
 
-**User cannot log in after creation**
-- Verify the account is enabled (check the user's status in the Users list)
-- Ensure the correct organization URL is being used for login
+**User cannot sign in after creation**
+- Check that the account is enabled: see the **Status** column in the **Users** list
+- Check that the user enters the correct **Organization ID** on the console start page
 
-**User can log in but sees no projects**
+**User can sign in but sees no Projects**
 - The user may only have the `user` role, which provides read-only access
 - Verify they are assigned to the correct organization group for elevated project access
 - Verify the user belongs to the expected identity group and inspect the
@@ -338,7 +375,7 @@ exceeds. The group picks the Role up as soon as it exists or is narrowed.
 
 **Custom role not appearing in Organization Group editor**
 - The role must exist in the target Project's backing namespace before it can be referenced
-- Create the role with `kubectl apply` first, then reference it from the OrganizationGroup
+- Create the role on the **Project roles** page or with `kubectl apply` first, then reference it from the OrganizationGroup
 
 **Custom role selected but members have no access**
 - Run `kubectl describe organizationgroup <name>` and look for a `RoleNotBindable` event

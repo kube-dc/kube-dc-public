@@ -1,34 +1,34 @@
 # Object storage (S3)
 
-Kube-DC provides S3-compatible object storage for storing files, images, backups, and any unstructured data. You can manage buckets and files through the dashboard or use standard S3 tools like AWS CLI, s3cmd, and boto3.
+This page is for a Project member who stores files in Kube-DC object storage. After you read it, you can create buckets, manage their objects and access, and connect S3 tools and workloads to them.
+
+Kube-DC provides S3-compatible object storage for files, images, backups, and other unstructured data. You can manage buckets and objects in the console, or use standard S3 tools such as the AWS CLI, s3cmd, and boto3.
 
 ## Buckets
 
-A **bucket** is a container for your objects (files). Each bucket has a unique name, its own access credentials, and can be set to **Private** or **Public Read** access.
+A **bucket** is a container for your objects (files). Each bucket has a unique name, its own access credentials, and a **Private** or **Public read** access policy.
 
-The Object Storage view shows all your buckets with their S3 bucket name, status, access level, credentials availability, and age. The sidebar tree provides quick navigation between **Overview**, **Buckets**, and **Access Keys**.
+To open object storage, click **Object Storage** in the section rail. The section tree has three pages under **Buckets and access**: **Storage overview**, **Buckets**, and **Access keys**. The **Buckets** page lists your buckets with their name, status, S3 bucket name, storage class, and age.
 
-Click on a bucket to expand its details:
+To open a bucket, click its name. The bucket page has **Refresh** and **Delete bucket** buttons and these tabs:
 
-- **General Information**: Name, S3 bucket name, backing namespace, storage class, status, and creation date
-- **S3 Connection**: Endpoint URL, region, access toggle (Public/Private), and public URL
-- **Bucket Credentials**: Per-bucket Access Key ID and Secret Access Key
-- **Actions**: Browse Files or Delete the bucket
+- **Objects**: the object browser. See [Object browser](#object-browser).
+- **Details**: the bucket configuration (claim name, S3 bucket name, storage class, creation date, endpoint, internal host, port, region, and connection Secret) and connection examples.
+- **Access**: the **Bucket access policy**, the **Bucket credentials**, and the **Archive key rotations**.
 
 ### Create a bucket
 
-#### Via dashboard
+#### Use the console
 
-1. Navigate to your project → **Object Storage** → **Buckets**
-2. Click **+ Create Bucket**
-3. Enter a bucket name (lowercase, alphanumeric, hyphens allowed)
-4. Click **Create**
+1. In the section rail, click **Object Storage**.
+2. Click **Buckets**.
+3. Click **Create bucket**. The **Create bucket** dialog opens.
+4. In **Bucket name**, enter a name. Use 3–63 lowercase letters, numbers, or hyphens, and start and end with a letter or number. The S3 bucket name (the backing namespace, a hyphen, and this name) can have at most 63 characters. The hint under the field shows the S3 bucket name.
+5. Click **Create bucket**. The console opens the bucket's **Details** tab.
 
-New buckets start private. After the bucket reaches `Bound`, expand its details and use the access toggle if you need **Public Read**.
+A bucket starts private. Its S3 name has the Project's backing namespace as a prefix, so the name stays unique. For example, bucket `one` becomes `acme-production-one`. To make the bucket public after it reaches `Bound`, see [Bucket access: private and public](#bucket-access-private-and-public).
 
-The bucket name in S3 is prefixed with the Project's backing namespace for uniqueness (for example, bucket `one` becomes `acme-production-one`).
-
-#### Via kubectl
+#### Use kubectl
 
 Create an `ObjectBucketClaim` in the Project's backing namespace:
 
@@ -45,9 +45,9 @@ spec:
   storageClassName: ceph-bucket
 ```
 
-The `kube-dc.com/organization` label must identify the owning Organization. The dashboard uses it to attribute manually created claims in Organization usage and bucket totals.
+The `kube-dc.com/organization` label must identify the owning Organization. The console uses it to count manually created claims in Organization usage and bucket totals.
 
-When the claim is bound, Rook automatically creates a **Secret** and **ConfigMap** in the same namespace with the bucket's S3 credentials:
+When the claim is bound, Rook creates a **Secret** and a **ConfigMap** with the bucket's S3 credentials in the same namespace. To read them, run:
 
 ```bash
 # Check bucket status
@@ -60,7 +60,8 @@ kubectl get secret my-bucket -n acme-production -o yaml
 kubectl get configmap my-bucket -n acme-production -o yaml
 ```
 
-The ConfigMap contains:
+The ConfigMap contains these keys:
+
 - `BUCKET_HOST`: Internal S3 endpoint
 - `BUCKET_NAME`: Full bucket name in S3
 - `BUCKET_PORT`: Service port
@@ -68,41 +69,77 @@ The ConfigMap contains:
 
 ### Bucket access: private and public
 
-- **Private** (default): Only accessible with valid S3 credentials
-- **Public Read**: Anyone with the URL can read objects; writing still requires credentials
+A bucket has one of these access policies:
 
-Toggle access from the bucket detail view in the dashboard. The **S3 Connection** panel shows the endpoint configured for your installation. Public object URLs follow this pattern:
+- **Private** (default): only requests with valid S3 credentials can access objects.
+- **Public read**: anyone with an object URL can read the object. Writing still requires credentials.
+
+To change the access policy of a bucket:
+
+1. Open the bucket, and click the **Access** tab.
+2. Under **Bucket access policy**, click **Change access**. The **Change bucket access** dialog opens.
+3. In **Access**, select **Private** or **Public read**.
+4. For **Public read**, select **Allow anyone with an object URL to read this bucket's objects**.
+5. Click **Apply access policy**.
+
+The **Endpoint** on the bucket's **Details** tab shows the S3 endpoint of your installation. Public object URLs follow this pattern:
 
 ```
-<S3_ENDPOINT>/<bucket-name>/<object-key>
+<s3-endpoint>/<bucket-name>/<object-key>
 ```
+
+Replace `<s3-endpoint>` with the endpoint, `<bucket-name>` with the S3 bucket name, and `<object-key>` with the object's key.
 
 ### Delete a bucket
+
+To delete a bucket in the console:
+
+1. Open the bucket, and click **Delete bucket**.
+2. In the confirmation field, type the bucket name.
+3. Click **Delete bucket**.
+
+To delete a bucket with kubectl, run:
 
 ```bash
 kubectl delete objectbucketclaim my-bucket -n acme-production
 ```
 
 :::warning
-Deleting a bucket removes all objects inside it permanently.
+Deleting a bucket deletes its claim. The reclaim policy of its storage class controls whether the underlying bucket and its data are deleted. This can permanently remove all objects in the bucket.
 :::
 
-## File browser
+## Object browser
 
-The built-in file browser lets you manage objects directly from the dashboard without any external tools.
+The **Objects** tab of a bucket lets you manage objects in the console without external tools. Object browsing is available when the bucket is `Bound`.
 
-![S3 file browser](images/s3-manage-files.png)
+![Objects tab of a bucket with the Upload files dialog listing three files](images/s3-manage-files.png)
 
-From the bucket detail view, click **Browse Files** to open the file browser. You can:
+The object list shows each object's name, type (**File** or **Folder**), size, and modification time. The toolbar has **Refresh**, **New folder**, and **Upload files**.
 
-- **Upload Files**: Click **Upload Files** and select one or more files
-- **Create Folders**: Click **+ Create Folder** to organize objects into prefixes
-- **Download**: Right-click or use the action menu to download files
-- **Move**: Move objects to a different folder within the bucket
-- **Copy Public URL**: Get a direct link for public buckets
-- **Delete**: Remove individual files or folders
+To upload files:
 
-The file browser shows each object's name, size, last modified date, and type (File or Folder).
+1. Open the bucket. The **Objects** tab opens.
+2. Click **Upload files**.
+3. Select one or more files. The **Upload files** dialog lists the files. Each file can be up to 100 MiB.
+4. Optional: select **Replace any existing objects with these exact names** to overwrite objects that have the same names.
+5. Click **Start upload**. The dialog shows the progress of each file.
+
+You can also drop files on the object list to open the **Upload files** dialog.
+
+To create a folder:
+
+1. Click **New folder**. The **New folder** dialog opens.
+2. In **Folder name**, enter the name.
+3. Click **Create folder**.
+
+The **Actions** menu of an object offers these actions:
+
+- **Download**: downloads the file.
+- **Move / rename**: moves the object to another key in the bucket.
+- **Copy public URL**: copies a direct link. This action appears only for public buckets.
+- **Delete**: deletes the object. For a folder, the action is **Delete folder and contents**.
+
+To act on several objects, select them in the list, and click **Download selected files** or **Delete selected**.
 
 ## Access keys
 
@@ -110,20 +147,21 @@ Kube-DC exposes two credential scopes:
 
 ### Organization account keys
 
-The **Access Keys** section manages credentials for the Organization's RGW account. These keys can operate buckets owned by that account and are also used by the platform for account administration and usage reporting.
+The **Access keys** page manages credentials for the Organization's RGW account. These keys can operate buckets that the account owns. The platform also uses them for account administration and usage reporting.
 
-Buckets created through the dashboard or as standard ObjectBucketClaims are owned by separate, per-bucket users. Organization account keys do **not** grant data access to every ObjectBucketClaim in the Organization.
+Buckets that you create in the console or as standard ObjectBucketClaims are owned by separate, per-bucket users. Organization account keys do **not** grant data access to every ObjectBucketClaim in the Organization.
 
-The Access Keys view shows:
+The **Access keys** page offers these controls:
 
-- **Credentials**: Your primary Access Key ID, Secret Access Key (click to reveal), S3 endpoint, and region
-- **Key Management**: Generate additional keys or revoke existing ones
+- **Reveal primary credentials**: shows the primary access key ID and secret key under **Organization credentials**.
+- **Generate access key**: creates another key for the Organization account. Save its secret before you close the result, because you cannot retrieve it again.
+- **Revoke**: revokes a key after you type its access key ID. The primary key is protected.
 
-Use Organization account keys only with buckets owned by that account. For dashboard-created buckets and ObjectBucketClaims, use the per-bucket credentials below. The **Access Keys** view shows the configured S3 endpoint and region.
+Use Organization account keys only with buckets that the account owns. For buckets created in the console and for ObjectBucketClaims, use the per-bucket credentials. The **S3 connection** panel on the **Storage overview** page shows the endpoint and region.
 
 ### Per-bucket keys
 
-Each dashboard-created bucket or ObjectBucketClaim has its own credentials, available in the bucket detail view or as a Kubernetes Secret in its backing namespace:
+Each bucket created in the console or as an ObjectBucketClaim has its own credentials. To see them in the console, open the bucket's **Access** tab and click **Reveal bucket credentials**. They are also in a Kubernetes Secret in the bucket's backing namespace. To read them with kubectl, run:
 
 ```bash
 # Get per-bucket credentials
@@ -137,36 +175,37 @@ Per-bucket keys are scoped to that specific bucket only.
 
 Where your platform operator has enabled key rotation, a Project admin can replace a bucket's
 key while managed services keep using the bucket as their backup archive. A rotation creates a
-new key and writes it into the bucket's Secret. It then waits until every managed service that
-reads or writes the bucket has switched to the new key or no longer exists, and only then
-revokes the old key.
+second key and writes it into the bucket's Secret. It then waits until every managed service that
+reads or writes the bucket has switched to the second key or no longer exists. Only then does it
+revoke the old key.
 
 The console lists a bucket's rotations under **Archive key rotations** on the bucket's
 **Access** tab. It shows each rotation's phase and start time, and offers **Abandon rotation**
-for a rotation that has not finished. Only Project admins can manage rotations there. To start
-a rotation, use the API with your console session token:
+for a rotation that has not finished. The abandon dialog asks for a **Reason**. Only Project
+admins can manage rotations there. To start a rotation, use the API with your console session
+token:
 
 ```text
-POST https://backend.<your-domain>/api/object-storage/<project-namespace>/buckets/<bucket>/key-rotations
+POST https://backend.<domain>/api/object-storage/<project-namespace>/buckets/<bucket>/key-rotations
 {"idempotencyKey": "rotate-2026-10", "claimUID": "<ObjectBucketClaim UID>",
  "sourceSecretUID": "<bucket Secret UID>", "gracePeriodSeconds": 300}
 ```
 
-The two UIDs pin the bucket and its Secret as you saw them; a changed incarnation is refused.
+Replace `<domain>`, `<project-namespace>`, and `<bucket>` with your values. The two UIDs pin the bucket and its Secret as you saw them. The platform refuses a request for a changed incarnation.
 Repeat the same request safely: the idempotency key names one rotation. `GET` on the same path
 lists rotations, and `GET .../key-rotations/<rotation>` shows one, including its phase and why it
 waits.
 
 A rotation that can never finish (for example, a service that cannot switch keys) can be
 **abandoned**: `POST .../key-rotations/<rotation>/abandon` with
-`{"rotationUID": "<uid>", "reason": "<why>"}`. Abandoning revokes nothing. Both the old and the
-new key stay valid, the rotation ends as `Abandoned`, and the next rotation of the bucket that
+`{"rotationUID": "<uid>", "reason": "<why>"}`. If revocation has not started, abandoning revokes nothing. Both the old and the
+second key stay valid, the rotation ends as `Abandoned`, and the next rotation of the bucket that
 succeeds retires the keys this one left behind. An abandon cannot be withdrawn. While a key is
 being revoked, an abandon waits until that step finishes.
 
 ## Use S3 tools
 
-The examples below use a bucket's per-bucket credentials. Set `S3_ENDPOINT` to the endpoint shown in the bucket detail or Access Keys view.
+The examples in this section use a bucket's per-bucket credentials. Set `S3_ENDPOINT` to the **Endpoint** value on the bucket's **Details** tab or on the **Storage overview** page.
 
 ### AWS CLI
 
@@ -174,8 +213,8 @@ The examples below use a bucket's per-bucket credentials. Set `S3_ENDPOINT` to t
 export S3_ENDPOINT='https://s3.your-provider.example'
 
 # Configure credentials
-aws configure set aws_access_key_id YOUR_ACCESS_KEY
-aws configure set aws_secret_access_key YOUR_SECRET_KEY
+aws configure set aws_access_key_id '<access-key-id>'
+aws configure set aws_secret_access_key '<secret-access-key>'
 
 # Upload a file
 aws --endpoint-url "$S3_ENDPOINT" s3 cp myfile.txt s3://acme-production-my-bucket/
@@ -190,6 +229,8 @@ aws --endpoint-url "$S3_ENDPOINT" s3 ls s3://acme-production-my-bucket/
 aws --endpoint-url "$S3_ENDPOINT" s3 sync ./backups s3://acme-production-my-bucket/backups/
 ```
 
+Replace `<access-key-id>` and `<secret-access-key>` with the bucket's credentials.
+
 ### Python (boto3)
 
 ```python
@@ -199,8 +240,8 @@ import boto3
 s3 = boto3.client(
     's3',
     endpoint_url=os.environ['S3_ENDPOINT'],
-    aws_access_key_id='YOUR_ACCESS_KEY',
-    aws_secret_access_key='YOUR_SECRET_KEY',
+    aws_access_key_id='<access-key-id>',
+    aws_secret_access_key='<secret-access-key>',
 )
 
 # List objects in the bucket available to these credentials
@@ -224,8 +265,8 @@ export S3_HOST='s3.your-provider.example'
 s3cmd --configure \
   --host="$S3_HOST" \
   --host-bucket="$S3_HOST" \
-  --access_key=YOUR_ACCESS_KEY \
-  --secret_key=YOUR_SECRET_KEY
+  --access_key='<access-key-id>' \
+  --secret_key='<secret-access-key>'
 
 # List objects
 s3cmd ls s3://acme-production-my-bucket/
@@ -289,11 +330,11 @@ spec:
 
 ## Quotas
 
-Object storage limits depend on your provider, Organization allocation, and current plan. Use the **Billing** page as the source of truth for the limits presented by your installation; do not rely on fixed plan values in automation.
+Object storage limits depend on your provider, your Organization allocation, and your plan. The **Storage overview** page shows the Organization's storage use, buckets, and objects against the configured limits. Do not rely on fixed plan values in automation.
 
-The **Object Storage Overview** aggregates usage for ObjectBucketClaims carrying the correct `kube-dc.com/organization` label.
+The **Storage overview** page aggregates usage for ObjectBucketClaims that carry the correct `kube-dc.com/organization` label.
 
-The standard Rook ObjectBucketClaim provisioner creates a separate S3 user for each bucket. The Organization account quota displayed by Kube-DC is therefore not, by itself, an aggregate admission boundary for those per-bucket users. Do not assume that crossing the displayed limit will automatically reject a new claim or upload; your provider may apply additional enforcement.
+The standard Rook ObjectBucketClaim provisioner creates a separate S3 user for each bucket. The Organization account quota displayed by Kube-DC is therefore not, by itself, an aggregate admission boundary for those per-bucket users. Do not assume that crossing the displayed limit rejects a claim or an upload. Your provider can apply additional enforcement.
 
 ## Quick reference
 

@@ -13,7 +13,8 @@ You need:
 
 ## Create your account
 
-1. Go to `<console-url>`, the console address your provider gives you.
+1. Go to `<console-url>`, the console address your provider gives you. The
+   console start page opens.
 2. Click **Sign up with email** or **Sign up with Google**.
 3. Fill in the registration form:
 
@@ -24,6 +25,8 @@ You need:
 
 4. Click **Register**.
 5. Open the verification email and confirm your account.
+
+![Console start page with the Organization ID field, the Log in to your organization button, and the sign-up buttons](images/sign-in-organization.png)
 
 :::note Sign-up options depend on your provider
 The sign-up buttons appear only when your provider enables self sign-up. The
@@ -36,11 +39,15 @@ If you sign up with Google, Kube-DC verifies your account automatically. Go
 straight to Organization setup.
 :::
 
+If you verified your email but did not finish Organization setup, open the
+console start page and click **Already signed up? Finish setting up your
+organization**.
+
 ## Set up your Organization
 
-After registration, the console asks you to set up or join an Organization. An
-Organization is the identity, membership, billing, and shared-quota boundary
-for its Projects.
+After registration, the console shows **Set up your workspace**. There you
+create an Organization or ask to join one. An Organization is the identity,
+membership, billing, and shared-quota boundary for its Projects.
 
 ### Create an Organization
 
@@ -56,6 +63,13 @@ Follow these steps if you start fresh, or if you need a separate Organization:
 
 If the Organization ID is taken, the console shows that it already exists. Pick
 another ID, or click **Ask to join instead**.
+
+After the Organization is ready, the console can ask for two more things:
+
+- **Choose how this organization pays**: appears when your provider sells
+  plans. Select a plan to continue.
+- **Create your first project**: appears when the Organization has no Projects.
+  See [Create your first Project](first-project.md).
 
 :::note Organization Admin
 The user who creates an Organization becomes its Organization Admin, with full
@@ -80,11 +94,16 @@ email when the request is processed.
 
 1. Go to `<console-url>`, the console address your provider gives you.
 2. Enter your **Organization ID**.
-3. Click **Log in to your organization**.
-4. On the sign-in page, enter your Organization login password, or click
-   **Login with Google** if your Organization has Google sign-in configured.
+3. Click **Log in to your organization**. The **Sign in to your account** page
+   opens.
+4. Enter your **Username or email** and your Organization login password in
+   **Password**.
+5. Click **Sign In**.
 
-![Login page](images/sign-up-4.png)
+If your Organization has Google sign-in configured, you can click **Login with
+Google** instead of steps 4 and 5.
+
+![Sign in to your account page with the Username or email and Password fields, the Sign In button, and the Login with Google button](images/sign-up-4.png)
 
 :::tip Bookmark your Organization
 For faster access, bookmark a sign-in URL that fills in your Organization ID:
@@ -94,26 +113,26 @@ console address and `<organization>` with your Organization ID.
 
 ## Choose a plan or a trial
 
-Subscription and trial options depend on the Kube-DC deployment and its billing
-provider. Some providers offer a trial with the first subscription. A valid
-promo code or an administrator can also enable trial access. The Billing screen
-shows your eligibility and the duration before checkout.
+Subscription and trial options depend on the Kube-DC installation and its
+billing provider. Some providers offer a trial with the first subscription. A
+valid promo code or an administrator can also enable trial access. The billing
+page shows your eligibility and the duration before checkout.
 
-After you create the Organization, open **Billing** to:
+To manage the plan, open the account menu, select **Manage organization**, and
+then click **Billing & quotas**. On this page you can:
 
 - Choose one of the plans your provider offers
-- Redeem a promo code, if you have one
+- Click **Activate a promo trial** to redeem a promo code, if you have one
 - Review the CPU, memory, storage, IP, and accelerator quota before checkout
-- See the subscription state and the remaining trial time, if a trial applies
+- See the subscription state and the trial end date, if a trial applies
 
-The Billing screen is the source of truth for plan capacity and commercial
+The billing page is the source of truth for plan capacity and commercial
 terms. For quota and subscription details, see
 [Billing and usage](billing-usage.md).
 
 ## Next steps
 
-- [Explore the dashboard](dashboard-overview.md) to learn how to navigate the
-  Kube-DC console
+- [Navigate the Kube-DC console](dashboard-overview.md)
 - [Create your first Project](first-project.md)
 - [Set up user groups and permissions](team-management.md)
 - [Configure Google SSO for your Organization](/platform/sso-google-auth)

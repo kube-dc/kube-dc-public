@@ -1,154 +1,174 @@
 ---
-sidebar_label: Dashboard Overview
-title: Navigate the Kube-DC dashboard
+sidebar_label: Console overview
+title: Navigate the Kube-DC console
 ---
 
+This page is for every member of an Organization. It shows how the Kube-DC
+web console is laid out, how to move between Projects and resource sections,
+and where to find Organization management and your account settings.
 
-The Kube-DC dashboard is the central interface for Projects, workloads,
-virtual machines, Managed Clusters, and your account.
+## Console layout
 
-## Projects view
+The console has four areas:
 
-After you sign in, the **Projects** page opens. It lists every Project in your
-Organization with its status, network CIDR, running pods, resource quotas, and
-creation date.
+- **Top bar**: the Project selector, **Search everything** (`Ctrl+K`, or `⌘K`
+  on macOS), notifications, the light and dark theme switch, and the account
+  menu.
+- **Section rail**: a column of icons on the left. Each icon opens one
+  resource section of the current Project.
+- **Section tree**: the pages of the selected section, with a **Filter tree**
+  box.
+- **Main panel**: the selected page, with a breadcrumb trail above it.
 
-![Projects view with navigation menu](images/projects-view-navigation.png)
+## Project overview
 
-From this page you can:
+After you sign in, the console opens the **Project overview** of your current
+Project.
 
-- **Go to Project**: open the workloads dashboard for one Project
-- **Details**: view the Project configuration and its resource limits
-- **Delete**: remove a Project, if your role permits it
+![Project overview with the section rail, the section tree, the Command-line access card, and workload stat cards](images/projects-view-navigation.png)
 
-### User menu
+The overview section tree has these pages:
 
-Click your name in the top right corner to open the user menu. The following
-table lists its items:
+- **Summary**: the **Command-line access** card, workload counts (pods,
+  Deployments, Services, and container restarts), pod creation activity, and
+  workload health.
+- **Quota** or **Usage & limits**: what the Project uses against its limits.
+  Organization Admins of a pay-as-you-go Organization see **Usage & limits**.
+  All other members see **Quota**.
+- **Activity**: pod creation history and recently created workloads.
 
-| Menu item | Description |
-|---|---|
-| **Manage Workloads** | Opens the workloads dashboard for the selected Project |
-| **Project console** | Starts a web terminal with `kubectl` access scoped to your Projects |
-| **Manage user** | Opens account settings for password and two-factor authentication |
-| **Logout** | Signs you out of the dashboard |
+The **Command-line access** card has two buttons:
 
-## Workloads dashboard
-
-**Manage Workloads** and **Go to Project** both open the main workloads
-dashboard.
-
-### Quick actions
-
-Three action cards at the top open common tasks:
-
-- **Get CLI Access**: download your kubeconfig for `kubectl` access
-- **Deploy Virtual Server**: create a Linux or Windows virtual machine
-- **Create Managed Cluster**: provision a Managed Cluster with its own
-  Kubernetes API
-
-### Sidebar navigation
-
-The left sidebar shows a tree of the resources in the current Project:
-
-- **Virtual Machines**, grouped by operating system, such as `debian`,
-  `ubuntu`, and `win`
-- **Managed Clusters** and their worker pools
-
-### Project overview
-
-The center panel adapts to the provider's billing mode:
-
-- Subscription plans show running and total pods and VMs, the storage volume
-  count and size, load balancers, and public IPs.
-- Metered plans show running compute usage and the totals for the current
-  billing period.
-
-### Resource quotas
-
-When quota data is available, **Quota Usage** compares Project use against
-either the Project cap or the Organization's shared pool. It can include CPU,
-memory, storage, pods, public IPv4 addresses, object storage, and any
-accelerators the provider enables.
-
-Organization Admins can select **View Organization Billing** to open plan,
-usage, and cost details. Other Project members do not see that action.
+- **Get kubeconfig** opens the **Set up CLI access** dialog. See
+  [CLI, console, and IDE access](cli-kubeconfig.md).
+- **Open project console** opens a web terminal in a separate browser tab. See
+  [Project console](#project-console).
 
 ## Switch Projects
 
-To move between Projects without returning to the Projects list, use the
-project switcher at the top of the dashboard, next to the Kube-DC logo. Click
-the current Project name, then select another Project.
+The Project selector is the dropdown next to the logo. It shows the
+name of the current Project.
 
-![Project switcher dropdown](images/change-projects-tab.png)
+![Project selector dropdown next to the logo in the top bar](images/change-projects-tab.png)
 
-## Resource tabs
+To switch Projects, open the Project selector and select another Project. The
+console keeps the current section open for the Project you select.
 
-Below the top navigation bar, a row of icon tabs switches between resource
-categories in the current Project.
+## Resource sections
 
-![Resource navigation tabs](images/manage-resources-k8s.png)
+The section rail switches between resource sections of the current Project.
+Hold the pointer over an icon to see its name. Some sections appear only when
+your provider turns them on.
 
-The following table lists the tabs from left to right:
+The following table lists the sections from top to bottom:
 
-| Resource area | What you find there |
+| Section | What you find there |
 |---|---|
-| **Compute** | Pods, Deployments, StatefulSets, DaemonSets, Jobs |
-| **Kubernetes Resources** | ConfigMaps, Secrets, ServiceAccounts, and platform-provided custom resources |
-| **Volumes** | PersistentVolumeClaims and storage usage |
-| **Network** | Services, Ingresses, load balancers, IPs |
-| **Object Storage** | S3-compatible buckets and access credentials |
+| **Overview** | The Project summary, usage and limits, and activity |
+| **Kubernetes** | Workloads, discovery and load balancing, and configuration and storage objects |
+| **Managed services** | Managed databases, caches, and other services from your provider's catalog |
+| **Virtual machines** | Virtual machine instances and their storage |
+| **Managed clusters** | Managed Clusters and their node pools |
+| **Databases** | Databases from the earlier database service, where your provider still offers it |
+| **Networking** | External IPs, Floating IPs, Load Balancers, Datacenter VLANs, and Routed Networks |
+| **Object Storage** | S3-compatible buckets and access keys |
+| **Block Storage** | Volumes and snapshots |
+| **Security** | Managed secrets, certificates, KMS keys, database credentials, and the security audit |
+
+The **Kubernetes** section tree groups resources in three parts:
+
+- **Workloads**: **Pods**, **Deployments**, **Daemon Sets**, **Jobs**,
+  **Replica Sets**, and **Stateful Sets**.
+- **Discovery and load balancing**: **Services** and **Ingresses**.
+- **Config and Storage**: **Config Maps**, **Secrets**, **Volumes (PVCs)**, and
+  **Volume Snapshots**.
+
+![Kubernetes section with the Deployments list and the Workloads, Discovery and load balancing, and Config and Storage tree](images/manage-resources-k8s.png)
+
+## Account menu
+
+To open the account menu, click the avatar and Organization name in the top
+right corner.
+
+![Account menu open in the top right corner of the console](images/account-menu.png)
+
+The following table lists the menu items. Some items appear only for some
+roles or installations:
+
+| Menu item | Description |
+|---|---|
+| **Manage organization** | Opens Organization management. Only Organization Admins see it. |
+| **Account settings** | Opens your account page for profile, password, and two-factor authentication |
+| **Appearance** | Changes the console theme, if your provider permits it |
+| **Session details** | Shows your account, Organization, Projects, and when your access token expires |
+| **Project console** | Opens a web terminal for the current Project in a separate tab |
+| **Observability (Grafana)** | Opens Grafana with the metrics and logs of your Projects |
+| **Human Help** | Opens your provider's support page |
+| **Documentation** | Opens the documentation |
+| **API reference** | Opens the API reference, if your provider publishes one |
+| **Sign out** | Signs you out of the console |
 
 ## Organization management
 
-To open the Organization management view, click the **Kube-DC** logo in the top
-left corner of the Projects page.
+You need the Organization Admin role. To open Organization management, open the
+account menu and select **Manage organization**.
 
-![Organization management view](images/kube-dc-manage-org-view.png)
+![Organization overview with the Organization navigation on the left](images/kube-dc-manage-org-view.png)
 
-The left sidebar gives access to:
+The **Overview** page shows the Project, member, group, and running pod
+counts, the Organization resource pool, and the list of Projects. The
+navigation on the left has these pages:
 
-- **Projects**: create, view, and manage Projects
-- **Users**: invite and manage Organization members
-- **Organization Groups**: manage user groups and role assignments
-- **Project Roles**: define custom roles for Project-level access control
-- **Billing**: view usage, costs, and billing plan details
-- **Audit Logs**: review actions taken across the Organization
-- **Settings**: configure Organization-level settings
+- **Organization**: **Overview** and **Projects**.
+- **Access**: **Users**, **Organization groups**, **Project roles**, and
+  **Machine identities**.
+- **Networking**: **Datacenter VLANs**, **Routed networks**, and **Domains**.
+  **Domains** appears only when your provider requires verified domains.
+- **Administration**: **Billing & quotas**, **Event webhooks**, **Audit logs**,
+  and **Settings**. Depending on your provider, **Billing & quotas** is named
+  **Resources** or **Capacity**.
 
-## Project web console
+To return to your Projects, click **Back to project** at the bottom of the
+navigation. You can also select **Project workspace** in the account menu.
 
-To open a browser terminal, select **Project console** from the user menu. The
-console holds a pre-authenticated `kubectl` session, scoped to the Projects in
-your Organization.
+## Project console
 
-From the console you can:
+The Project console is a web terminal with a signed-in `kubectl` session for
+your Projects. You do not need to install any tool on your computer.
 
-- List and switch Project contexts with `kube-dc use`
-- Run `kubectl` commands, including the `kgp` and `kgs` aliases
-- Manage resources without installing any CLI tools locally
+To open the Project console, do one of these actions:
+
+- On the **Summary** page, click **Open project console**.
+- In the account menu, select **Project console**.
+
+In the console, run `kube-dc use` to list and switch Project contexts. For the
+tools and aliases in the console, see
+[CLI, console, and IDE access](cli-kubeconfig.md#project-console-web-terminal).
 
 ## Account settings
 
-To open your account settings, select **Manage user** from the user menu.
-
-![Account settings for password and two-factor authentication](images/accont-change-password.png)
+To change your password or set up two-factor authentication, open the account
+menu and select **Account settings**. Your account page opens. Then click
+**Signing in**.
 
 ### Change your password
 
-Under **Basic authentication**, click **Update** next to your password entry,
-then set a new password. The page shows the date your current password was
-created.
+1. Under **Basic authentication**, click **Update** next to your password.
+2. Enter a new password and confirm it.
 
 ### Set up two-factor authentication
 
-Under **Two-factor authentication**, click **Set up Authenticator application**
-and follow the prompts. Use an authenticator app such as Google Authenticator
-or Authy. After setup, Kube-DC asks for a verification code at every sign-in.
+1. Under **Two-factor authentication**, click **Set up Authenticator
+   application**.
+2. Scan the code with an authenticator app, such as Google Authenticator or
+   Authy.
+3. Enter the one-time code from the app.
+
+After setup, Kube-DC asks for a code from the app at every sign-in.
 
 :::tip
 Turn on two-factor authentication to protect your account, above all for
-Organization administrators.
+Organization Admins.
 :::
 
 ## Next steps

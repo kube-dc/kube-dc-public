@@ -231,17 +231,17 @@ Other container runtimes take the same setting: Podman uses `mtu` in its network
 
 ## Manage networking in the console
 
-The Console UI provides a **Networking** section with five tabs for managing network resources:
+To manage the network resources of a Project, select **Networking** in the section rail. The **Networking** page has five tabs:
 
-![Network Management UI](images/network-mgmt.png)
+![The Networking page of a Project, with the External IPs tab open and the Create External IP button](images/network-mgmt.png)
 
-- **External IPs**: view and create EIPs, see network type (Cloud/Public), ownership, and status
-- **Floating IPs**: manage FIP-to-VM mappings
-- **Load Balancers**: view LoadBalancer services and their endpoints
-- **Datacenter VLANs**: attach workloads to a physical datacenter network segment. See [Datacenter VLANs](datacenter-vlans.md).
-- **Routed Networks**: connect the Project VPC to approved external destinations. See [Routed networks](routed-networks.md).
+- **External IPs**: lists the EIPs of the Project with their **External IP**, **Ownership**, **Owners**, **Network**, and **Status**. To allocate an EIP, click **Create External IP**.
+- **Floating IPs**: lists the FIPs and their targets. To map an address to a VM, click **Create Floating IP**.
+- **Load Balancers**: lists the exposed Services of the Project with their external addresses. To expose a Service, click **Create Load Balancer**.
+- **Datacenter VLANs**: lists the VLANs assigned to the Project, with the pod and VM attachment snippets. See [Datacenter VLANs](datacenter-vlans.md).
+- **Routed Networks**: lists the routed networks that the Organization attached to the Project. See [Routed networks](routed-networks.md).
 
-Use the **Create External IP** button to allocate an EIP for your project.
+Organization administrators assign VLANs and routed networks on the **Datacenter VLANs** and **Routed networks** pages of **Manage organization**.
 
 ---
 

@@ -19,16 +19,32 @@ A qualified EIP-backed LoadBalancer Service also supports
 
 ## Manage IPs in the console
 
-The **Networking** section in the Console UI shows all IP resources in your project:
+To see the IP resources of your Project, select **Networking** in the section rail:
 
-![Network Management](images/network-mgmt.png)
+![The Networking page of a Project, with the External IPs tab open and the Create External IP button](images/network-mgmt.png)
 
-From here you can:
+On this page you can do these tasks:
 
-- View all **External IPs** with their network type (Cloud/Public), ownership, and status
-- View and manage **Floating IPs** and their VM mappings
-- View **Load Balancers** and their endpoints
-- Click **+ Create External IP** to allocate a new EIP
+- On the **External IPs** tab, see each EIP with its **External IP**, **Ownership**, **Owners**, **Network**, and **Status**.
+- On the **Floating IPs** tab, see each FIP with its **Target IP**, **Target**, and **Interface**.
+- On the **Load Balancers** tab, see the exposed Services and their external addresses.
+
+To allocate an EIP:
+
+1. On the **External IPs** tab, click **Create External IP**.
+2. Enter a **Name**.
+3. Select the **Network type**: **Public** or **Cloud**.
+4. Click **Create External IP**.
+
+To map a Floating IP to a VM:
+
+1. On the **Floating IPs** tab, click **Create Floating IP**.
+2. Enter a **Name**.
+3. In **Target type**, select **Virtual machine**.
+4. Select the **Target VM** and its **Network interface**.
+5. In **External IP allocation**, select **Use existing External IP** or **Allocate a new External IP**.
+6. For an existing address, select the **External IP**. For a new address, select the **Network type**.
+7. Click **Create Floating IP**.
 
 ---
 

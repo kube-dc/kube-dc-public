@@ -19,9 +19,13 @@ kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production \
 kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes
 ```
 
-The cluster detail view's **Kubeconfig** action downloads the same data. If the
-external Secret does not exist, the API endpoint is private. Enable external
-API exposure or connect through an operator-approved private network path.
+In the console, click **Kubeconfig** on the cluster detail page, then click
+**Download** in the **Cluster kubeconfig** dialog. The console returns the
+external kubeconfig when it exists. If the external Secret does not exist, the
+API endpoint is private. To enable external API exposure, open the **Network**
+tab, click **Configure** in the **API connectivity** card, select **Enable
+public HTTPS API endpoint**, and click **Apply**. As an alternative, connect through an
+operator-approved private network path.
 
 ## Restrict public Kubernetes API clients
 
@@ -45,9 +49,13 @@ setting `[]` requests unrestricted public API access. Restrictive lists are
 rejected for External topology because its public API and worker transport are
 shared. Do not restrict that shared transport with an unrelated annotation.
 
-The console exposes this control only when the operator qualifies the matching
-backend and controllers. Its detail view separates requested access from current
-controller evidence. Verify access using the real CA and cluster credentials
+For a cluster with the **Project internal** endpoint mode, the **Allowed
+client IPv4 CIDRs** field is in the **Configure
+API exposure** dialog. To open it, click **Configure** in the **API
+connectivity** card of the **Network** tab. The field is read-only until the
+operator qualifies the matching backend and controllers. The **Cluster status**
+card of the **Overview** tab separates **Requested public API client access**
+from **Public API source-policy enforcement**. Verify access using the real CA and cluster credentials
 from allowed and denied client addresses. Use the installation's measured working
 worker MTU; source filtering does not repair an incorrect network MTU.
 
@@ -164,7 +172,8 @@ cross-Project access to cloud addresses is blocked by default.
 Public EIPs are limited per Organization by your plan. If the quota is
 exhausted, the Managed Cluster Service stays at `EXTERNAL-IP: <pending>` for ever, and
 the quota error may not appear inside the Managed Cluster. Check the
-dashboard's public IPv4 usage and the platform-side Service status before exposing
+**Public IPv4** usage on the **Billing & quotas** page of your Organization and
+the platform-side Service status before exposing
 services with `external-network-type: public`. Cloud IPs (the default)
 are not quota-limited.
 :::
@@ -387,8 +396,8 @@ reclaimPolicy: Delete
 allowVolumeExpansion: true
 ```
 
-Choose an infrastructure storage class offered in the cluster creation UI or
-documented by your provider. StorageClasses are cluster-scoped and are not
+Choose an infrastructure storage class from the **Disk storage class** list of
+the **Create managed cluster** sheet, or one that your provider documents. StorageClasses are cluster-scoped and are not
 listable with a Project kubeconfig.
 
 ## Scale the worker pool
@@ -457,8 +466,11 @@ do not fit. The model is the same as an EKS node group: `replicas` is still
 the desired node count, and the platform moves it between `minReplicas` and
 `maxReplicas`.
 
-Enable it from the **Workers** tab of the cluster in the console (On/Off,
-Min, Max), or with kubectl:
+In the console, open the **Workers** tab of the cluster and turn on the switch
+in the **Autoscaling** column of the pool. For all settings, select **Configure
+autoscaling** in the actions menu of the pool. The dialog has **Enable
+autoscaling**, **Autoscaling mode**, **Minimum workers**, and **Maximum
+workers**. You can also use kubectl:
 
 ```bash
 kubectl patch kdccluster dev -n acme-production --type=json -p '[
@@ -470,8 +482,8 @@ kubectl patch kdccluster dev -n acme-production --type=json -p '[
 :::note[`replicas` must be inside the bounds]
 While autoscaling is enabled, `replicas` has to be within
 `[minReplicas, maxReplicas]`. If the pool's current count is outside the
-bounds you are setting, change both in the same patch. The console does
-this for you automatically.
+bounds you are setting, change both in the same patch. The console adjusts
+the desired replicas into the bounds.
 :::
 
 **What causes a node to be added:** a pod is `Pending` because the scheduler
@@ -490,8 +502,9 @@ Set `mode: ClusterAutoscaler` to hand the pool's node count entirely to the
 platform. It still adds nodes for pending pods, and additionally **removes a
 node** after it has been idle for the stabilization window. Pods are drained
 safely (respecting PodDisruptionBudgets) before the node is deleted. In the
-console this is the **"Add & remove nodes"** choice on the pool card, with a
-**"Remove idle nodes"** switch.
+console, select **Cluster Autoscaler · scale up and down** in the **Autoscaling
+mode** list of the **Configure autoscaling** dialog. Set
+`behavior.scaleDown.enabled: true` in the YAML editor of the same dialog.
 
 ```bash
 kubectl patch kdccluster dev -n acme-production --type=json -p '[
@@ -507,7 +520,7 @@ Things to know in this mode:
 
 - **The node count is platform-managed.** Do not set `replicas` by hand. The
   platform owns it and will move it between the bounds. The console disables
-  the manual scale control for such pools.
+  **Scale workers** for such pools.
 - **`minReplicas` must be at least 1.** Scale-to-zero is not available.
 - **Scale-down is per pool, and OFF until you ask for it.** Selecting this mode
   does not by itself remove anything: `behavior.scaleDown.enabled` must be set
@@ -549,7 +562,9 @@ autoscaling:
 
 #### Why didn't my pool grow?
 
-The console shows the reason on the pool card. From kubectl:
+In the console, expand the pool row in the **Workers** tab. **Last decision**
+shows the latest scaling reason, and **Scaling blocked** shows a limit when one
+applies. From kubectl:
 
 ```bash
 kubectl get kdccluster dev -n acme-production \
@@ -586,8 +601,9 @@ storage topology.
 ### Choose a supported version
 
 The table below is an example catalog and can age between documentation
-releases. Use the dashboard's version selector as the source of truth, and
-choose the exact worker image paired with the target control-plane version.
+releases. The **Kubernetes version** list of the console is the source of
+truth. Choose the exact worker image paired with the target control-plane
+version.
 
 | Version | Worker Image | Status |
 |---------|-------------|--------|
@@ -595,18 +611,19 @@ choose the exact worker image paired with the target control-plane version.
 | v1.35.0 | `docker.io/shalb/ubuntu-2404-container-disk:v1.35.2` | Supported |
 | v1.34.0 | `quay.io/capk/ubuntu-2404-container-disk:v1.34.1` | Supported |
 
-### Upgrade in the dashboard
+### Upgrade in the console
 
-When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y.Z** button in the header and a version badge in the Summary tab.
+When an upgrade is available, the cluster detail page shows an **Upgrade to vX.Y.Z** link next to the version in the header. Otherwise, the header shows **Up to date**.
 
-![Kubernetes version upgrade in the dashboard](images/k8s-upgrade.png)
+![The header of the cluster detail page, with the current version and the Upgrade to vX.Y.Z link](images/k8s-upgrade.png)
 
-1. Open the cluster detail page in the dashboard
-2. Click the **Upgrade to vX.Y.Z** button next to the version badge
-3. Review the confirmation dialog. It shows the target version and the worker image
-4. Click **Upgrade** to start the rolling upgrade
+To upgrade a cluster:
 
-The upgrade progress is visible in the cluster status. The phase will change during the upgrade and return to **Ready** once complete.
+1. Open the cluster detail page.
+2. Click **Upgrade to vX.Y.Z**. The **Upgrade Kubernetes** dialog shows the current version, the target version, and the worker image.
+3. Click **Apply**. The platform upgrades the control plane, then rolls the worker images.
+
+You can also select **Upgrade Kubernetes** in the actions menu of the cluster. The phase changes during the upgrade and returns to `Ready` after it completes.
 
 ### Upgrade with kubectl
 
@@ -680,9 +697,22 @@ kubectl --kubeconfig=/tmp/dev-kubeconfig get nodes -o wide
 
 ## Delete a cluster
 
-### Delete in the dashboard
+### Delete in the console
 
-Navigate to the cluster detail page and use the delete action.
+To delete a cluster:
+
+1. Select **Delete cluster** in the actions menu of the cluster. The **Delete managed cluster** dialog opens.
+2. To keep a final backup, leave **Save a final etcd snapshot before deleting**
+   selected, click **Take final snapshot**, and wait for **Backup job completed.**
+3. Optional: to delete without a final snapshot, clear **Save a final etcd
+   snapshot before deleting**.
+4. In the confirmation field, type the cluster name.
+5. Click **Delete cluster**.
+
+While **Save a final etcd snapshot before deleting** is selected, the console
+does not delete the cluster until the snapshot completes.
+
+The **Delete cluster** card of the **Backups** tab opens the same dialog.
 
 ### Delete with kubectl
 

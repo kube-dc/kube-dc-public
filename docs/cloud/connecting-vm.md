@@ -1,48 +1,53 @@
 # Connect to your VM
 
-This guide covers supported ways to access a virtual machine in Kube-DC: browser consoles, direct SSH, and serial or VNC sessions.
+This page is for a Project member who needs access to a virtual machine in Kube-DC. After you read it, you can open a browser console, connect over SSH, and use serial or VNC sessions with `virtctl`.
 
 ## Before you begin
 
-- A running [Virtual machine](creating-vm.md)
-- [CLI access](cli-kubeconfig.md) configured for kubectl/virtctl methods
+You need:
+
+- A running [virtual machine](creating-vm.md).
+- [CLI access](cli-kubeconfig.md) configured, for the `kubectl` and `virtctl` methods.
 
 ---
 
 ## Console access in the web interface
 
-The console gives you browser access to your VMs. It needs no SSH keys and no network configuration.
+The console gives you browser access to your VMs. It needs no SSH keys on your computer and no network configuration.
 
-### Launch browser console
+### Open a browser console
 
-1. Navigate to **Virtual Machines** in your project
-2. Click on your VM name to open the details page
-3. Click **Launch Remote Console** for graphical VNC access, or **Launch SSH Terminal** for a browser-based SSH session
+1. In the section rail, click **Virtual machines**.
+2. Click the name of your VM. The detail page opens on the **Summary** tab.
+3. Click the **Console** tab.
+4. Click **Graphical console**, **SSH terminal**, or **Serial console**. The console connects, and the toolbar shows the connection state.
 
-![VM Console Access Options](images/connecting-vm.png)
+![VM Console tab with the Graphical console, SSH terminal, and Serial console tabs and a connected VNC session](images/connecting-vm.png)
 
-**Remote Console** opens a VNC session in your browser. Use it for VMs with a desktop environment, and when you need the boot process or the BIOS.
+The **Console** tab works only while the VM is running. On a stopped or paused VM, it shows "Console available when the VM is running". On the **Summary** tab, the **Guest display** panel shows a preview of the screen, and **Open console** opens the **Console** tab.
 
-**SSH Terminal** opens a web terminal connected over SSH. It works when the VM runs the QEMU guest agent and has SSH keys configured.
+The three console types do these things:
 
-:::tip Pasting into the remote console
-Open the arrow tab on the left side of the VNC window, select **Clipboard**,
-paste the text into the box, and click **Type into VM**. This sends paced key
-events and therefore works at firmware, installer, login, and Linux text-console
-screens where a guest clipboard does not exist. Newlines are sent as Enter and
-tabs as Tab.
+- **Graphical console**: opens a VNC session in your browser. Use it for VMs with a desktop environment, and when you need the boot process or the firmware. The toolbar has **Ctrl Alt Del**, **Reconnect**, **Disconnect**, and a fullscreen button.
+- **SSH terminal**: opens a browser terminal that connects over SSH as the VM's guest login user. It is available only when the VM has a guest login user. The session stays connected while you move to other pages in the same browser tab. To open an independent session, click **Open in new tab**.
+- **Serial console**: connects to the guest serial port. Sign in at the login prompt with the guest credentials.
 
-Editing the box also performs standard VNC clipboard synchronization for
-graphical guests that support it. Pressing Ctrl+V directly in a Linux TTY does
-not paste and may display `^V`; use **Type into VM** there.
-:::
+### Guest credentials
 
-:::tip VNC User Access
-For VNC access with password authentication:
-1. Access the VM over SSH or serial console
-2. Create a user with `useradd -m <username>`
-3. Set a password with `passwd <username>`
-4. The user can now log in through the VNC console using these credentials
+To see the guest user name and password, open the VM's **Summary** tab and click **Reveal guest credentials**. The credentials hide after one minute. Use them at the login prompt of the graphical or serial console.
+
+A VM that you created with kubectl has no console credentials unless you set them. To sign in at a console, add a user with a password:
+
+1. Connect to the VM over SSH, or open a serial console with `virtctl console`.
+2. Create the user with `useradd -m <username>`.
+3. Set the password with `passwd <username>`.
+
+Replace `<username>` with the name of the user. The user can then sign in at the graphical console with these credentials.
+
+:::tip Pasting into the graphical console
+To paste text, enter it in the **Type or paste text for the guest…** box under the graphical console, and click **Send text**. The console types the text as paced key events, so it works at firmware, installer, login, and Linux text-console screens where a guest clipboard does not exist. Newlines are sent as Enter and tabs as Tab.
+
+**Send text** also performs standard VNC clipboard synchronization for graphical guests that support it. When the guest copies text, **Copy guest clipboard** appears next to **Send text**. Pressing Ctrl+V directly in a Linux TTY does not paste and may display `^V`. Use **Send text** there.
 :::
 
 ---
@@ -80,7 +85,7 @@ For the complete FIP configuration, see [Deploy VMs](creating-vm.md#expose-a-vm-
 
 ## SSH access through a LoadBalancer Service
 
-To expose SSH without using a Floating IP, create a LoadBalancer service.
+To expose SSH without a Floating IP, create a LoadBalancer Service.
 
 ### Use the default gateway EIP
 
@@ -142,11 +147,11 @@ Connect using the LoadBalancer IP and custom port:
 ssh -p 2222 ubuntu@<loadbalancer-ip>
 ```
 
-For more options, see the [Service exposure](service-exposure.md).
+For more options, see [Service exposure](service-exposure.md).
 
 ---
 
-## VirtCtl console access
+## virtctl console access
 
 The `virtctl` CLI gives you serial console access without network connectivity. Use it to troubleshoot network problems, and to reach a VM during boot.
 
@@ -190,16 +195,16 @@ diagnostic role that grants the subresource explicitly.
 
 ## Windows VMs: RDP and SSH
 
-Windows VMs are reached the same way as Linux ones, but the login itself works
-differently, and knowing which mechanism supplies what saves a lot of guessing.
+You reach a Windows VM the same way as a Linux VM, but the sign-in works
+differently. Each way in gets its credential from a different mechanism.
 
-**The account is `kube-dc`**, the same login name the rest of the platform uses. It is
-created on first boot, so a VM that has only started might not have it yet. Give
-first boot a few minutes before concluding anything is wrong.
+**The account is `kube-dc`**, the same login name the rest of the platform uses. The
+first boot creates it, so a VM that has only started might not have it yet. Give
+the first boot a few minutes before you conclude that something is wrong.
 
-**Two ways in, and they are provisioned by different mechanisms:**
+The two ways in use these mechanisms:
 
-| | How you connect | Where the credential comes from |
+| Method | How you connect | Where the credential comes from |
 |---|---|---|
 | **RDP** (port 3389) | Any RDP client, to the VM's floating IP | Password, set through the guest agent |
 | **SSH** (port 22) | `ssh kube-dc@<floating-ip>` | Your project's SSH key, installed by cloudbase-init |
@@ -216,8 +221,9 @@ kubectl get fip <vm-name> -o jsonpath='{.status.externalIP}'
 - **Linux**: `xfreerdp /v:<floating-ip> /u:kube-dc` or Remmina
 - **Windows**: `mstsc /v:<floating-ip>`
 
-The password is generated when the VM is created and stored in a Secret alongside it.
-In the UI it is on the VM's detail page; from the CLI:
+The platform generates the password when it creates the VM, and stores it in a Secret
+next to the VM. To see it in the console, open the VM's **Summary** tab and click
+**Reveal guest credentials**. To read it with the CLI, run:
 
 ```bash
 kubectl get secret <vm-name>-console-credentials -o jsonpath='{.data}' | \
@@ -239,21 +245,24 @@ way you would expect.
 
 ### If Windows is not answering yet
 
-A Windows first boot does noticeably more work than a Linux one: it specialises the
+A Windows first boot does more work than a Linux one. It specializes the
 image, creates the account, applies the password and key, and **reboots once** partway
-through. Until that finishes you may see RDP answering while SSH does not, or the
-reverse, because services come up at different points and the machine reboots in between.
+through. Until that finishes, RDP can answer while SSH does not, or the
+reverse, because services start at different points and the machine reboots in between.
 
-On slower (HDD-backed) storage this can take considerably longer than on NVMe. Before
-concluding a VM is broken, check the graphical console: a VM sitting on
+On slower (HDD-backed) storage, this takes considerably longer than on NVMe. Before
+you conclude that a VM is broken, check the **Graphical console**. A VM that shows
 "Getting devices ready" or "Starting services" is still working, not stuck.
 
 ## Connection method comparison
 
-| Method | Use Case | Requires Network | Requires Public IP |
+The connection methods compare as follows:
+
+| Method | Use case | Requires network | Requires public IP |
 |--------|----------|------------------|-------------------|
-| **Console UI (VNC)** | GUI access, troubleshooting boot | No | No |
-| **Console UI (SSH)** | Quick terminal access | No | No |
+| **Graphical console** in the console | GUI access, troubleshooting boot | No | No |
+| **SSH terminal** in the console | Quick terminal access | No | No |
+| **Serial console** in the console | Serial access, boot access | No | No |
 | **Floating IP** | Direct SSH from anywhere | Yes | Yes |
 | **LoadBalancer** | Shared IP, custom port | Yes | Optional |
 | **virtctl console** | Serial console, boot access | No | No |
@@ -285,6 +294,6 @@ concluding a VM is broken, check the graphical console: a VM sitting on
 
 ## Next steps
 
-- [Managing VM Lifecycle](vm-lifecycle.md): Start, stop, restart VMs
+- [VM lifecycle](vm-lifecycle.md): start, stop, and restart VMs
 - [Public and floating IPs](public-floating-ips.md): Manage IP addresses
 - [Service exposure](service-exposure.md): Expose VM services with HTTPS

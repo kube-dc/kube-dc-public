@@ -1,23 +1,29 @@
 # Block storage
 
-Kube-DC provides persistent block storage through Kubernetes **PersistentVolumeClaims (PVCs)**. The Containerized Data Importer (CDI) adds **DataVolumes**, which create and populate PVCs from sources such as VM images. Both resource types are managed through the Volumes view in the dashboard or with kubectl.
+This page is for a Project member who stores data on persistent volumes in Kube-DC. After you read it, you can choose a storage class, and create, clone, attach, and delete volumes in the console or with kubectl.
 
-## Volumes dashboard
+Kube-DC provides persistent block storage through Kubernetes **PersistentVolumeClaims (PVCs)**. The Containerized Data Importer (CDI) adds **DataVolumes**, which create and populate PVCs from sources such as VM images. You manage both resource types in the console or with kubectl.
+
+## Volumes page
+
+To open the **Volumes** page, click **Block Storage** in the section rail. The page lists the PVCs of your Project. The section tree also links to **Snapshots** under **Volumes and snapshots**.
 
 <div style={{width: '100%', maxWidth: 'none'}}>
-![Volumes dashboard](images/volume-view.png)
+![Volumes page with status and storage class filters, the Create PersistentVolumeClaim button, and a table of volumes](images/volume-view.png)
 </div>
 
-The Volumes view shows all persistent storage in your project. Volumes are organized by **Storage Class** in the left sidebar. Each volume shows its name, attachment status, capacity, storage class, type (DataVolume or PVC), age, and which VM or pod it is attached to.
+The table shows each volume's name, capacity, status, storage class, access modes, volume mode, and age. To narrow the list, use the **All statuses** and **All storage classes** filters, and the name filter. To open a volume's details panel, click its name.
 
-Click on any volume to expand its details:
+The **Actions** menu of a volume offers these actions:
 
-![Volume detail view](images/volumes-view.png)
+- **View YAML** and **Edit YAML**: show or change the PVC manifest.
+- **Expand volume**: increases the requested capacity. A volume cannot shrink, and the storage class must support expansion.
+- **VM attachment**: attaches the volume to a stopped VM, or detaches a non-boot disk.
+- **Clone volume**: creates a separate copy of the volume.
+- **Create snapshot**: creates a VolumeSnapshot of the volume.
+- **Delete**: deletes the PVC.
 
-The detail panel shows:
-- **Volume Information**: Name, type, capacity, and storage class
-- **Status**: Attachment status and which VM/pod the volume is attached to
-- **Actions**: Detach from a VM, Clone, or View YAML, when the action is supported for that volume
+The DataVolumes of your Project are on the **DataVolumes** page under **Virtual machines** > **Storage**. A DataVolume offers **Clone volume**. When your installation shows the Kubernetes resources section, a DataVolume also offers **Manage underlying volume**. A snapshot offers **Restore to new volume** on the **Snapshots** page.
 
 ## Volume types
 
@@ -25,13 +31,13 @@ The detail panel shows:
 
 A **DataVolume** is a KubeVirt resource provided by the [Containerized Data Importer (CDI)](https://kubevirt.io/user-guide/storage/containerized_data_importer/). It creates a PVC and fills it with data from a source, usually an OS image for a VM root disk.
 
-When the VM wizard imports an image, it creates a DataVolume for the root disk. For a prepared image with snapshot support, the wizard can instead restore a PVC directly from a `VolumeSnapshot`. In both cases, the VM ultimately uses a PVC-backed disk.
+When the **Create virtual machine** sheet imports an image, it creates a DataVolume for the root disk. For a **Prepared snapshot image**, it restores a PVC directly from a `VolumeSnapshot` instead. In both cases, the VM uses a PVC-backed disk.
 
-DataVolumes can populate storage from:
+DataVolumes can populate storage from these sources:
 
 - **HTTP or HTTPS URL**: download a cloud image, such as Debian or Ubuntu
-- **Container Registry**: Pull a disk image from a container registry
-- **Blank**: Create an empty disk for additional storage
+- **Container registry**: pull a disk image from a container registry
+- **Blank**: create an empty disk for additional storage
 
 **Example: VM root disk DataVolume**
 
@@ -129,7 +135,7 @@ spec:
 | **Data population** | CDI source such as HTTP, registry, blank, or another volume | Empty on creation, or clone/snapshot when the storage driver supports it |
 | **Created by** | VM provisioning or manually | Directly by user |
 | **Backed by** | Creates a PVC internally | Directly binds to a PersistentVolume |
-| **Visible in UI** | Yes (Volumes tab, type: DataVolume) | Yes (Volumes tab, type: PVC) |
+| **Shown in the console** | **Virtual machines** > **DataVolumes** | **Block Storage** > **Block Volumes** |
 
 ## Storage classes
 
@@ -175,7 +181,7 @@ creating, and labels each one with what it can do: **Node-local**, **Snapshots**
 
 Object-storage (bucket) classes, internal scratch classes and classes without dynamic
 provisioning are never offered for volumes. Older classes that remain only for existing
-volumes are hidden from new volumes but keep working for the volumes that use them.
+volumes are not offered when you create a volume, but keep working for the volumes that use them.
 
 ### What the platform refuses
 
@@ -200,14 +206,21 @@ the source's driver, so name it explicitly when you write YAML yourself. Run
 
 ## Create a volume
 
-### Via dashboard
+### Use the console
 
-1. Navigate to your project → **Volumes** tab
-2. Click **+ Create Volume**
-3. Choose the volume type, size, storage class, access mode, and volume mode
-4. Click **Create**
+1. In the section rail, click **Block Storage**.
+2. Click **Create PersistentVolumeClaim**. The **Create PersistentVolumeClaim** dialog opens.
+3. In **Name**, enter a name for the volume.
+4. In **Capacity (GiB)**, enter the size.
+5. In **Storage class**, select a class. Each option shows what the class supports. **Cluster default** appears only when the default class suits a volume.
+6. In **Access mode**, select the access mode.
+7. In **Volume mode**, select **Filesystem** or **Block**.
+8. Optional: click **Validate with Kubernetes** to check the request without creating the volume.
+9. Click **Create PersistentVolumeClaim**. The volume appears on the **Volumes** page.
 
-### Via kubectl
+To write the manifest yourself, click **Edit full YAML** in the dialog. To create a DataVolume, click **Create DataVolume** on the **DataVolumes** page under **Virtual machines** > **Storage**.
+
+### Use kubectl
 
 **Create a DataVolume (for VMs):**
 
@@ -267,15 +280,25 @@ kubectl describe pvc debian-root -n acme-production
 
 ### Clone a volume
 
-From the Volumes dashboard, expand a volume and click **Clone** to request a separate copy. PVC cloning requires CSI clone support from the selected StorageClass; DataVolume cloning can use CDI's copy strategy. For example, `local-path` does not provide CSI cloning, so a direct PVC clone can remain pending.
+To request a separate copy of a volume, open its **Actions** menu and select **Clone volume**. In the **Clone volume** dialog, click **Clone volume**. PVC cloning requires CSI clone support from the selected StorageClass. DataVolume cloning can use CDI's copy strategy. For example, `local-path` does not provide CSI cloning, so a direct PVC clone can remain pending.
 
 Check the cloned DataVolume or PVC status and events before attaching it. A clone is not a replacement for a tested backup or snapshot policy.
 
 ### Detach a volume
 
-Click **Detach** to disconnect a volume from an attached VM without deleting the data. The volume can be reattached later. To detach a PVC from a Pod, Deployment, or StatefulSet, update that workload's manifest or controller instead.
+Detaching disconnects a volume from a VM without deleting the data. You can attach the volume again later. To detach a volume from a VM:
+
+1. Stop the VM, and wait for its guest to shut down.
+2. In the volume's **Actions** menu, select **VM attachment**.
+3. In **Operation**, select **Detach from VM**.
+4. In **Virtual machine**, select the VM.
+5. Click **Detach volume**.
+
+A running VM can hot-plug disks from its **Disks** tab. To detach a PVC from a Pod, Deployment, or StatefulSet, update that workload's manifest or controller instead.
 
 ### Delete a volume
+
+To delete a volume in the console, open its **Actions** menu and select **Delete**. To delete it with kubectl, run:
 
 ```bash
 # Delete a DataVolume (also deletes the underlying PVC)

@@ -1,87 +1,114 @@
 # Deploy VMs
 
-This guide walks you through deploying virtual machines in Kube-DC using both the Console UI and kubectl manifests.
+This page is for a Project member who runs virtual machines in Kube-DC. After you read it, you can create a VM in the console or with kubectl manifests, choose its root disk storage, and expose it to the internet.
 
 ## Before you begin
 
-- A Kube-DC Cloud [project](first-project.md)
-- [CLI access](cli-kubeconfig.md) configured, with `kubectl` working against your Project
-- (Optional) The [`virtctl`](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) plugin for VM console access
+You need:
+
+- A Kube-DC [Project](first-project.md).
+- [CLI access](cli-kubeconfig.md) configured, with `kubectl` working against your Project.
+- Optional: the [`virtctl`](https://kubevirt.io/user-guide/user_workloads/virtctl_client_tool/) plugin for VM console access.
 
 ## VM components
 
-Kube-DC virtualization is powered by [KubeVirt](https://kubevirt.io/) and uses three main resources:
+Kube-DC virtualization uses [KubeVirt](https://kubevirt.io/) and three main resources:
 
-- **DataVolume**: manages the VM's disk image (downloads cloud images, provisions PVCs)
-- **VirtualMachine**: defines the VM configuration, resources, and lifecycle
-- **VirtualMachineInstance (VMI)**: represents a running VM instance
+- **DataVolume**: manages the VM's disk image. It downloads cloud images and provisions PVCs.
+- **VirtualMachine**: defines the VM configuration, resources, and lifecycle.
+- **VirtualMachineInstance (VMI)**: represents a running VM instance.
 
 ---
 
 ## Create a VM in the console
 
-### Step 1: Open VM creation
+The console creates a VM in a sheet with four steps: **Image & compute**, **Storage & guest**, **Networking & GPU**, and **Review**. A panel on the right side of the sheet summarizes the VM as you fill in each step.
 
-1. Select your project from the sidebar
-2. Navigate to **Virtual Machines**
-3. Click **+** to create a new VM
+### Open the creation sheet
 
-![VM List View](images/vm-list-view.png)
+1. In the **Project** selector at the top of the console, select your Project.
+2. In the section rail, click **Virtual machines**. The **Virtual machines** page lists your VMs with their state, vCPU, memory, private IP, and host.
+3. Click **Create virtual machine**. The **Create virtual machine** sheet opens on the **Image & compute** step.
 
-### Step 2: Configure the VM
+![Virtual machines page with VM counts, filters, the Create virtual machine button, and a table of VMs](images/vm-list-view.png)
 
-1. **VM Name**: choose a name (for example, `ubuntu`)
-2. **Operating System**: select from available images (Ubuntu 22.04 / 24.04 / 26.04, Debian 12, CentOS Stream 9, Fedora 42, openSUSE Leap 15.6, Alpine 3.21, Gentoo, Windows 11)
-3. **Version** *(optional, advanced)*: most Linux families expose several maintained versions. Ubuntu 24.04, for example, keeps `20260321`, `20260225`, `20260209`, and `20260131`. Leave the dropdown on **Latest** to take the newest mirrored bytes. Kube-DC keeps `/latest/` pointing at the freshest version per family, refreshed weekly. Pin a specific version only if you need reproducibility against a known build.
-4. **vCPUs** and **RAM**: set the resources from your workload's needs
-5. **Root Storage Size**: set disk size (for example, 12 GB for Linux, 70 GB for Windows).
-   The value is a floor as well as a size: a VM is created by cloning a golden image,
-   so the request cannot be smaller than that golden. Ask for more and the extra space
-   is yours. The platform grows the disk to your requested size before the VM starts, and the
-   guest filesystem expands into it on first boot. On Windows that expansion happens
-   during the first-boot sequence, so `C:` reaches its full size a few minutes after
-   the VM is created rather than instantly.
-6. **Root disk storage**: the real storage choice for the VM (see [below](#root-disk-storage)):
-   - **Local disk (default)**: node-local storage; best durable-write latency. No snapshots, no live migration.
-   - **Shared RBD**: shared Ceph-backed storage; supports snapshots and (optionally) live migration. Slower durable writes.
-   - When **Shared RBD** is selected, an **Enable live migration** checkbox appears. Select it to let the VM move between nodes during maintenance (available when the OS has a Block golden and the cluster has ≥2 CPU-compatible nodes).
-7. **Accelerator** *(shown only when Dedicated GPU VM passthrough is enabled and
-   available to your Project)*: keep **No GPU** for an ordinary VM,
-   or select an available Dedicated GPU VM profile. Shared GPU/HAMi pod capacity
-   does not make this option available. GPU VMs cannot live migrate; the wizard
-   clears live migration and maintenance requires a shutdown/restart. Follow the
-   [guest driver and lifecycle guide](gpu-vm-guests.md) after first boot.
+To move between steps, click **Continue** and **Back** at the bottom of the sheet. To copy the manifests for a GitOps repository instead of creating the VM in the console, click **or get the YAML for GitOps**.
 
-![VM Creation](images/vm-creation-step1.png)
+### Choose the image and compute
 
-A compact summary under the selector shows exactly what will be provisioned
-(root disk, provisioning, snapshots, live migration) before you submit.
+1. In **VM name**, enter a name. Use lowercase letters, numbers, and hyphens. The name must be unique in the Project.
+2. In **Operating system**, select an image from your installation's OS catalog.
+3. In **Image source**, select where the root disk comes from. The options are listed after this procedure.
+4. In **vCPU cores**, enter the number of virtual CPUs. The hint under the field shows the image minimum.
+5. In **Memory (GiB)**, enter the memory size. The hint under the field shows the image minimum.
+6. Click **Continue**. The **Storage & guest** step opens.
 
-### Step 3: Review and create
+![Image & compute step with the VM name, operating system, image source, vCPU, and memory fields](images/vm-creation-step1.png)
 
-Click **Next** to review the generated YAML, then **Finish** to create the VM.
+**Image source** offers these options:
 
-![VM Review](images/vm-creation-review.png)
+- **Catalog image (registry or HTTP)**: imports the image that the OS catalog lists for the operating system. This is the default.
+- **Custom image URL**: imports a bootable qcow2 or raw image from the HTTP or HTTPS address that you enter in **Disk image URL**. The address must not contain credentials.
+- **Clone an existing project disk**: copies a Bound volume of your Project that you select in **Source disk**.
+- **Prepared snapshot image**: restores the root disk from a prepared snapshot of the operating system that you select in **Prepared image**. The option shows `unavailable` when your installation has no prepared image for that operating system.
 
-The VM will appear in the list. Wait for the status to reach **Running**.
+### Choose storage and guest settings
 
-### Manage VMs
+1. In **Storage class**, select where the root disk is stored. Each option shows the class name and what it supports: **Snapshots**, **Live migration**, or **Node-local**. For a prepared snapshot image, the image sets the class and the field is read-only. See [Root disk storage](#root-disk-storage).
+2. In **Root disk capacity (GiB)**, enter the disk size. It must be at least the image minimum that the hint under the field shows.
+3. Optional: under **Additional data disks**, click **Create new disk** to add an empty data disk.
+4. Optional: under **Additional data disks**, click **Attach existing disk** to attach an unused disk of your Project.
+5. In **Guest login user**, check the account name. The platform installs the Project SSH key for this account.
+6. Optional: edit **Cloud-init user data**. The platform adds the Project SSH key and supported guest credentials when it creates the VM.
+7. Click **Continue**. The **Networking & GPU** step opens.
 
-Click a VM to view its details: the OS, the status, the performance metrics, and the conditions.
+![Storage & guest step with the storage class, root disk capacity, data disks, guest login user, and cloud-init fields](images/vm-creation-step2.png)
 
-![VM Details](images/vm-details-view.png)
+The root disk capacity is a floor as well as a size. When you clone a disk or use a prepared snapshot image, the root disk must be at least as large as its source. Otherwise the console reports "The root disk must be at least as large as its source." The platform grows the disk to the size you request before the VM starts, and the guest filesystem expands into it on first boot. On Windows, that expansion happens during the first-boot sequence, so `C:` reaches its full size a few minutes after the VM is created.
 
-From the details page you can:
+Data disks that you add on this step stay in the Project when you delete the VM. **Guest login user** appears only for images that support SSH access. **Cloud-init user data** appears only for images that use a cloud-init disk.
 
-- **Launch Remote Console**: graphical console in the browser
-- **Launch SSH Terminal**: web-based SSH terminal
-- **Start / Stop / Restart / Delete**: manage the VM lifecycle
+### Choose networking and a GPU
+
+1. In **VPC address allocation**, keep **Automatic** to let the network assign the address of the primary interface.
+2. Optional: to set the address yourself, select **Choose an IPv4 address**. The **VPC address IPv4** field appears.
+3. Optional: in **VPC address IPv4**, enter the address. The console checks the address again when it creates the VM.
+4. Optional: under **Additional interfaces**, select a VLAN network that is assigned to your Project. When none is assigned, the step shows "No additional VLAN networks are assigned."
+5. Optional: in **GPU profile**, select a Dedicated GPU VM profile. Keep **No GPU** for an ordinary VM.
+6. Optional: in **Number of GPUs**, enter the number of GPUs. The hint under the field shows the maximum available.
+7. Click **Continue**. The **Review** step opens.
+
+![Networking & GPU step with VPC address allocation, additional interfaces, and the GPU profile field](images/vm-creation-step3.png)
+
+The **GPU profile** field is available only when your installation enables Dedicated GPU VM passthrough for your Project. Shared GPU (HAMi) pod capacity does not enable it. A GPU VM cannot live migrate, so maintenance on its node requires a shutdown and a restart. After first boot, follow the [guest driver and lifecycle guide](gpu-vm-guests.md).
+
+### Review and create the VM
+
+1. Optional: clear **Start the VM after creation** to leave the VM stopped after the console creates it.
+2. Optional: review or edit the manifests on the **Virtual machine YAML** and **Root disk YAML** tabs. When you create data disks on the **Storage & guest** step, the second tab is **Disk YAML**.
+3. Click **Create virtual machine**. The console opens the detail page of the VM.
+
+![Review step with the Start the VM after creation checkbox and the Virtual machine YAML tab](images/vm-creation-review.png)
+
+The console validates the edited VM document before it creates the VM's disks. Wait until the VM state is **Running**.
+
+### Manage a VM in the console
+
+To open a VM's detail page, click its name on the **Virtual machines** page.
+
+![VM detail page with the Summary tab, the power controls, and the guest display preview](images/vm-details-view.png)
+
+The detail page has these tabs: **Summary**, **Monitor**, **Configure**, **Disks**, **Network**, **Conditions**, **YAML**, and **Console**. The buttons at the top of the page start, stop, restart, pause, resume, and delete the VM. The buttons that show depend on the VM state.
+
+- To open a browser console, click the **Console** tab. See [Connect to your VM](connecting-vm.md).
+- To see the guest password, click **Reveal guest credentials** on the **Summary** tab.
+- To change the VM from the list, open the row's **Actions** menu and select **Configure**, **Edit YAML**, or **Delete**.
 
 ---
 
 ## Create a VM with kubectl
 
-The resources below are created in your active Project. Multus requires a
+The following resources are created in your active Project. Multus requires a
 Kubernetes-qualified network name, so replace `<project-backing-namespace>`
 with the current Project's backing namespace. You can print it with
 `kubectl config view --minify -o jsonpath='{..namespace}'`.
@@ -212,15 +239,17 @@ spec:
 kubectl apply -f ubuntu-vm.yaml
 ```
 
-:::tip SSH Key Injection
+:::tip SSH key injection
 The `accessCredentials` section injects your SSH public key from the `authorized-keys-default` secret into the VM through the QEMU guest agent. The `users` field must match the default user for the OS image (`ubuntu` for Ubuntu, `debian` for Debian).
 :::
 
 ### Access a VM with SSH
 
-After the VM is running, you can SSH into it using the private key stored in your project's `ssh-keypair-default` secret.
+After the VM is running, you can connect to it over SSH with the private key in your Project's `ssh-keypair-default` secret.
 
-#### Step 1: Extract the SSH private key
+#### Extract the SSH private key
+
+To save the private key to a local file, run:
 
 ```bash
 # Extract the private key from the secret
@@ -228,21 +257,25 @@ kubectl get secret ssh-keypair-default -n <project-backing-namespace> -o jsonpat
 chmod 600 /tmp/vm_ssh_key
 ```
 
-#### Step 2: Get the VM's IP address
+#### Get the VM's IP address
 
-For VMs with a Floating IP (FIP):
+For a VM with a Floating IP (FIP), read the external IP:
+
 ```bash
 # Get the external IP from the FIP resource
 kubectl get fip -n <project-backing-namespace>
 ```
 
-For VMs without FIP (internal access only):
+For a VM without a FIP (internal access only), read the internal IP:
+
 ```bash
 # Get the internal IP from the VMI
 kubectl get vmi <vm-name> -n <project-backing-namespace> -o jsonpath='{.status.interfaces[0].ipAddress}'
 ```
 
-#### Step 3: Connect over SSH
+#### Connect over SSH
+
+To connect with the extracted key, run:
 
 ```bash
 # SSH using the extracted private key
@@ -253,7 +286,7 @@ ssh -i /tmp/vm_ssh_key <username>@<ip-address>
 # Debian VM: ssh -i /tmp/vm_ssh_key debian@10.0.0.131
 ```
 
-:::info Default Users
+:::info Default users
 - **Ubuntu**: `ubuntu`
 - **Debian**: `debian`
 - **Windows**: `kube-dc`
@@ -345,21 +378,20 @@ spec:
 
 ### Windows 11
 
-**From the Console UI (simplest):** pick **Windows 11 Enterprise (Golden Image)** in
-the Operating System dropdown, set Root Storage to **70 GB**, and create. The console
-clones a pre-built golden (VirtIO drivers, QEMU guest agent and SSH/RDP already
-installed) and applies the correct UEFI + TPM + Hyper-V configuration automatically.
-The VM boots to the Windows lock screen in a few minutes. Open **Launch Remote
-Console** to use it.
+To create a Windows VM in the console, follow [Create a VM in the console](#create-a-vm-in-the-console) with these choices:
+
+1. In **Operating system**, select the Windows 11 entry of your OS catalog.
+2. In **Root disk capacity (GiB)**, enter at least the image minimum that the hint under the field shows.
+3. After the VM is **Running**, open its detail page and click the **Console** tab.
+4. Click **Graphical console**. The Windows lock screen appears.
+
+The Windows golden image has the VirtIO drivers, the QEMU guest agent, SSH, and RDP installed. The platform applies the UEFI, TPM, and Hyper-V settings that the OS catalog defines for Windows. The VM reaches the Windows lock screen a few minutes after it starts.
 
 :::tip Storage quota
-A Windows golden is ~75 GB, so its clone needs **~75–80 GB of free storage quota** in
-your project. If the project is near its storage limit the clone fails with a quota
-error. Free space, or request more, before you create a Windows VM.
+A Windows golden image is about 75 GB, so its root disk needs **75–80 GB of free storage quota** in your Project. If the Project is near its storage limit, the disk creation fails with a quota error. Free space, or request more, before you create a Windows VM.
 :::
 
-The kubectl equivalent, showing the UEFI boot, TPM and Hyper-V features Windows
-requires:
+The kubectl equivalent shows the UEFI boot, TPM, and Hyper-V features that Windows requires:
 
 <details>
 <summary>Windows 11: DataVolume and VirtualMachine manifest</summary>
@@ -379,9 +411,9 @@ spec:
     storageClassName: local-path
   source:
     http:
-      # The golden published to your cluster's S3 OS-image mirror (the same entry
-      # the Console UI clones). Replace <your-cluster-domain> with your domain.
-      url: https://s3.<your-cluster-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2
+      # The golden image published to your cluster's S3 OS-image mirror.
+      # Replace <cluster-domain> with the domain of your installation.
+      url: https://s3.<cluster-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -461,61 +493,56 @@ spec:
 
 </details>
 
-:::note Windows Images
-Windows cloud images must be pre-built with VirtIO drivers and the QEMU guest agent installed. See [Managing OS Images](/platform/managing-os-images) and [Windows VM Setup](/platform/windows-vm-setup) for details on preparing golden images.
+:::note Windows images
+Windows cloud images must be prepared with the VirtIO drivers and the QEMU guest agent installed. To prepare golden images, see [Managing OS images](/platform/managing-os-images) and [Windows VM setup](/platform/windows-vm-setup).
 :::
 
 ---
 
 ## Root disk storage
 
-When you create a VM the main storage decision is real infrastructure, not a product
-tier: **where does the root disk live?**
+The main storage decision for a VM is where its root disk lives. You make it in **Storage class** on the **Storage & guest** step. Each option shows what the class supports:
 
-| Root disk | What you get | Trade-off |
+| Label on the option | What you get | Trade-off |
 |---|---|---|
-| **Local disk (default)** | Node-local storage. **Best durable-write latency.** | Lives on one node. There are no volume snapshots, and a node drain stops the VM. |
-| **Shared RBD** | Shared Ceph-backed storage. Supports **snapshots** and (optionally) **live migration**. | Higher durable-write latency for fsync-heavy workloads. |
+| **Node-local** | Storage on the disk of one node, with the best durable-write latency. | The disk stays on its host. There is no live migration, and a node drain stops the VM. Snapshots, if the class supports them, stay on that host. |
+| **Snapshots** | Replicated storage that supports volume snapshots. | Higher durable-write latency for fsync-heavy workloads. |
+| **Live migration** | Replicated storage that can hold a live-migratable VM. | Higher durable-write latency for fsync-heavy workloads. |
 
-The decision comes down to one question: **do you want the fastest disk writes,
-or the shared-storage features (snapshots, live migration)?** A local disk
-cannot live-migrate, because it belongs to one node. That limit is inherent,
-not a policy.
+The decision comes down to one question: do you want the fastest disk writes, or the shared-storage features (snapshots and live migration)? A node-local disk cannot live migrate, because it belongs to one node. That limit is inherent, not a policy.
 
-When you pick **Shared RBD**, two things follow:
+A VM is live-migratable only when you create it from a prepared snapshot image in `Block` volume mode and select a CPU compatibility pool. A GPU VM is never live-migratable.
 
-- **Provisioning**: if a prepared *golden* image exists for the OS, Kube-DC clones it
-  (the VM boots in seconds); otherwise it imports the image on first boot. This is
-  automatic. You do not choose it.
-- **Enable live migration** *(checkbox)*: opt in to let the VM move between nodes during
-  maintenance. Available when the OS has a *Block* golden and the cluster has ≥2
-  CPU-compatible nodes; it uses RWX **Block** mode and a pinned CPU model.
+Operators find the cluster-side mechanics (storage tiers, enabling RBD, migration pools, and the CPU-headroom rule) in [VM storage tiers and live migration](/platform/vm-storage-tiers).
 
-Operators: the cluster-side mechanics (storage tiers, enabling RBD, migration pools, the
-CPU-headroom rule) are in [VM storage tiers & live migration](/platform/vm-storage-tiers).
+### Create a live-migratable VM
 
-### Create a live-migratable VM the simple way
+1. Open the **Create virtual machine** sheet. See [Open the creation sheet](#open-the-creation-sheet).
+2. In **Operating system**, select the operating system.
+3. In **Image source**, select **Prepared snapshot image**.
+4. In **Prepared image**, select an image whose option shows `Block`.
+5. Click **Continue**.
+6. Select **Enable live migration (shared Block disk and compatible CPU pool)**.
+7. In **CPU compatibility pool**, select a pool. Each option shows the CPU vendor, the CPU model, and the number of compatible hosts.
+8. Click **Continue**.
+9. In **GPU profile**, keep **No GPU**.
+10. Click **Continue**. The **Review** step opens.
+11. Click **Create virtual machine**.
 
-1. In **+ Create VM**, choose your OS (for example, Ubuntu 24.04) and set CPU / RAM / storage.
-2. Under **Root disk storage**, select **Shared RBD**.
-3. Tick **Enable live migration**. If your cluster has more than one CPU pool, pick the
-   **Migration pool** to pin to.
-4. Review the summary, click **Next → Finish**.
-
-The VM comes up live-migratable. During node maintenance, Kube-DC can live-migrate it to another compatible node. Application availability still depends on the health of the guest, the storage, the network, and the migration.
+The checkbox is unavailable when the platform reports no CPU compatibility pool, or when you selected a GPU profile. The VM comes up live-migratable. During node maintenance, Kube-DC can live migrate it to another compatible node. Application availability still depends on the health of the guest, the storage, the network, and the migration.
 
 :::warning CPU headroom for migration
-A live migration briefly runs **two copies** of the VM (source + target) while memory
-is copied. Keep **free CPU quota ≥ the VM's CPU count**, or a migration will wait until
+A live migration briefly runs **two copies** of the VM (source and target) while memory
+is copied. Keep **free CPU quota of at least the VM's CPU count**, or a migration waits until
 you free capacity. Prefer smaller HA VMs, or migrate them one at a time.
 :::
 
 ### The generated manifest
 
-**Shared RBD** with **live migration** renders explicit KubeVirt resources. There is
-no hidden magic and no mutating webhook. Kube-DC also stamps two descriptive labels
-(`kube-dc.com/vm-profile`, `kube-dc.com/storage-tier`) so the choice is visible in
-`kubectl`, but **nothing depends on them**. The following spec fields are the source of
+A live-migratable VM is made of explicit KubeVirt resources. No mutating webhook
+changes them. Kube-DC also adds two descriptive labels
+(`kube-dc.com/vm-profile` and `kube-dc.com/storage-tier`) so the choice is visible in
+`kubectl`, but **nothing depends on them**. The spec fields are the source of
 truth. You can write the same manifest by hand:
 
 <details>
@@ -611,7 +638,7 @@ with:
 ```bash
 kubectl get vmi ubuntu -n <project-backing-namespace> \
   -o jsonpath='{range .status.conditions[*]}{.type}={.status} {end}'
-# LiveMigratable=True StorageLiveMigratable=True → good
+# Expected: LiveMigratable=True StorageLiveMigratable=True
 ```
 
 ### Monitor VM status
@@ -660,19 +687,19 @@ NAME         TARGET IP    EXTERNAL IP    VM       INTERFACE   READY
 debian-fip   10.0.0.131   198.51.100.16   debian   vpc_net_0   true
 ```
 
-You can now SSH directly to the VM:
+Connect to the VM over SSH:
 
 ```bash
 ssh debian@198.51.100.16
 ```
 
-:::tip No EIP Required
-When using `externalNetworkType: public` on a FIP, a dedicated public EIP is automatically allocated and bound. You don't need to create an EIP separately.
+:::tip No EIP required
+When a FIP uses `externalNetworkType: public`, the platform allocates and binds a dedicated public EIP. You do not create an EIP separately.
 :::
 
 ### Expose VM ports with a LoadBalancer Service
 
-For exposing specific ports (for example, SSH on a non-standard port) without a dedicated public IP, use a LoadBalancer service:
+To expose specific ports (for example, SSH on a non-standard port) without a dedicated public IP, create a LoadBalancer Service:
 
 ```yaml
 apiVersion: v1
@@ -697,7 +724,7 @@ This binds to the Project's shared EIP. Connect to:
 ssh -p 2222 ubuntu@<project-eip>
 ```
 
-See the [Service exposure](service-exposure.md) for more options including HTTPS routes and dedicated EIPs.
+For more options, including HTTPS routes and dedicated EIPs, see [Service exposure](service-exposure.md).
 
 ---
 
@@ -732,7 +759,7 @@ kubectl logs <virt-launcher-pod> -c compute
 
 ## Next steps
 
-- [Connecting to VMs](connecting-vm.md): SSH access and remote console options
+- [Connect to your VM](connecting-vm.md): browser consoles, SSH, and remote console options
 - [VM lifecycle](vm-lifecycle.md): Start, stop, and restart VMs
 - [Block storage](block-storage.md): Storage classes, disks and volumes
 - [Service exposure](service-exposure.md): Expose VM services to the internet

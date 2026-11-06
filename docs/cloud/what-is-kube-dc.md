@@ -8,9 +8,8 @@ infrastructure. An Organization gets one API and one web console for its
 Projects, virtual machines, Managed Clusters, databases, and the cloud
 resources around them.
 
-Kube-DC Cloud is the hosted offering built with Kube-DC. The service provider
-operates the platform underneath. You manage your Organization, Projects,
-access, workloads, and services.
+Your service provider operates the platform underneath. You manage your
+Organization, Projects, access, workloads, and services.
 
 ## What you can run
 
@@ -69,7 +68,10 @@ Within a Project you choose the execution boundary for each workload:
 The two are separate deployment targets with separate API endpoints. Choose
 before you deploy. You cannot migrate a workload from one to the other later.
 
-![Kube-DC manage organization view](images/kube-dc-manage-org-view.png)
+In the console, an Organization Admin sees every Project of the Organization,
+its members, and its shared resource pool on one page:
+
+![Organization overview with Project, member, and running pod counts, the Organization resource pool, and the Project list](images/kube-dc-manage-org-view.png)
 
 ## Kubernetes-native management
 

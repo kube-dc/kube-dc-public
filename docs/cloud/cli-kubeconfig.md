@@ -19,34 +19,48 @@ handles:
 
 ## Get CLI access from the console
 
-The console offers the CLI as soon as you create a Project:
+The console gives you the setup commands for each Project. To get them:
 
-1. Open your Project's **Overview** page.
+1. Open your Project and go to the **Summary** page of the Project overview.
 2. On the **Command-line access** card, click **Get kubeconfig**. The **Set up
    CLI access** dialog opens.
-3. Run the commands the dialog displays to install the CLI and authenticate.
+3. In **Operating system**, select the computer where you run the CLI.
+4. Run the commands of step 1, **Install kube-dc**. If the CLI is already
+   installed, skip this step.
+5. Run the commands of step 2, **Sign in and select this project**. Your
+   browser opens the sign-in page.
+6. Optional: run the command of step 3, **Verify with kubectl**. It lists the
+   pods in the Project.
 
-![Get CLI Access from Console UI](images/get-kubeconfig.png)
+![Set up CLI access dialog with the Operating system selector, the Install kube-dc and Sign in and select this project steps, and the Download setup and Copy all commands buttons](images/get-kubeconfig.png)
 
-The console gives you installation commands for your platform and your
-authentication details. The `kube-dc` CLI then:
+Each step has its own copy button. To copy every step at once, click **Copy all
+commands**. To save the steps as a script, click **Download setup**. If you do
+not have `kubectl`, use the **Install kubectl** link in the dialog.
 
-- Authenticates you through the browser
+After you sign in, the `kube-dc` CLI:
+
 - Generates your kubeconfig
 - Saves cached credentials under `~/.kube-dc/` with user-only file permissions
 - Configures `kubectl` contexts for your Projects
 
+On macOS and Linux, the dialog shows commands like these:
+
 ```bash
-# Example workflow shown in the console
 kube-dc login --domain example.com --org <organization>
 kube-dc use example.com/<organization>/<project>
-kubectl get pods
+kubectl --context kube-dc/example.com/<organization>/<project> get pods
 ```
 
 Replace `example.com` with your Kube-DC domain, `<organization>` with your
-Organization ID, and `<project>` with your Project name.
+Organization ID, and `<project>` with your Project name. The dialog fills in
+these values for you.
 
 ## Install the CLI
+
+The **Set up CLI access** dialog gives installation commands for your
+platform that also verify the checksum of the download. You can also install
+the CLI with the commands in this section.
 
 ### macOS and Linux
 
@@ -322,7 +336,7 @@ kube-dc login --help
 To get access without installing the CLI, use the **Project console** in the
 web interface:
 
-1. Open your Project's **Overview** page.
+1. Open your Project and go to the **Summary** page of the Project overview.
 2. On the **Command-line access** card, click **Open project console**. A web
    terminal opens in a separate tab with `kubectl` already configured.
 

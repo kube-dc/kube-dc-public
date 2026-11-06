@@ -91,35 +91,48 @@ The following table lists the rules that govern a datacenter VLAN:
 
 ## Assign a VLAN to a Project
 
-Go to **Organization Management → Datacenter VLANs**. Every VLAN allocated to
-your organization is listed with its subnet, gateway and current state.
+You need the Organization administrator role to assign a VLAN.
 
-![Datacenter VLANs in Organization Management](images/vlan-1-org-tab.png)
+1. Open the account menu, and select **Manage organization**.
+2. In the **Networking** group, select **Datacenter VLANs**. The table lists every VLAN allocated to your Organization with its **Segment**, **VLAN ID**, **CIDR**, **Gateway**, **MTU**, **Assignment**, **Project**, and **Attached ports**.
 
-Pick a Project from the dropdown on an **Available** row and press **Assign**.
+   ![The Datacenter VLANs page of Manage organization](images/vlan-1-org-tab.png)
 
-![Assigning a VLAN to a Project](images/vlan-2-assign.png)
+3. In the actions menu of an `unassigned` row, select **Assign to project**. The **Assign VLAN** dialog opens.
+4. Select the **Project**.
+5. Click **Assign project**.
 
-The row moves to **Assigned** once the network is published into the Project,
-usually within a few seconds.
+   ![The Assign VLAN dialog with a Project selected](images/vlan-2-assign.png)
 
-| State | Meaning |
+The **Assignment** column changes to `assigned`. To see the progress of the network, expand the row. **Phase** shows the binding state, and **Ready** shows if the segment is delivered to the nodes.
+
+The **Assignment** column has these values:
+
+| Assignment | Meaning |
 |---|---|
-| **Available** | Allocated to your organization, not in use. Assign it to a Project. |
-| **Provisioning** / **Pending** | The network is being created. Wait. |
-| **Assigned** | Ready. Workloads in that Project can attach. |
-| **Releasing** | Being unassigned. Attached workloads are draining; the count is shown. Not yet re-assignable. |
-| **Error** | The binding could not be realised. The most common cause is that the VLAN is already held by another Project. Contact your platform administrator. |
-| **segment not ready** | Your platform administrator has not finished delivering this VLAN to the cluster's nodes. You cannot fix this yourself; ask them. |
+| `unassigned` | Allocated to your Organization, not in use. Assign it to a Project. |
+| `assigned` | Bound to the Project in the **Project** column. Workloads in that Project can attach after the **Phase** is `Ready`. |
+| `releasing` | Being unassigned. Attached workloads are draining; **Attached ports** shows the count. You cannot assign it again yet. |
+
+The expanded row shows these values:
+
+| Field | Meaning |
+|---|---|
+| **Phase** `Pending` or `Provisioning` | The network is being created. Wait. |
+| **Phase** `Ready` | Workloads in the Project can attach. |
+| **Phase** `Denying` | The binding is being removed. The platform refuses new attachments. |
+| **Phase** `Error` | The binding could not be realized. The most common cause is that another Project already holds the VLAN. Contact your platform administrator. |
+| **Ready** `No` | Your platform administrator has not finished delivering this VLAN to the cluster's nodes. You cannot fix this yourself; ask them. |
 
 ### Unassign and re-assign
 
-Press **Unassign** to return the VLAN to your organization's pool. It stays
-yours; only the Project binding goes away, so you can give it to a different
-Project afterwards.
+To return the VLAN to your Organization's pool, select **Unassign** in the
+actions menu of the row, then click **Unassign** in the **Unassign VLAN**
+dialog. The VLAN stays yours; only the Project binding goes away, so you can
+give it to a different Project afterwards.
 
-The row shows **Releasing** with the number of workloads still attached until
-teardown finishes. That wait is deliberate: the VLAN is not handed to another
+The row shows `releasing` and the number of **Attached ports** until teardown
+finishes. That wait is deliberate: the VLAN is not handed to another
 Project while anything is still on the wire.
 
 :::warning
@@ -133,7 +146,7 @@ from the Deployment/StatefulSet/Job template (or the network from a stopped VM's
 template), then replace the running instances. Only then unassign.
 :::
 
-The count shown on a **Releasing** row is attachment *evidence*, not a headcount:
+The **Attached ports** count on a `releasing` row is attachment *evidence*, not a headcount:
 a pod and its address record can both be counted. It falls to zero when the wire
 is genuinely clear.
 
@@ -144,19 +157,23 @@ is genuinely clear.
 Assigning the VLAN makes it *available* to the Project. Each pod or VM still has
 to ask for it.
 
-Open **Organization Management → Projects** and click the Project. Its details
-panel has a **Datacenter VLANs** card listing every VLAN the Project holds, with
-the segment, the network name, and the exact string to attach with.
+To find the attachment value, open the Project, select **Networking** in the
+section rail, and open the **Datacenter VLANs** tab. The table lists every
+VLAN the Project holds with its **Name**, **Status**, **Segment**, **CIDR**,
+**Gateway**, and **Attachment**. Click a VLAN name to see its details. For a
+ready VLAN, the details show a **Pod attachment** and a **VM attachment**
+snippet.
 
-![VLAN details in the Project panel](images/vlan-3-project-card.png)
+![VLAN details for a Project](images/vlan-3-project-card.png)
 
-Copy the value shown under **Attach with**. That is the annotation value in the following example,
-already in the right form.
+Click **Copy pod attachment** or **Copy VM attachment** to copy a snippet. The
+pod snippet has the annotation value of the following example, already in the
+right form.
 
 ### Attach a pod
 
-Add one annotation. The value is `<backing-namespace>/<network-name>`, and the
-console shows you the exact string, so copy it from there rather than assembling it
+Add one annotation. The value is `<backing-namespace>/<network-name>`. The
+console shows the exact string, so copy it from there instead of assembling it
 by hand. When a VLAN is assigned from the console the network is named
 `<segment>-<project>`, so the examples below use `pn-ext-4014-production`.
 
@@ -189,16 +206,20 @@ cannot land somewhere the wire does not reach.
 
 ### Attach a virtual machine
 
-**From the console.** When you create a VM, Step 1 shows a **Datacenter VLANs**
-section listing every VLAN this Project holds. Tick the ones you want and the
-generated manifest gets the network and its matching interface, correctly paired.
-review it on the next step before creating.
+**From the console.** In the **Create virtual machine** sheet, the **Networking
+& GPU** step has an **Additional interfaces** list with every VLAN this Project
+holds. Select the VLANs that you want. The generated manifest gets each network
+and its matching interface, correctly paired. Review it on the **Review** step
+before you create the VM.
 
 ![Selecting a datacenter VLAN when creating a VM](images/vlan-4-create-vm.png)
 
-The section only appears when this Project actually holds a VLAN, and only lists
-VLANs that are ready to attach. Ticking more than one warns you that the VM will
-be pinned to nodes carrying **all** of them.
+A VLAN that is not ready to attach is shown, but you cannot select it. If you
+select more than one VLAN, the VM can run only on nodes that carry **all** of
+them.
+
+To change the VLANs of an existing VM, open the **Network** tab of the VM and
+click **Manage VLAN interfaces**. Restart the VM to apply the change.
 
 **By hand.** A VM needs the network **and** a matching interface. This is what the
 console does for you, and it trips people up when done manually:
@@ -243,8 +264,9 @@ Keep `default: true` on the VPC network. That is what leaves the VM's default
 route, and therefore its internet access, on the VPC.
 
 :::note
-A running VM cannot have a VLAN added to it. Stop the VM, edit the template,
-start it again. The same applies to pods: recreate them rather than editing.
+A VLAN change on a VM applies only after the VM restarts. With kubectl, stop
+the VM, edit the template, and start it again. The same applies to pods:
+recreate them instead of editing them.
 :::
 
 ---
@@ -398,16 +420,16 @@ attach the VLANs assigned to it.
 
 **Pod stuck in `Pending` / `ContainerCreating`**
 Usually the segment is not ready on any node, or the pod's own scheduling
-constraints conflict with the nodes carrying the VLAN. Check the VLAN's status in
-Organization Management; if it shows *segment not ready*, contact your platform
-administrator.
+constraints conflict with the nodes carrying the VLAN. Expand the VLAN row on
+the **Datacenter VLANs** page of **Manage organization**. If **Ready** shows
+`No`, contact your platform administrator.
 
 **VM boots with no VLAN interface**
 Almost always a missing or misnamed entry under `devices.interfaces`. See the
 warning above.
 
 **Unassign appears stuck**
-Look at the attached-workload count on the **Releasing** row. Teardown waits for
+Look at the **Attached ports** count on the `releasing` row. Teardown waits for
 those workloads to detach. Delete them, or wait for the controller to finish.
 
 ---

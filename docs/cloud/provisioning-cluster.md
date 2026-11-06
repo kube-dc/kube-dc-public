@@ -14,7 +14,7 @@ When you create a Managed Cluster, Kube-DC orchestrates several components:
 - **Cloud Controller Manager (CCM)**: Bridges your Managed Cluster with the infrastructure, enabling LoadBalancer services and node lifecycle management.
 - **Cluster add-ons**: Cilium CNI, CoreDNS, and a provider-compatible CSI driver are deployed automatically through [Sveltos](https://projectsveltos.github.io/sveltos/).
 
-The diagram below shows a KubeVirt-backed example for Project `production`, whose backing namespace is `acme-production`.
+The following diagram shows a KubeVirt-backed example for Project `production`, whose backing namespace is `acme-production`.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -53,79 +53,97 @@ The diagram below shows a KubeVirt-backed example for Project `production`, whos
 - A Kube-DC [Project](first-project.md) with sufficient resource quota
 - For kubectl access: [kubeconfig configured](cli-kubeconfig.md) for the platform Project
 
-## Managed Clusters view
+## Managed clusters page
 
-Navigate to **Kubernetes** in your Project to view its Managed Clusters:
+To list the Managed Clusters in your Project, select **Managed clusters** in the section rail.
 
-The view shows each Managed Cluster's version, phase, API endpoint, datastore backend, and age. Use **Create Managed Cluster** to open the wizard. From a Managed Cluster row or detail view, you can inspect status, use the **Kubeconfig** action, or open **Delete Managed Cluster**.
+The page shows the **Clusters**, **Ready**, **Worker pools**, and **Ready workers** totals. The table lists each cluster with its **Name**, **Version**, **Status**, **Control plane**, **Workers**, **Pools**, and **Age**. The actions menu of a row has these items:
+
+- **View cluster**: opens the cluster detail page.
+- **Upgrade Kubernetes**: opens the upgrade dialog. See [Upgrade the Kubernetes version](cluster-management.md#upgrade-the-kubernetes-version).
+- **Edit labels**: edits the labels of the `KdcCluster`.
+- **Delete cluster**: opens the **Delete managed cluster** dialog.
 
 ## Create a Managed Cluster in the console
 
-The console provides a guided 5-step wizard.
+The **Create managed cluster** sheet has three steps: **Cluster**, **Workers**, and **Network & add-ons**. A summary panel next to the form shows the values that you selected. To see the request as YAML instead, click **or get the request YAML** at the bottom of the sheet.
 
-### Step 1: Basic configuration
+To create a Managed Cluster:
 
-- **Managed Cluster Name**: Unique within your Project (2–12 characters; lowercase letters, numbers, and hyphens).
-- **Kubernetes Version**: Select the desired version (for example, `v1.35.0`).
-- **Control Plane Replicas**:
-  - `1`: Development
-  - `2`: High Availability
-  - `3`: Production
-- **Public HTTPS API endpoint**: Check this to make the API reachable from outside the cluster network (for example, `https://dev-cp-acme-production.example.com:443`).
-- **Encrypt etcd at rest with OpenBao KMS**: Encrypt supported API resources with a Project KMS key.
+1. In the section rail, select **Managed clusters**.
+2. Click **Create cluster**. The **Create managed cluster** sheet opens on the **Cluster** step.
+3. Fill in the **Cluster** step. See [Step 1: Cluster](#step-1-cluster).
+4. Click **Continue**. The sheet moves to the **Workers** step.
+5. Fill in the **Workers** step. See [Step 2: Workers](#step-2-workers).
+6. Click **Continue**. The sheet moves to the **Network & add-ons** step.
+7. Fill in the **Network & add-ons** step. See [Step 3: Network and add-ons](#step-3-network-and-add-ons).
+8. Click **Create cluster**. The console opens the detail page of the cluster.
 
-### Step 2: Datastore configuration
+To return to an earlier step, click **Back**.
 
-![Create Cluster - Datastore](images/k8s-datastore.png)
+### Step 1: Cluster
 
-Choose how the Managed Cluster's etcd state is stored:
+![The Cluster step of the Create managed cluster sheet, with the cluster name, Kubernetes version, control-plane, API endpoint, and etcd datastore fields](images/k8s-create-step1.png)
 
-| Mode | Description | Best For |
-|------|-------------|----------|
-| **Shared Datastore** (cost-effective) | Multiple Managed Clusters use an existing shared etcd datastore | Development, staging |
-| **Dedicated Datastore** (isolated) | The Managed Cluster gets its own etcd datastore | Production workloads |
+The **Cluster** step has these fields:
 
-For dedicated datastores:
+- **Cluster name**: a name that is unique in your Project. Use up to 32 lowercase letters, digits, and hyphens.
+- **Kubernetes version**: a version from the platform catalog, for example `v1.35.0`.
+- **Control-plane replicas**: `1`, `2`, or `3` API server replicas. Use `1` for development and `3` for production.
+- **API endpoint mode**: **Project internal** or **Cloud network**. **Project internal** appears only when your installation enables it.
+- **Public HTTPS API endpoint**: publishes the Kubernetes API through an HTTPS route on the shared gateway. Keep it selected to use the kubeconfig from a workstation.
+- **Allowed client IPv4 CIDRs**: appears only for **Project internal**. It restricts the public API clients. The field is read-only when your installation does not qualify this restriction. See [Restrict public Kubernetes API clients](cluster-management.md#restrict-public-kubernetes-api-clients).
 
-- **etcd Replicas**: `1` for development, `3` for production high availability, or `5` for maximum redundancy.
+The **Datastore** section sets where the cluster stores its etcd state:
 
-The console allocates the dedicated datastore service port automatically from the free range `32380`–`32499`; it is not a user setting. The Managed Cluster reaches etcd members over DNS on port `2379`.
+- **etcd datastore**: select **Create dedicated datastore**, or select an existing datastore in your Project. A dedicated datastore belongs to this cluster only. Use a shared datastore for development, and a dedicated datastore for production. With **Project internal**, the list shows only internal datastores.
+- **etcd replicas**: `1`, `3`, or `5`. Three replicas tolerate one unavailable member. Use `1` for development and `3` for production.
+- **etcd disk per replica**: the volume size of each etcd member, for example `2Gi`.
+- **Datastore port**: the service port of the dedicated datastore. The console suggests a free port. The cluster reaches etcd members over DNS on port `2379`.
 
-### Step 3: Network & add-ons
+The etcd fields appear only for **Create dedicated datastore**.
 
-![Create Cluster - Network](images/k8s-network-addons.png)
+### Step 2: Workers
 
-- **Service CIDR**: IP range for Kubernetes Services (default: `10.96.0.0/16`). Each cluster has isolated networking.
-- **Pod CIDR**: IP range for Pods (default: `10.244.0.0/16`).
+![The Workers step of the Create managed cluster sheet, with one worker pool and the Add worker pool button](images/k8s-create-step2.png)
 
-**Cluster add-ons** deployed automatically:
+The **Workers** step defines one or more worker pools. All workers in a pool have the same configuration. Each pool has these fields:
 
-| Add-on | Description | Recommended |
-|-------|-------------|-------------|
-| **Cilium CNI** | Pod networking and network policy | Yes (required) |
-| **CoreDNS** | Cluster DNS (`cluster.local`) | Yes (required) |
-| **Provider CSI** | Persistent storage; KubeVirt uses hotplug DataVolumes | Enable for stateful workloads |
+- **Pool name**: an identifier that is unique in the cluster, for example `workers`.
+- **Workers**: the number of worker VMs.
+- **vCPU per worker** and **Memory per worker**: the resources of each worker, for example `1` and `3Gi`.
+- **Worker disk**: **Persistent disk** keeps the disk of a worker across restarts. **Ephemeral (container disk)** rebuilds the disk from the image when the worker is replaced.
+- **Disk per worker**: the root disk size of a persistent worker, for example `20Gi`.
+- **Disk storage class**: the storage class of a persistent worker disk. **Platform default (node-local)** uses the platform default. A change to this field replaces the workers of the pool.
+- **Worker image**: the OS image of the workers. The list shows only the images that match the selected Kubernetes version, for example `Ubuntu 24.04 + K8s v1.35.2`.
 
-### Step 4: Worker pools
+To add a pool with a different configuration, click **Add worker pool**. To remove an extra pool, click **Remove pool** `<pool-name>` under that pool.
 
+### Step 3: Network and add-ons
 
-Define one or more worker pools. Each pool is a group of identically configured VMs:
+![The Network & add-ons step of the Create managed cluster sheet, with the Pod CIDR, Service CIDR, encryption, and add-on settings](images/k8s-create-step3.png)
 
-- **Pool Name**: Identifier (for example, `workers`).
-- **Replicas**: Number of worker VMs.
-- **CPU Cores** and **Memory (GB)**: the resources for each worker.
-- **Worker Type**: `DataVolume (Persistent)` provides root disks that survive VM restarts.
-- **Container Image**: OS image for worker VMs (for example, `Ubuntu 24.04 + K8s v1.35.2`).
+The **Network & add-ons** step has these fields:
 
-Click **Add Pool** to add pools with different configurations (for example, a general pool and a high-memory pool).
+- **Pod CIDR**: the IP range for Pods. The default is `10.244.0.0/16`.
+- **Service CIDR**: the IP range for Kubernetes Services. The default is `10.96.0.0/16`. Each cluster has isolated networking.
+- **Encrypt etcd at rest with OpenBao KMS**: encrypts supported API resources with a KMS key. See [Encryption at rest](#encryption-at-rest).
 
-### Step 5: Review and create
+When you select **Encrypt etcd at rest with OpenBao KMS**, these fields appear:
 
-![Create Cluster - Review](images/k8s-review.png)
+- **KMS key reference**: the name of a `KMSKey` in your Project. Leave it empty to use a platform-managed key.
+- **Rotate encryption key automatically**: rotates the key on a schedule that you set in **Rotation interval**, for example `720h`.
+- **Backup KMS key reference**: an optional, separate key for backup encryption.
 
-The Review step shows the exact YAML manifests that will be applied. Inspect both the **KdcCluster** and **Datastore** tabs to verify the configuration.
+Expand **Cluster add-ons** to choose the add-ons that the platform installs. All three are selected by default:
 
-Click **Create Cluster** to start provisioning the Managed Cluster.
+| Add-on | Description |
+|-------|-------------|
+| **Cilium networking** | Pod networking and network policy. Keep it selected for a ready-to-use cluster. |
+| **CoreDNS** | Cluster DNS (`cluster.local`). Keep it selected for a ready-to-use cluster. |
+| **KubeVirt CSI storage** | Persistent volumes backed by hotplug DataVolumes. Keep it selected for stateful workloads. |
+
+Optional: expand **Advanced labels & kubelet settings** to edit the cluster labels and kubelet settings as YAML.
 
 ## Create a Managed Cluster with kubectl
 
@@ -201,7 +219,7 @@ kubectl apply -f cluster.yaml
 | Annotation | Description |
 |------------|-------------|
 | `k8s.kube-dc.com/expose-route: "true"` | Expose API endpoint externally through TLSRoute (recommended for cloud network type) |
-| `kube-dc.com/restore-from` | Selects a snapshot for a disruptive restore of an existing Managed Cluster. Adding it starts the restore workflow; it is not a first-boot option. Plaintext `.db` keys and envelope directories are detected automatically. Use the cluster detail view's danger zone and read [Backups and Recovery](backups-snapshots.md) before restoring. |
+| `kube-dc.com/restore-from` | Selects a snapshot for a disruptive restore of an existing Managed Cluster. Adding it starts the restore workflow; it is not a first-boot option. Plaintext `.db` keys and envelope directories are detected automatically. In the console, use **Restore** on a snapshot row in the cluster's **Backups** tab. Read [Backups and Recovery](backups-snapshots.md) before you restore. |
 
 ## Encryption at rest
 
@@ -237,7 +255,7 @@ and `kekRotation.currentVersion: 1`.
 ### Rotate the KEK
 
 Encryption at rest by itself does not rotate the wrapping key.
-schedule that explicitly:
+To rotate it, set a schedule:
 
 ```yaml
 spec:
@@ -320,22 +338,26 @@ Provisioning time depends on worker capacity, image availability, and networking
 
 ### In the console
 
-After the Managed Cluster is `Ready`, use **Kubeconfig** on its detail page to download the kubeconfig file.
+The cluster detail page opens when you click a cluster name on the **Managed clusters** page.
 
-![Cluster View](images/k8s-cluster-view.png)
+![The detail page of a Ready Managed Cluster, with the version, the upgrade link, the Kubeconfig button, and the Overview tab](images/k8s-cluster-view.png)
 
-The cluster detail page shows:
+The header shows the phase of the cluster, its Kubernetes version, and an **Upgrade to vX.Y.Z** link when an upgrade is available. The page has the **Overview**, **Workers**, **Network**, **Configuration**, **Backups**, and **Events** tabs. The **Overview** tab has three cards:
 
-- **Phase**: Current state (Ready)
-- **Control Plane**: Replicas and health status
-- **API Endpoint**: The external URL (for example, `https://dev-cp-acme-production.example.com:443`)
-- **DataStore**: etcd name and type (Shared/Dedicated)
-- **Worker Pools**: Number of pools and total workers
-- Tabs for **Summary**, **Workers**, **Network**, and **YAML** views
+- **Cluster status**: the **Phase**, **Control plane** replicas and readiness, **API endpoint**, **Version**, and **Age**.
+- **Infrastructure**: the **Datastore**, **External IP**, **Worker pools**, **Cluster API**, and **Encryption** state.
+- **Control-plane usage**: the CPU and memory that the control plane, etcd, and cluster services reserve from your Project quota.
+
+To download the kubeconfig after the cluster is `Ready`:
+
+1. On the cluster detail page, click **Kubeconfig**. The **Cluster kubeconfig** dialog opens.
+2. Click **Download**. The browser saves the file `<cluster>-kubeconfig.yaml`.
+
+`<cluster>` is the name of the Managed Cluster. The dialog closes when you switch to another browser tab. The kubeconfig grants cluster administrator access, so store it securely.
 
 ### With kubectl
 
-Use the **Kubeconfig** action in the cluster detail view. For a cluster with an external API endpoint, the equivalent Project-level command reads the generated external kubeconfig:
+For a cluster with a public API endpoint, the following Project-level command reads the same external kubeconfig that **Kubeconfig** returns:
 
 ```bash
 kubectl get secret dev-cp-admin-kubeconfig-external -n acme-production \
