@@ -149,8 +149,8 @@ grant, a preview gets an empty database of the source's plan, and the error
 annotation says why. With a workflow, the copy is made by the workflow's
 machine identity, and the platform refuses it unless it names a grant
 (`KUBE_DC_PREVIEW_DATABASE_GRANT`; `app` is the production app's name, the
-repository name in lower case). Pull request code can change the workflow,
-so a grant is not optional there. Machine identities cannot create grants.
+repository name in lower case). Machine identities cannot create grants,
+and a copy's grant cannot be changed after it is created.
 
 ```yaml
 apiVersion: services.kube-dc.com/v1alpha1
@@ -216,9 +216,13 @@ spec:
 - A copy keeps backups like its source, in the project's own object store,
   so they hold its data from before masking; they are readable like the
   source's own backups, by members of the project only.
-- Masking protects data from pull-request code and the preview's public
-  address. It does not hide data from members of the project, who can read
-  the source anyway.
+- Masking protects data from the preview's public address and, with builds
+  on push, from pull-request code. With a workflow, the preview's identity
+  works in the source's project (a copy is made there), so code in a pull
+  request can read what that identity can, the source's credentials
+  included: use builds on push when pull requests may come from people
+  who must not see production data. Masking does not hide data from
+  members of the project, who can read the source anyway.
 
 A failed build is named in the Deployment's `build.kube-dc.com/last-error`
 and in the check run. Builds count against the project quota (they request
