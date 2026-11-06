@@ -47,7 +47,8 @@ This skill is the decision path through it. Decision tables:
   every node (Ubuntu 26.04, or Ubuntu 24.04 with the HWE kernel); `init`
   refuses Ceph on an older kernel.
 - A workstation or bastion with SSH access to every server (key in the agent,
-  passwordless sudo on the servers), `git`, `curl`, `ssh`, Python 3 with
+  passwordless sudo on the servers), `git`, `curl`, `jq`, `ssh`, Bash 4.4 or
+  later first in `PATH` (on macOS, Homebrew's: `brew install bash`), Python 3 with
   PyYAML (`python3 -c 'import yaml'` must succeed) and `kubectl`. From the first `init` run on, the CLI keeps its pinned kubectl,
   flux, helm, sops and age in `~/.kube-dc/tools/bin`; put that first in `PATH`
   for the commands below (`export PATH="$HOME/.kube-dc/tools/bin:$PATH"`).
@@ -193,6 +194,13 @@ fleet's enrolled `age.key` into the new clone first: that mode never creates
 one. Do not rewind the old checkout: its starter import, SOPS enrollment and
 `age.key` belong together. After the push, changes are
 reviewed Git commits.
+
+A run that stopped before it wrote `clusters/<name>` (in the starter import or
+the age-key step) needs no new clone: fix the cause and the input, and run the
+same command in the same checkout. With CLI v0.9.19 or later, `init` replaces a
+starter the input no longer selects (or whose tag moved) and completes an
+interrupted key enrollment there. Once `clusters/<name>` exists, it keeps the
+starter the installation was made from.
 
 Instead of `--config`, `kube-dc bootstrap init` with no flags opens the
 interactive panel with the same inputs (sections Basics, Fleet, Network,
