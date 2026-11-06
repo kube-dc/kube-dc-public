@@ -206,7 +206,9 @@ spec:
   `build.kube-dc.com/preview-database-error` gives the SQL error (code and
   message, never row values). Fix the script, then close and reopen the pull
   request.
-- Preview copies keep no backups.
+- A copy keeps backups like its source, in the project's own object store,
+  so they hold its data from before masking; they are readable like the
+  source's own backups, by members of the project only.
 - Masking protects data from pull-request code and the preview's public
   address. It does not hide data from members of the project, who can read
   the source anyway.
