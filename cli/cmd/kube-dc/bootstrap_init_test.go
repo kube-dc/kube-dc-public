@@ -1362,6 +1362,7 @@ func TestValidateAgeKeyEnrollment_ExistingRepoDefersUntilStarter(t *testing.T) {
 		Repo:      t.TempDir(),
 		FleetMode: clusterinit.FleetExistingRepo,
 	}
+	t.Setenv("SOPS_AGE_KEY_FILE", "") // validateAgeKeyEnrollment may set it
 	var out bytes.Buffer
 	if err := validateAgeKeyEnrollment(context.Background(), &out, o, true); err != nil {
 		t.Fatalf("empty existing-repo should defer until starter extraction: %v", err)
@@ -1395,6 +1396,7 @@ func TestValidateAgeKeyEnrollment_ExistingRepoGeneratesAfterStarter(t *testing.T
 		Repo:      repo,
 		FleetMode: clusterinit.FleetExistingRepo,
 	}
+	t.Setenv("SOPS_AGE_KEY_FILE", "") // validateAgeKeyEnrollment may set it
 	err := validateAgeKeyEnrollment(context.Background(), io.Discard, o, false)
 	if !errors.Is(err, clusterinit.ErrAgeKeyDryRunSkip) {
 		t.Fatalf("starter-present existing-repo must enter generation branch, got %v", err)

@@ -221,11 +221,13 @@ func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *con
 	if len(providerHosts) > 0 {
 		providerHost = providerHosts[0]
 	}
-	host, err := clusterinit.ResolveProviderHost(clusterinit.Provider(provider), providerHost)
-	if err != nil {
-		return err
-	}
 	if !noPush {
+		// The checkout's origin names the Git host (a self-managed GitLab,
+		// for example), as for init; --provider-host must agree with it.
+		host, err := clusterinit.ResolveRepositoryProviderHost(ctx, clusterinit.Provider(provider), providerHost, repoRoot)
+		if err != nil {
+			return fmt.Errorf("bootstrap config set: %w", err)
+		}
 		if binder, ok := git.(ports.GitProviderBinder); ok {
 			git, err = binder.ForProvider(ctx, repoRoot, host)
 			if err != nil {
@@ -262,6 +264,7 @@ func applyConfigSet(cmd *cobra.Command, out io.Writer, repoRoot string, env *con
 			GitHubToken:  githubToken,
 			ProviderHost: providerHost,
 			Provider:     clusterinit.Provider(provider),
+			Repo:         repoRoot,
 		}, out)
 		sha, err = git.CommitAndPush(ctx, repoRoot, msg, token)
 	}

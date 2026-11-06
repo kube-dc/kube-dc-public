@@ -29,24 +29,92 @@ const starterDigestTimeout = 10 * time.Second
 // pinStarterDigest resolves ref's tag to a digest-qualified ref.
 // Already-pinned refs pass through untouched.
 func pinStarterDigest(out io.Writer, ref string) string {
+	pinned, err := tryPinStarterDigest(out, ref)
+	if err != nil {
+		fmt.Fprintf(out, "WARNING: could not resolve %s to a digest (%v); greenfield plans require an immutable starter ref\n", ref, err)
+	}
+	return pinned
+}
+
+// tryPinStarterDigest is pinStarterDigest with the resolution error returned
+// instead of printed; on error it returns ref unchanged.
+func tryPinStarterDigest(out io.Writer, ref string) (string, error) {
 	if strings.Contains(ref, "@sha256:") {
-		return ref
+		return ref, nil
 	}
 	digest, err := resolveStarterDigest(ref)
 	if err != nil {
-		fmt.Fprintf(out, "WARNING: could not resolve %s to a digest (%v); greenfield plans require an immutable starter ref\n", ref, err)
-		return ref
+		return ref, err
 	}
 	fmt.Fprintf(out, "starter ref pinned: %s@%s\n", ref, digest)
-	return ref + "@" + digest
+	return ref + "@" + digest, nil
 }
 
 func starterRefForPlan(out io.Writer, o *clusterinit.InitOptions) string {
 	ref := resolveStarterRef(o.StarterRef)
-	if o.Repo != "" && clusterinit.StarterShapePresent(o.Repo) {
-		return ref // no registry call when the starter is already on disk
+	if o.Repo == "" || !clusterinit.StarterShapePresent(o.Repo) {
+		return pinStarterDigest(out, ref)
 	}
-	return pinStarterDigest(out, ref)
+	// The checkout already holds a starter. existing-fleet never imports one,
+	// and a checkout without an import record predates replacement: both keep
+	// what is there, with no registry call.
+	installed, recorded := clusterinit.ReadInstalledStarter(o.Repo)
+	if o.FleetMode == clusterinit.FleetExistingFleet || !recorded {
+		return ref
+	}
+	// Once a cluster overlay exists the starter is the installation's: init
+	// keeps it, whatever the input or this CLI's default selects. Changing it
+	// is an upgrade, which init does not do.
+	if overlays, err := clusterinit.StarterOverlays(o.Repo); err != nil || len(overlays) > 0 {
+		if _, changed := clusterinit.StarterChangeRequested(o.Repo, ref); changed && o.StarterRef != "" {
+			fmt.Fprintf(out, "[starter] WARNING: %s was installed from %s; the input selects %s. "+
+				"init keeps the installed starter: changing it is an upgrade, which init does not do\n",
+				o.Repo, installed.Ref, ref)
+		}
+		return installed.Ref
+	}
+	// Nothing has been installed from the checkout yet: resolve the request
+	// to a digest, so a corrected input or a moved tag (a re-published
+	// starter) replaces the imported one as a fresh clone would.
+	pinned, err := tryPinStarterDigest(out, ref)
+	if err != nil {
+		// Offline: a tag that matches the imported starter keeps it; another
+		// starter needs a digest-pinned ref (checkStarterChange).
+		fmt.Fprintf(out, "[starter] WARNING: could not resolve %s to a digest (%v); "+
+			"a starter re-published under the same tag is not detected\n", ref, err)
+	}
+	if _, changed := clusterinit.StarterChangeRequested(o.Repo, pinned); changed {
+		fmt.Fprintf(out, "[starter] %s holds %s; the input selects %s\n", o.Repo, installed.Ref, pinned)
+	}
+	return pinned
+}
+
+// checkStarterChange refuses, before the plan is built, a starter replacement
+// that the import step would refuse. starterRefForPlan has already kept the
+// installed starter once an overlay exists, so a change here is one before
+// anything was installed. A safe change is reported and carried out by the
+// import step.
+func checkStarterChange(out io.Writer, o *clusterinit.InitOptions) error {
+	if o.FleetMode == clusterinit.FleetExistingFleet || o.Repo == "" || !clusterinit.StarterShapePresent(o.Repo) {
+		return nil
+	}
+	installed, changed := clusterinit.StarterChangeRequested(o.Repo, o.StarterRef)
+	if !changed {
+		return nil
+	}
+	if err := clusterinit.CheckStarterReplacement(o.Repo, installed, o.StarterRef); err != nil {
+		return err
+	}
+	if err := clusterinit.CheckReplacementCheckout(o.Repo); err != nil {
+		return err
+	}
+	// A replacement imports a starter: it needs the same immutable ref as a
+	// greenfield import.
+	if err := clusterinit.ValidateStarterOCIRef(o.StarterRef); err != nil || !strings.Contains(o.StarterRef, "@sha256:") {
+		return fmt.Errorf("fleet starter %q must be pinned by digest to replace the starter in %s; retry when the registry is available or provide a digest-pinned --starter-ref", o.StarterRef, o.Repo)
+	}
+	fmt.Fprintf(out, "[starter] nothing has been installed from %s yet: the import step replaces it with %s\n", installed.Ref, o.StarterRef)
+	return nil
 }
 
 // An apply-plan retry may find the starter that the first attempt extracted.
@@ -57,6 +125,11 @@ func starterRefForReplay(out io.Writer, o *clusterinit.InitOptions, reviewed str
 	if o.Repo != "" && clusterinit.StarterShapePresent(o.Repo) {
 		reviewedTag, _, _ := strings.Cut(reviewed, "@sha256:")
 		if o.StarterRef == "" || reviewedTag == ref {
+			return reviewed
+		}
+		// The dry run kept the checkout's installed starter although the
+		// input names another one (starterRefForPlan): replay that decision.
+		if installed, ok := clusterinit.ReadInstalledStarter(o.Repo); ok && reviewed == installed.Ref {
 			return reviewed
 		}
 	}

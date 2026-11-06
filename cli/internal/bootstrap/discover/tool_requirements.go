@@ -53,6 +53,7 @@ func ToolRequirements(s ToolSelection) ([]ToolRequirement, error) {
 	switch s.Operation {
 	case ToolInit:
 		add("python3", "run Fleet scaffold with Python 3 and PyYAML")
+		add("bash", "run the Fleet scripts (Bash 4.4 or later)")
 		add("kubectl", "Fleet scripts and cluster checks")
 		add("sops", "encrypt platform credentials")
 		add("age", "create the SOPS age key")
@@ -61,6 +62,8 @@ func ToolRequirements(s ToolSelection) ([]ToolRequirement, error) {
 			add("flux", "bootstrap Flux from the Fleet repository")
 			add("git", "Fleet bootstrap Git operations")
 			add("helm", "install the first cluster charts")
+			add("jq", "configure Keycloak during finalization")
+			add("curl", "configure Keycloak during finalization")
 		}
 		if s.CreateRepo {
 			if !s.Push {
@@ -172,6 +175,10 @@ func toolProbeByName(name string) (ports.Probe, bool) {
 		return newKubectlProbe(realExec), true
 	case "python3":
 		return newPythonScaffoldProbe(realExec), true
+	case "bash":
+		return newBashProbe(realExec), true
+	case "jq":
+		return newSimpleVersionProbe("jq", realExec, "--version"), true
 	case "flux":
 		return newFluxProbe(realExec), true
 	case "sops":

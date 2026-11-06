@@ -988,6 +988,9 @@ func runInitDryRun(out io.Writer, o *clusterinit.InitOptions) error {
 	if err := requireGreenfieldStarterDigest(o); err != nil {
 		return err
 	}
+	if err := checkStarterChange(out, o); err != nil {
+		return err
+	}
 	plan, err := clusterinit.BuildPlan(o, fleet)
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)
@@ -1076,6 +1079,9 @@ func runInitDefaultApply(ctx context.Context, out io.Writer, o *clusterinit.Init
 	// v0.5.2 and silently pull the newer starter.
 	o.StarterRef = starterRefForPlan(out, o)
 	if err := requireGreenfieldStarterDigest(o); err != nil {
+		return err
+	}
+	if err := checkStarterChange(out, o); err != nil {
 		return err
 	}
 	plan, err := clusterinit.BuildPlan(o, fleet)

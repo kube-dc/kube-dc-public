@@ -151,7 +151,7 @@ func StarterShapePresent(dir string) bool {
 }
 
 // EnsureStarter makes RepoPath a usable fleet-starter checkout.
-func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarterResult, error) {
+func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (result EnsureStarterResult, err error) {
 	out := opts.Out
 	if out == nil {
 		out = io.Discard
@@ -159,7 +159,70 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 	if opts.RepoPath == "" {
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: RepoPath is required")
 	}
+	// A different starter requested for a checkout that nothing has been
+	// installed from yet: remove the old one and import the requested one
+	// below, as on a first run (starter_replace.go).
+	replaced := false
+	pulled := ""
+	var moved []string // top-level entries this run renamed into RepoPath
+	installed, changed := StarterChangeRequested(opts.RepoPath, opts.Ref)
+	if changed && StarterShapePresent(opts.RepoPath) {
+		// An installation keeps its starter (a plan saved by an older CLI may
+		// still name another one); init does not upgrade it.
+		if overlays, oerr := StarterOverlays(opts.RepoPath); oerr != nil || len(overlays) > 0 {
+			fmt.Fprintf(out, "WARNING: %s was installed from %s; keeping it although the plan selects %s "+
+				"(changing the starter of an installation is an upgrade, which init does not do)\n",
+				opts.RepoPath, installed.Ref, opts.Ref)
+			changed = false
+		}
+	}
 	if StarterShapePresent(opts.RepoPath) {
+		if changed {
+			if err := CheckStarterReplacement(opts.RepoPath, installed, opts.Ref); err != nil {
+				return EnsureStarterResult{}, err
+			}
+			if opts.Flux == nil || opts.Git == nil {
+				return EnsureStarterResult{}, fmt.Errorf("init: starter: Flux and Git clients are required")
+			}
+			if err := CheckReplacementCheckout(opts.RepoPath); err != nil {
+				return EnsureStarterResult{}, err
+			}
+			// head and tmp are assigned with "=", so the deferred restore below
+			// reads the function's returned err, not a shadowing one.
+			var head, tmp string
+			if head, err = gitCLI(ctx, opts.RepoPath, "rev-parse", "--verify", "HEAD"); err != nil {
+				return EnsureStarterResult{}, err
+			}
+			// Fetch and verify the requested starter before anything is
+			// removed: a failed pull leaves the checkout as it was.
+			if tmp, err = pullStarter(ctx, opts, out); err != nil {
+				return EnsureStarterResult{}, err
+			}
+			defer os.RemoveAll(tmp)
+			// Any failure from here on puts the old starter back, so the next
+			// run starts from the same checkout. (A run killed between the two
+			// commits leaves the removal commit; the next run imports as on a
+			// first run, which accepts the .sops.yaml and age key it finds.)
+			defer func() {
+				if err == nil {
+					return
+				}
+				if rerr := restoreStarter(context.WithoutCancel(ctx), opts.RepoPath, head, moved); rerr != nil {
+					err = fmt.Errorf("%w; restoring %s also failed (%v): run `git -C %s reset --hard %s`",
+						err, installed.Ref, rerr, opts.RepoPath, head)
+					return
+				}
+				fmt.Fprintf(out, "replacement failed; fleet starter %s restored\n", installed.Ref)
+			}()
+			fmt.Fprintf(out, "replacing fleet starter %s with %s (no cluster overlay exists yet)\n", installed.Ref, opts.Ref)
+			if err := removeStarterForReplacement(ctx, opts.RepoPath,
+				fmt.Sprintf("chore: remove fleet starter %s before importing %s", installed.Ref, opts.Ref)); err != nil {
+				return EnsureStarterResult{}, err
+			}
+			replaced, pulled = true, tmp
+		}
+	}
+	if !replaced && StarterShapePresent(opts.RepoPath) {
 		if err := ValidateStarterCLI(opts.RepoPath, opts.ClientVersion); err != nil {
 			return EnsureStarterResult{}, err
 		}
@@ -176,16 +239,28 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 				if err := opts.Git.Init(ctx, opts.RepoPath, "main"); err != nil {
 					return EnsureStarterResult{}, fmt.Errorf("init: starter: repair git-init: %w", err)
 				}
+				if err := requireAgeKeyIgnored(opts.RepoPath); err != nil {
+					return EnsureStarterResult{}, err
+				}
 				if _, err := opts.Git.Commit(ctx, opts.RepoPath, "chore: fleet starter (repaired commit)"); err != nil {
 					return EnsureStarterResult{}, fmt.Errorf("init: starter: repair commit: %w", err)
+				}
+				if err := refuseTrackedAgeKey(opts.RepoPath); err != nil {
+					return EnsureStarterResult{}, err
 				}
 				fmt.Fprintf(out, "repaired: starter tree was present but not committed — git-inited on main\n")
 			case !gitHasCommit(opts.RepoPath):
 				// .git exists but HEAD is unborn: a prior run's Init
 				// succeeded and its Commit failed (review P1 — the
 				// engine's later steps need a real commit).
+				if err := requireAgeKeyIgnored(opts.RepoPath); err != nil {
+					return EnsureStarterResult{}, err
+				}
 				if _, err := opts.Git.Commit(ctx, opts.RepoPath, "chore: fleet starter (repaired commit)"); err != nil {
 					return EnsureStarterResult{}, fmt.Errorf("init: starter: repair unborn-HEAD commit: %w", err)
+				}
+				if err := refuseTrackedAgeKey(opts.RepoPath); err != nil {
+					return EnsureStarterResult{}, err
 				}
 				fmt.Fprintf(out, "repaired: git HEAD was unborn — committed the starter tree\n")
 			default:
@@ -200,6 +275,17 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 	if opts.Flux == nil || opts.Git == nil {
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: Flux and Git clients are required")
 	}
+
+	// A checkout with history of its own gets an import commit of named paths
+	// (commitStarterPaths); a new repository is committed whole by the Git
+	// adapter. A directory inside another repository's working tree is not a
+	// checkout with history.
+	hadCommit := false
+	if gitDir, gerr := exec.Command("git", "-C", opts.RepoPath, "rev-parse", "--git-dir").Output(); gerr == nil &&
+		strings.TrimSpace(string(gitDir)) == ".git" {
+		hadCommit = exec.Command("git", "-C", opts.RepoPath, "rev-parse", "--verify", "-q", "HEAD").Run() == nil
+	}
+	operatorRepoMode := false // set by the populated-dir guard
 
 	// Populated-dir guard. A missing dir is fine (MkdirAll below).
 	// Starter-OWNED leftovers (an interrupted promotion: some trees
@@ -221,20 +307,28 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		// .git is a file in a worktree or submodule checkout.
 		_, gitErr := os.Stat(filepath.Join(opts.RepoPath, ".git"))
 		hasGit := gitErr == nil
-		operatorRepo := opts.OperatorRepository && hasContent
+		// A replaced starter leaves a committed checkout behind (with the
+		// operator's .sops.yaml and age key): keep its content as for an
+		// operator repository.
+		operatorRepo := (opts.OperatorRepository || replaced) && hasContent
+		operatorRepoMode = operatorRepo
 		if operatorRepo {
 			if !hasGit || !gitHasCommit(opts.RepoPath) {
 				return EnsureStarterResult{}, fmt.Errorf("%w: --fleet-mode=existing-repo needs %s to be a Git checkout with at least one commit",
 					ErrStarterDirNotEmpty, opts.RepoPath)
 			}
 			// The starter commit stages the whole tree, so operator changes
-			// must be committed (or ignored) first.
+			// must be committed (or ignored) first. Only the .sops.yaml an
+			// interrupted key generation left behind may remain: it holds no
+			// secret, goes into the import commit, and the age-key step after
+			// this one enrolls the key in it and commits that.
 			dirty, err := gitDirtyPaths(opts.RepoPath)
 			if err != nil {
 				return EnsureStarterResult{}, fmt.Errorf("init: starter: read the Git status of %s: %w", opts.RepoPath, err)
 			}
-			if dirty != "" {
-				return EnsureStarterResult{}, fmt.Errorf("%w: %s has uncommitted changes; commit or remove them before importing the starter:\n%s",
+			if dirty = withoutInterruptedReplacement(dirty); dirty != "" {
+				return EnsureStarterResult{}, fmt.Errorf("%w: %s has uncommitted changes; commit them, remove them or list them "+
+					"in .gitignore before importing the starter:\n%s",
 					ErrStarterDirNotEmpty, opts.RepoPath, dirty)
 			}
 		}
@@ -242,6 +336,12 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		for _, e := range entries {
 			switch {
 			case benignPreseedEntries[e.Name()]:
+			case e.Name() == ".sops.yaml":
+				// Written by key generation (an interrupted run, or one whose
+				// starter was being replaced); the age-key step completes it.
+			case e.Name() == "age.key" && !(hasGit && gitTracksPath(opts.RepoPath, e.Name())):
+				// The key an earlier run generated: kept, and never committed
+				// (the .gitignore check below).
 			case starterOwnedEntries[e.Name()]:
 				// In an operator repository nothing is ever removed: a
 				// starter-named entry there is the operator's.
@@ -280,57 +380,13 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: mkdir %s: %w", opts.RepoPath, err)
 	}
 
-	// ATOMIC extract (review P1 2026-07-20): pull into a scratch sibling
-	// dir, validate the shape THERE, then promote entry-by-entry. A
-	// partial/failed pull never dirties RepoPath — the next run's
-	// populated-dir guard would otherwise refuse the leftovers and the
-	// operator would be wedged.
-	tmp, err := os.MkdirTemp(filepath.Dir(opts.RepoPath), ".starter-pull-*")
-	if err != nil {
-		return EnsureStarterResult{}, fmt.Errorf("init: starter: scratch dir: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-
-	fmt.Fprintf(out, "pulling fleet starter %s\n", opts.Ref)
-	if err := opts.Flux.PullArtifact(ctx, opts.Ref, tmp); err != nil {
-		return EnsureStarterResult{}, fmt.Errorf("init: starter: %w", err)
-	}
-
-	// Validate the artifact actually delivered the shape — fail HERE
-	// with the ref in hand, not later inside a script with a confusing
-	// "add-cluster.sh: not found".
-	if !StarterShapePresent(tmp) {
-		var missing []string
-		for _, m := range starterShapeMarkers {
-			if _, err := os.Stat(filepath.Join(tmp, m)); err != nil {
-				missing = append(missing, m)
-			}
+	tmp := pulled
+	if tmp == "" {
+		var err error
+		if tmp, err = pullStarter(ctx, opts, out); err != nil {
+			return EnsureStarterResult{}, err
 		}
-		return EnsureStarterResult{}, fmt.Errorf(
-			"%w: %s did not deliver %s — wrong ref or truncated artifact",
-			ErrStarterArtifactInvalid, opts.Ref, strings.Join(missing, ", "))
-	}
-	// .gitignore must ship — it carries the age.key exclusion that keeps
-	// the soon-to-be-generated private key out of the commit surface.
-	if _, err := os.Stat(filepath.Join(tmp, ".gitignore")); err != nil {
-		return EnsureStarterResult{}, fmt.Errorf(
-			"%w: %s did not deliver .gitignore (carries the age.key exclusion) — republish the starter",
-			ErrStarterArtifactInvalid, opts.Ref)
-	}
-	// Artifact format v2 ships .starter-manifest (mode+sha256 per shared-tree
-	// file). Verify the pull against it: shape markers prove presence, the
-	// manifest proves INTEGRITY (a truncated layer or corrupted blob fails
-	// here with the ref in hand). v1 artifacts have no manifest — tolerated,
-	// they predate the contract. The manifest is then committed with the
-	// tree, so the repo records its vendor-clean baseline for the upgrade
-	// path (PRD fleet-starter-lifecycle, Phase 0).
-	if err := verifyStarterManifest(tmp); err != nil {
-		return EnsureStarterResult{}, fmt.Errorf(
-			"%w: %s failed manifest verification: %v — wrong ref or corrupted artifact",
-			ErrStarterArtifactInvalid, opts.Ref, err)
-	}
-	if err := ValidateStarterCLI(tmp, opts.ClientVersion); err != nil {
-		return EnsureStarterResult{}, err
+		defer os.RemoveAll(tmp)
 	}
 
 	// Promote: move validated top-level entries into RepoPath. Same
@@ -349,7 +405,11 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 	if err != nil {
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: read scratch: %w", err)
 	}
+	gitignoreBefore, gitignoreErr := os.ReadFile(filepath.Join(opts.RepoPath, ".gitignore"))
+	_, versionErr := os.Lstat(filepath.Join(opts.RepoPath, ".starter-version"))
+	promoted := make([]string, 0, len(entries))
 	for _, e := range entries {
+		promoted = append(promoted, e.Name())
 		src := filepath.Join(tmp, e.Name())
 		dst := filepath.Join(opts.RepoPath, e.Name())
 		if _, err := os.Stat(dst); err == nil {
@@ -371,6 +431,7 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		if err := os.Rename(src, dst); err != nil {
 			return EnsureStarterResult{}, fmt.Errorf("init: starter: promote %s: %w", e.Name(), err)
 		}
+		moved = append(moved, e.Name())
 	}
 	// P0-3 invariant, whichever path the .gitignore took: age.key must
 	// be excluded before the engine generates the key.
@@ -405,12 +466,119 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (EnsureStarte
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: %w", err)
 	}
 	warnNonMainBranch(out, opts.RepoPath)
-	if _, err := opts.Git.Commit(ctx, opts.RepoPath,
-		fmt.Sprintf("chore: fleet starter from %s", opts.Ref)); err != nil {
+	// An age key already in the directory (from an earlier run) must be
+	// ignored by Git itself, not only named in .gitignore: a later rule such
+	// as `!*.key` re-includes it.
+	if err := requireAgeKeyIgnored(opts.RepoPath); err != nil {
+		// Take the starter out again, so the next run imports it afresh
+		// (and checks again) instead of committing what is there.
+		for _, name := range moved {
+			os.RemoveAll(filepath.Join(opts.RepoPath, name))
+		}
+		if gitignoreErr == nil {
+			os.WriteFile(filepath.Join(opts.RepoPath, ".gitignore"), gitignoreBefore, 0o644)
+		}
+		if versionErr != nil {
+			os.Remove(filepath.Join(opts.RepoPath, ".starter-version"))
+		}
+		return EnsureStarterResult{}, err
+	}
+	message := fmt.Sprintf("chore: fleet starter from %s", opts.Ref)
+	if hadCommit {
+		// .starter-version also when the artifact did not ship it:
+		// appendInstalledRef wrote it above.
+		paths := append(append([]string{}, promoted...), ".starter-version")
+		if operatorRepoMode {
+			// The clean-tree check ran: commit what the starter added.
+			for i, name := range paths {
+				if name == "clusters" {
+					paths[i] = "clusters/.gitkeep"
+				}
+			}
+		} else {
+			// new-repo: everything the guard let through, as a new
+			// repository's commit takes it.
+			for name := range benignPreseedEntries {
+				if name != ".git" {
+					paths = append(paths, name)
+				}
+			}
+		}
+		err = commitStarterPaths(ctx, opts.RepoPath, paths, message)
+	} else {
+		_, err = opts.Git.Commit(ctx, opts.RepoPath, message)
+	}
+	if err != nil {
 		return EnsureStarterResult{}, fmt.Errorf("init: starter: initial commit: %w", err)
+	}
+	if err := refuseTrackedAgeKey(opts.RepoPath); err != nil {
+		return EnsureStarterResult{}, err
 	}
 	fmt.Fprintf(out, "fleet starter extracted + committed (branch main)\n")
 	return EnsureStarterResult{Extracted: true, Ref: opts.Ref}, nil
+}
+
+// pullStarter pulls opts.Ref into a scratch directory beside RepoPath and
+// verifies it. The caller removes the returned directory.
+//
+// ATOMIC extract (review P1 2026-07-20): pull into a scratch sibling
+// dir, validate the shape THERE, then promote entry-by-entry. A
+// partial/failed pull never dirties RepoPath — the next run's
+// populated-dir guard would otherwise refuse the leftovers and the
+// operator would be wedged.
+func pullStarter(ctx context.Context, opts EnsureStarterOptions, out io.Writer) (dir string, err error) {
+	tmp, err := os.MkdirTemp(filepath.Dir(opts.RepoPath), ".starter-pull-*")
+	if err != nil {
+		return "", fmt.Errorf("init: starter: scratch dir: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(tmp)
+		}
+	}()
+
+	fmt.Fprintf(out, "pulling fleet starter %s\n", opts.Ref)
+	if err := opts.Flux.PullArtifact(ctx, opts.Ref, tmp); err != nil {
+		return "", fmt.Errorf("init: starter: %w", err)
+	}
+
+	// Validate the artifact actually delivered the shape — fail HERE
+	// with the ref in hand, not later inside a script with a confusing
+	// "add-cluster.sh: not found".
+	if !StarterShapePresent(tmp) {
+		var missing []string
+		for _, m := range starterShapeMarkers {
+			if _, err := os.Stat(filepath.Join(tmp, m)); err != nil {
+				missing = append(missing, m)
+			}
+		}
+		return "", fmt.Errorf(
+			"%w: %s did not deliver %s — wrong ref or truncated artifact",
+			ErrStarterArtifactInvalid, opts.Ref, strings.Join(missing, ", "))
+	}
+	// .gitignore must ship — it carries the age.key exclusion that keeps
+	// the soon-to-be-generated private key out of the commit surface.
+	if _, err := os.Stat(filepath.Join(tmp, ".gitignore")); err != nil {
+		return "", fmt.Errorf(
+			"%w: %s did not deliver .gitignore (carries the age.key exclusion) — republish the starter",
+			ErrStarterArtifactInvalid, opts.Ref)
+	}
+	// Artifact format v2 ships .starter-manifest (mode+sha256 per shared-tree
+	// file). Verify the pull against it: shape markers prove presence, the
+	// manifest proves INTEGRITY (a truncated layer or corrupted blob fails
+	// here with the ref in hand). v1 artifacts have no manifest — tolerated,
+	// they predate the contract. The manifest is then committed with the
+	// tree, so the repo records its vendor-clean baseline for the upgrade
+	// path (PRD fleet-starter-lifecycle, Phase 0).
+	if err := verifyStarterManifest(tmp); err != nil {
+		return "", fmt.Errorf(
+			"%w: %s failed manifest verification: %v — wrong ref or corrupted artifact",
+			ErrStarterArtifactInvalid, opts.Ref, err)
+	}
+	if err := ValidateStarterCLI(tmp, opts.ClientVersion); err != nil {
+		return "", err
+	}
+	return tmp, nil
 }
 
 // warnNonMainBranch reads .git/HEAD directly (no go-git dependency in
@@ -826,8 +994,13 @@ func dirExists(path string) bool {
 
 // gitDirtyPaths lists modified and untracked (not ignored) paths.
 func gitDirtyPaths(repoPath string) (string, error) {
-	out, err := exec.Command("git", "-C", repoPath, "status", "--porcelain", "--untracked-files=all").Output()
-	return strings.TrimSpace(string(out)), err
+	// No global excludes file: the Git adapter's commit (go-git) does not
+	// read it, so a file ignored only there would be committed unseen.
+	out, err := exec.Command("git", "-C", repoPath, "-c", "core.excludesFile=/dev/null",
+		"status", "--porcelain", "--untracked-files=all").Output()
+	// Only the trailing newline: the first line's status column may start
+	// with a space (" M path").
+	return strings.TrimRight(string(out), "\n"), err
 }
 
 // gitTracksPath reports whether Git tracks anything at name in repoPath.
@@ -835,6 +1008,37 @@ func gitDirtyPaths(repoPath string) (string, error) {
 func gitTracksPath(repoPath, name string) bool {
 	out, err := exec.Command("git", "-C", repoPath, "ls-files", "--", name).Output()
 	return err != nil || strings.TrimSpace(string(out)) != ""
+}
+
+// requireAgeKeyIgnored refuses an age.key in repoPath that Git itself does not
+// ignore. A .gitignore line is not enough: a later rule such as `!*.key`
+// re-includes the file.
+func requireAgeKeyIgnored(repoPath string) error {
+	if _, err := os.Lstat(filepath.Join(repoPath, "age.key")); err != nil {
+		return nil
+	}
+	if !gitIgnoresPath(repoPath, "age.key") {
+		return fmt.Errorf("%w: Git does not ignore %s; fix .gitignore before importing the starter",
+			ErrStarterDirNotEmpty, filepath.Join(repoPath, "age.key"))
+	}
+	return nil
+}
+
+// refuseTrackedAgeKey fails when a commit took age.key, before init pushes.
+func refuseTrackedAgeKey(repoPath string) error {
+	if _, err := os.Lstat(filepath.Join(repoPath, "age.key")); err != nil || !gitTracksAgeKey(repoPath) {
+		return nil
+	}
+	return fmt.Errorf("init: starter: a commit in %s includes age.key; remove it with "+
+		"`git rm --cached age.key && git commit --amend` before anything is pushed", repoPath)
+}
+
+// gitTracksAgeKey reports whether Git tracks age.key in repoPath. Unlike
+// gitTracksPath, an unreadable state reports false: it only confirms a commit
+// that must not have happened.
+func gitTracksAgeKey(repoPath string) bool {
+	out, err := exec.Command("git", "-C", repoPath, "ls-files", "--", "age.key").Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
 // gitIgnoresPath reports whether name is ignored: ignored content is the

@@ -296,11 +296,16 @@ func (r *Runner) rootPath(root ScriptRoot) (string, error) {
 // on a path mismatch) but the misroute was severe enough to make
 // KUBECONFIG a host-env citizen on par with HOME.
 //
+// SOPS_AGE_KEY_FILE is passed through for the same reason: init sets it to
+// the age key it verified as a recipient, so the scripts' sops calls use that
+// key instead of SOPS's platform default (on macOS ~/Library/Application
+// Support, where an older key generation never wrote it).
+//
 // In v1 we pass through everything operator-supplied; M3-T03 will add
 // per-kind required-env validation.
 func mergeEnv(env map[string]string) []string {
-	out := make([]string, 0, len(env)+9)
-	for _, k := range []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SSH_AUTH_SOCK", "KUBECONFIG"} {
+	out := make([]string, 0, len(env)+10)
+	for _, k := range []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SSH_AUTH_SOCK", "KUBECONFIG", "SOPS_AGE_KEY_FILE"} {
 		if v := lookupEnv(k); v != "" {
 			out = append(out, k+"="+v)
 		}

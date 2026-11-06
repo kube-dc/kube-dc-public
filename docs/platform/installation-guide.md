@@ -726,6 +726,12 @@ python3 -c 'import sys, yaml; print(sys.version.split()[0], yaml.__version__)'
 The command must print the Python and PyYAML versions. If the import fails,
 install PyYAML in that Python environment, then run the check again.
 
+The starter's scripts run with the `bash` first in `PATH` and need Bash 4.4 or
+later; `bootstrap init` checks it, and checks `jq` and `curl` when it pushes,
+before it changes anything. macOS ships Bash 3.2 as `/bin/bash`: install
+Bash with Homebrew (`brew install bash`) and keep Homebrew's `bin` directory
+before `/bin` in `PATH`.
+
 ### 3.2 Configure wildcard DNS (required before init)
 
 Point a **wildcard A record** at the public IP of `master-1`. `init`
@@ -2099,7 +2105,22 @@ kube-dc bootstrap status <cluster> --repo <fleet-repo>
 ```
 
 `init` is idempotent, and it rolls back its own commit if the push fails.
-fix the reported cause and re-run. Common ones: `KUBE_OVN_MASTER_NODES`
+Fix the reported cause and re-run.
+
+A first run that stopped before it wrote `clusters/<name>` (in the starter
+import or the age-key step) also resumes in the same checkout. If the starter
+the input selects (`--starter-ref` or `KUBE_DC_INIT_STARTER_REF`, or the
+CLI's default) now resolves to a different digest, init downloads and
+verifies it, then replaces the imported one in two commits, as long as the
+starter files are unmodified and nothing else is uncommitted. The registry
+must be reachable for a moved tag to be noticed, and a saved plan keeps the
+starter it reviewed: run a new `--dry-run` first. A `.sops.yaml`
+left without a recipient next to the generated `age.key` is completed and
+committed, as long as nothing in the repository is encrypted yet. Once
+`clusters/<name>` exists, init keeps the starter the installation was made
+from, and warns if the input names another one.
+
+Other common causes: `KUBE_OVN_MASTER_NODES`
 unset (pass the control-plane **internal** IPs through `--set`), the wildcard
 DNS record not yet resolving (the DNS gate blocks; re-run once
 `dig +short test.<domain>` returns your IP, or pass

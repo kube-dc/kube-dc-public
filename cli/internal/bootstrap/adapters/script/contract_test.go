@@ -28,7 +28,7 @@ func TestContracts_CoversAllExportedKinds(t *testing.T) {
 // contract. Guards the agent-rule-4 boundary (an adapter-private slice
 // can't be enforced at the ports layer).
 func TestHostEnvPassthrough_AlignsWithMergeEnvAllowlist(t *testing.T) {
-	want := []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SSH_AUTH_SOCK", "KUBECONFIG"}
+	want := []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SSH_AUTH_SOCK", "KUBECONFIG", "SOPS_AGE_KEY_FILE"}
 	if len(hostEnvPassthrough) != len(want) {
 		t.Fatalf("hostEnvPassthrough size=%d want %d", len(hostEnvPassthrough), len(want))
 	}

@@ -225,7 +225,7 @@ var scriptContracts = map[ports.ScriptKind]scriptContract{
 // explicitly in the env map.
 var hostEnvPassthrough = map[string]struct{}{
 	"PATH": {}, "HOME": {}, "USER": {}, "LANG": {}, "LC_ALL": {},
-	"TERM": {}, "SSH_AUTH_SOCK": {}, "KUBECONFIG": {},
+	"TERM": {}, "SSH_AUTH_SOCK": {}, "KUBECONFIG": {}, "SOPS_AGE_KEY_FILE": {},
 }
 
 // validateContract refuses calls that don't satisfy the per-kind

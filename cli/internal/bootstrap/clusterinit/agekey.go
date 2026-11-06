@@ -3,6 +3,9 @@ package clusterinit
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -153,4 +156,124 @@ func CheckAgeKeyEnrollment(pubkey, operatorName string, recipients []string) err
 		ErrAgeKeyNotEnrolled, pubkey,
 		strings.Join(sortedRecipients, ", "),
 		name, pubkey)
+}
+
+// emptyAgeRecipientLine matches the starter's .sops.yaml recipient line while
+// it is still empty: an empty quoted value or a bare `age:`.
+var emptyAgeRecipientLine = regexp.MustCompile(`(?m)^([ \t]*)age:[ \t]*(?:''|"")?[ \t]*$`)
+
+// EnrollEmptySOPSConfig fills the empty age recipient of a starter .sops.yaml
+// that an interrupted key generation left behind (generate-age-key.sh creates
+// the file with an empty `age:` value and fills it in a later step). It returns the
+// repaired body and true only for that exact shape: no recipient yet and one
+// empty `age:` line. Anything else is left to the caller's refusal.
+func EnrollEmptySOPSConfig(body []byte, pubkey string) ([]byte, bool) {
+	if !agePubkeyExact.MatchString(pubkey) || len(ParseSOPSConfigRecipients(body)) != 0 {
+		return nil, false
+	}
+	if len(emptyAgeRecipientLine.FindAllIndex(body, -1)) != 1 {
+		return nil, false
+	}
+	return emptyAgeRecipientLine.ReplaceAll(body, []byte("${1}age: '"+pubkey+"'")), true
+}
+
+var agePubkeyExact = regexp.MustCompile(`^age1[a-z0-9]{58}$`)
+
+// StarterSOPSConfig is the .sops.yaml that generate-age-key.sh creates in a
+// fleet that has none, before it enrolls the key.
+const StarterSOPSConfig = `# SOPS configuration for this fleet repo — all *.enc.yaml files are
+# encrypted with age. encrypted_regex keeps apiVersion/kind/metadata
+# in plaintext so kustomize can parse the file BEFORE Flux's SOPS
+# decryptor sees it (upstream Flux+SOPS recommendation).
+creation_rules:
+  - path_regex: '\.enc\.yaml$'
+    encrypted_regex: '^(data|stringData)$'
+    age: ''
+`
+
+var sopsMetadataLine = regexp.MustCompile(`(?m)^sops:`)
+
+// EncryptedFilesUnder lists the SOPS-encrypted *.enc.yaml files under dir
+// (outside .git). A recipient repair is only safe while it is empty.
+func EncryptedFilesUnder(dir string) ([]string, error) {
+	var found []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".enc.yaml") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if sopsMetadataLine.Match(body) {
+			rel, _ := filepath.Rel(dir, path)
+			found = append(found, rel)
+		}
+		return nil
+	})
+	return found, err
+}
+
+// SOPSDefaultKeyFiles lists the keys files that sops reads when
+// SOPS_AGE_KEY_FILE is unset, as generate-age-key.sh writes them:
+// ~/.config/sops/age/keys.txt, and on macOS also the platform config
+// directory ($XDG_CONFIG_HOME, else ~/Library/Application Support).
+func SOPSDefaultKeyFiles(home, goos, xdgConfigHome string) []string {
+	files := []string{filepath.Join(home, ".config", "sops", "age", "keys.txt")}
+	if goos == "darwin" {
+		base := xdgConfigHome
+		if base == "" {
+			base = filepath.Join(home, "Library", "Application Support")
+		}
+		if platform := filepath.Join(base, "sops", "age", "keys.txt"); platform != files[0] {
+			files = append(files, platform)
+		}
+	}
+	return files
+}
+
+// AppendAgeKey appends the age identity in key to keysFile unless the file
+// already holds pubkey. The directory is created 0700 and the file kept 0600.
+// It reports whether the file changed.
+func AppendAgeKey(keysFile string, key []byte, pubkey, comment string) (bool, error) {
+	existing, err := os.ReadFile(keysFile)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	if strings.Contains(string(existing), pubkey) {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(keysFile), 0o700); err != nil {
+		return false, err
+	}
+	var b strings.Builder
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		b.WriteString("\n")
+	}
+	if len(existing) > 0 {
+		b.WriteString("\n")
+	}
+	b.WriteString("# " + comment + "\n")
+	b.Write(key)
+	if !strings.HasSuffix(string(key), "\n") {
+		b.WriteString("\n")
+	}
+	f, err := os.OpenFile(keysFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		f.Close()
+		return false, err
+	}
+	if err := f.Close(); err != nil {
+		return false, err
+	}
+	return true, os.Chmod(keysFile, 0o600)
 }

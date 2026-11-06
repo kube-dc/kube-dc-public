@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/shalb/kube-dc/cli/internal/bootstrap"
@@ -181,16 +182,70 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 
 	// Read + parse the fleet's .sops.yaml.
 	configPath := filepath.Join(o.Repo, ".sops.yaml")
+	repairable := (o.FleetMode == clusterinit.FleetNewRepo || o.FleetMode == clusterinit.FleetExistingRepo) &&
+		res.Source == clusterinit.AgeKeySourceFleetRepo
+	configMode := os.FileMode(0o644)
+	configMissing := false
 	body, err := os.ReadFile(configPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("%w (looked at %s)", clusterinit.ErrSOPSConfigMissing, configPath)
-		}
+	switch {
+	case errors.Is(err, os.ErrNotExist) && repairable:
+		// Key generation stopped after it wrote age.key and before it
+		// created .sops.yaml: start from the file it would have created.
+		body, configMissing = []byte(clusterinit.StarterSOPSConfig), true
+	case errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("%w (looked at %s)", clusterinit.ErrSOPSConfigMissing, configPath)
+	case err != nil:
 		return fmt.Errorf("read %s: %w", configPath, err)
+	default:
+		if info, err := os.Stat(configPath); err == nil {
+			configMode = info.Mode().Perm()
+		}
 	}
 	recipients := clusterinit.ParseSOPSConfigRecipients(body)
+	if len(recipients) == 0 && repairable {
+		// An interrupted key generation (for example a script that stopped on
+		// the workstation) leaves the starter's .sops.yaml with an empty
+		// recipient next to a generated age.key. While nothing is encrypted,
+		// enrolling that key is what the script would have done.
+		if repaired, ok := clusterinit.EnrollEmptySOPSConfig(body, pubkey); ok {
+			encrypted, err := clusterinit.EncryptedFilesUnder(o.Repo)
+			if err != nil {
+				return fmt.Errorf("check for encrypted files in %s: %w", o.Repo, err)
+			}
+			if len(encrypted) == 0 {
+				if !mutationsAllowed {
+					state := "has no age recipient yet"
+					if configMissing {
+						state = "does not exist yet"
+					}
+					fmt.Fprintf(out, "[sops] %s %s (a previous run stopped before enrolling the key); "+
+						"the install enrolls %s from %s\n", configPath, state, pubkey, res.Path)
+					return nil
+				}
+				if err := os.WriteFile(configPath, repaired, configMode); err != nil {
+					return fmt.Errorf("write %s: %w", configPath, err)
+				}
+				if err := commitSOPSConfig(ctx, o.Repo, "sops: enroll operator age key (repair after an interrupted run)"); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "[sops] repaired .sops.yaml: enrolled %s (a previous run stopped before enrolling it)\n", pubkey)
+				recipients = []string{pubkey}
+				// The interrupted script may also have stopped before it
+				// copied the key to where sops looks by default (on macOS an
+				// older script never wrote ~/Library/Application Support).
+				if err := copyKeyToSOPSDefaults(out, res.Path, pubkey); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if len(recipients) == 0 && configMissing {
+		return fmt.Errorf("%w (looked at %s); files in the repository are already encrypted, so init does not create it",
+			clusterinit.ErrSOPSConfigMissing, configPath)
+	}
 	if len(recipients) == 0 {
-		return fmt.Errorf("%s lists no age recipients (malformed fleet?)", configPath)
+		return fmt.Errorf("%s lists no age recipients. init completes it only while nothing in the repository is encrypted "+
+			"and it has a single empty age rule; enroll the key with bootstrap/add-engineer.sh, or start from a fresh clone", configPath)
 	}
 
 	// Operator name for the printed remediation. Use the local
@@ -206,6 +261,16 @@ func validateAgeKeyEnrollment(ctx context.Context, out io.Writer, o *clusterinit
 	}
 
 	fmt.Fprintf(out, "[sops] enrolled (pubkey=%s via %s)\n", pubkey, res.Source)
+	// Every later sops call -- the CLI's and the Fleet scripts', some of
+	// which run in other directories -- gets the key verified here, in
+	// addition to the keys file SOPS reads by default.
+	keyFile, err := filepath.Abs(res.Path)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", res.Path, err)
+	}
+	if err := os.Setenv("SOPS_AGE_KEY_FILE", keyFile); err != nil {
+		return fmt.Errorf("set SOPS_AGE_KEY_FILE: %w", err)
+	}
 	return nil
 }
 
@@ -277,16 +342,51 @@ func autoGenerateAgeKey(ctx context.Context, out io.Writer, o *clusterinit.InitO
 	// fresh installer machines have no global user.name/email and
 	// `git commit` would die with "unable to auto-detect email
 	// address" (review P2, reproduced with empty HOME).
-	for _, args := range [][]string{
-		{"add", ".sops.yaml"},
-		{"-c", "user.name=kube-dc bootstrap", "-c", "user.email=bootstrap@kube-dc.invalid",
-			"commit", "-m", "sops: enroll operator age key (bootstrap init greenfield)"},
-	} {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", o.Repo}, args...)...)
-		if outB, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("init: greenfield age-key: git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(outB)))
-		}
+	if err := commitSOPSConfig(ctx, o.Repo, "sops: enroll operator age key (bootstrap init greenfield)"); err != nil {
+		return err
 	}
 	fmt.Fprintln(out, "[sops] committed .sops.yaml enrollment")
+	return nil
+}
+
+// copyKeyToSOPSDefaults appends the fleet key to the keys files sops reads by
+// default, as generate-age-key.sh does when it creates the key.
+func copyKeyToSOPSDefaults(out io.Writer, keyPath, pubkey string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("find the home directory for the sops keys file: %w", err)
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", keyPath, err)
+	}
+	comment := fmt.Sprintf("kube-dc-fleet key from %s", keyPath)
+	for _, file := range clusterinit.SOPSDefaultKeyFiles(home, runtime.GOOS, os.Getenv("XDG_CONFIG_HOME")) {
+		added, err := clusterinit.AppendAgeKey(file, key, pubkey, comment)
+		if err != nil {
+			return fmt.Errorf("add the age key to %s: %w", file, err)
+		}
+		if added {
+			fmt.Fprintf(out, "[sops] added the age key to %s\n", file)
+		}
+	}
+	return nil
+}
+
+// commitSOPSConfig commits .sops.yaml with the identity the Git adapter
+// stamps (fresh installer machines have no global user.name/email).
+func commitSOPSConfig(ctx context.Context, repo, message string) error {
+	for _, args := range [][]string{
+		{"add", ".sops.yaml"},
+		// Only .sops.yaml, whatever else is staged; no hooks or signing, as
+		// the Git adapter's commits.
+		{"-c", "user.name=kube-dc bootstrap", "-c", "user.email=bootstrap@kube-dc.invalid", "-c", "commit.gpgsign=false",
+			"-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-q", "-m", message, "--", ".sops.yaml"},
+	} {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
+		if outB, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("init: age key: git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(outB)))
+		}
+	}
 	return nil
 }

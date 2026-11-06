@@ -213,3 +213,36 @@ func gitHead(t *testing.T, dir string) string {
 func gitStatus(t *testing.T, dir string) string {
 	return gitRun(t, dir, "status", "--porcelain")
 }
+
+// config set takes the Git host from the checkout's origin, as init does: a
+// self-managed GitLab needs no --provider-host, and a --provider-host that
+// differs from origin is refused before anything is written.
+func TestBootstrapConfig_SetYes_ProviderHostFromOrigin(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	repo := writeFleetFixture(t, map[string]string{"cloud": configEnvFixture})
+	gitInit(t, repo)
+	// Port 1 on loopback refuses at once: the push fails without any network.
+	gitRun(t, repo, "remote", "add", "origin", "https://127.0.0.1:1/site/fleet.git")
+	headBefore := gitHead(t, repo)
+
+	out, err := runConfig(t, repo, "set", "cloud", "PROM_RETENTION=30d", "--yes", "--github-token", "test-token")
+	if err == nil || !strings.Contains(err.Error(), "rolled back") || strings.Contains(err.Error(), "differs") {
+		t.Fatalf("push to the origin host: want a push failure, got out=%q err=%v", out, err)
+	}
+	t.Logf("push to origin failed as expected: %v", err)
+	if gitHead(t, repo) != headBefore {
+		t.Fatalf("failed push left a commit")
+	}
+
+	out, err = runConfig(t, repo, "set", "cloud", "PROM_RETENTION=30d", "--yes", "--github-token", "test-token",
+		"--provider-host", "git.example.test")
+	if err == nil || !strings.Contains(err.Error(), "differs") {
+		t.Fatalf("--provider-host other than origin: want refusal, got out=%q err=%v", out, err)
+	}
+	body, _ := os.ReadFile(filepath.Join(repo, "clusters", "cloud", "cluster-config.env"))
+	if !strings.Contains(string(body), "PROM_RETENTION=15d") {
+		t.Fatalf("refused set changed the env:\n%s", body)
+	}
+}
