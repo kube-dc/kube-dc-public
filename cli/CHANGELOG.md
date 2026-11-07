@@ -1,5 +1,11 @@
 # kube-dc CLI changelog
 
+## Unreleased
+
+- `bootstrap` subcommands (other than `init`, which sets it after verifying the key, and the `gpu` group) give SOPS the fleet checkout's `age.key` (`SOPS_AGE_KEY_FILE`) when it is a well-formed key and the operator set neither `SOPS_AGE_KEY_FILE` nor `SOPS_AGE_KEY`: on macOS a key that exists only in `~/.config/sops/age` is then found by day-2 commands too.
+- `bootstrap init` refuses a checkout whose `.git` is a file (a linked worktree or `--separate-git-dir`) before it pulls a starter; before, the starter was extracted and left uncommitted.
+- A starter replacement killed inside `git rm` (deletions not yet staged) resumes like one stopped after it.
+
 ## v0.9.19 — 2026-11-06
 
 Installs platform bundle 0.9.16, like v0.9.18. Its default starter, `oci://ghcr.io/kube-dc/fleet-starter:v0.9.16`, now points at `sha256:691a397472cda578e402e0469965f382eb55bd5a5430d2278c1178b2ace61f9b`. It is built from the same fleet revision as the `v0.9.16-macos.2-rc` candidate (`sha256:8b3209e0…`), with which a ten-host installation was run from a Mac, and differs from it only in its version label. Against the earlier v0.9.16 starter (`sha256:e61c7f9d…`) only the workstation scripts (`bootstrap/*.sh`, `scripts/dump-cluster-state.sh`) and `.gitignore` changed: they run on macOS (Bash through `env`, portable `sed`, the age key also where SOPS looks on macOS).

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	sopsadapter "github.com/shalb/kube-dc/cli/internal/bootstrap/adapters/sops"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/clusterinit"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/config"
 	bttui "github.com/shalb/kube-dc/cli/internal/bootstrap/tui"
@@ -51,6 +52,11 @@ Bootstrap opens the new-cluster form. To inspect an existing fleet, pass
 			// Tools that install-prereqs pinned for the starter take
 			// precedence for every bootstrap command and the scripts it runs.
 			clusterinit.UsePinnedTools(clusterinit.PinnedToolsDir())
+			// Not for the root (its TUI or --config may still choose another
+			// checkout) or init (which sets it once it has verified the key).
+			if cmd.Name() != "bootstrap" && cmd.Name() != "init" {
+				useFleetAgeKey(fleetRepo)
+			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var inputs *clusterinit.InitOptions
@@ -185,6 +191,36 @@ func bootstrapLandingRepo(flag string) (string, screens.RootTab, error) {
 // resolveFleetRepo picks the fleet repo path from (in order): the --repo
 // flag, the KUBE_DC_FLEET environment variable, and ~/.kube-dc/fleet.
 // Returns an error if no path resolves to an existing directory.
+// useFleetAgeKey gives every SOPS call of a bootstrap command, the CLI's and
+// the Fleet scripts', the fleet checkout's age key, as init does once it has
+// verified the key. SOPS still reads its default keys file too; on macOS that
+// file is under ~/Library/Application Support, where an older starter script
+// never wrote the key. An operator's own SOPS_AGE_KEY_FILE or SOPS_AGE_KEY wins.
+func useFleetAgeKey(flag string) {
+	if os.Getenv("SOPS_AGE_KEY_FILE") != "" || os.Getenv("SOPS_AGE_KEY") != "" {
+		return
+	}
+	repo, err := resolveFleetRepo(flag)
+	if err != nil || repo == "" {
+		return
+	}
+	key := filepath.Join(repo, "age.key")
+	if fi, err := os.Stat(key); err != nil || !fi.Mode().IsRegular() {
+		return
+	}
+	// SOPS fails on an identity it cannot parse, even with a good key in its
+	// default file: export only a well-formed key.
+	if _, err := sopsadapter.New().DerivePubKey(key); err != nil {
+		return
+	}
+	if body, err := os.ReadFile(key); err != nil || !strings.Contains(string(body), "AGE-SECRET-KEY-1") {
+		return
+	}
+	if abs, err := filepath.Abs(key); err == nil {
+		_ = os.Setenv("SOPS_AGE_KEY_FILE", abs)
+	}
+}
+
 func resolveFleetRepo(flag string) (string, error) {
 	candidates := []string{flag, os.Getenv("KUBE_DC_FLEET")}
 	if home, err := os.UserHomeDir(); err == nil {

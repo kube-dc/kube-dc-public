@@ -193,6 +193,9 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (result Ensur
 			if head, err = gitCLI(ctx, opts.RepoPath, "rev-parse", "--verify", "HEAD"); err != nil {
 				return EnsureStarterResult{}, err
 			}
+			if err = refuseGitFile(opts.RepoPath); err != nil {
+				return EnsureStarterResult{}, err
+			}
 			// Fetch and verify the requested starter before anything is
 			// removed: a failed pull leaves the checkout as it was.
 			if tmp, err = pullStarter(ctx, opts, out); err != nil {
@@ -382,6 +385,9 @@ func EnsureStarter(ctx context.Context, opts EnsureStarterOptions) (result Ensur
 
 	tmp := pulled
 	if tmp == "" {
+		if err := refuseGitFile(opts.RepoPath); err != nil {
+			return EnsureStarterResult{}, err
+		}
 		var err error
 		if tmp, err = pullStarter(ctx, opts, out); err != nil {
 			return EnsureStarterResult{}, err

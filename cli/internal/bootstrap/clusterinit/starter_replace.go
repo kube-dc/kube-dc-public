@@ -216,13 +216,14 @@ func withoutSOPSLeftover(porcelain string) string {
 	return strings.Join(kept, "\n")
 }
 
-// withoutInterruptedReplacement also drops the staged deletions of
-// starter-owned paths that a replacement stopped between `git rm` and its
-// commit leaves: the import commit stages those paths again.
+// withoutInterruptedReplacement also drops the deletions of starter-owned
+// paths that a replacement stopped inside `git rm` (unstaged) or before its
+// commit (staged) leaves: the import commit stages those paths again.
 func withoutInterruptedReplacement(porcelain string) string {
 	var kept []string
 	for _, line := range strings.Split(withoutSOPSLeftover(porcelain), "\n") {
-		if strings.HasPrefix(line, "D  ") && starterOwnedEntries[strings.SplitN(line[3:], "/", 2)[0]] {
+		if (strings.HasPrefix(line, "D  ") || strings.HasPrefix(line, " D ")) &&
+			starterOwnedEntries[strings.SplitN(line[3:], "/", 2)[0]] {
 			continue
 		}
 		if line != "" {
@@ -280,6 +281,18 @@ func commitStarterPaths(ctx context.Context, dir string, names []string, message
 
 // beforeStarterCommit is a test seam between staging and committing.
 var beforeStarterCommit = func(string) error { return nil }
+
+// refuseGitFile refuses a checkout whose .git is a file (a linked worktree,
+// --separate-git-dir) before anything is pulled: the import's Git adapter
+// cannot initialise or commit there, which would leave the starter extracted
+// and uncommitted.
+func refuseGitFile(dir string) error {
+	if fi, err := os.Lstat(filepath.Join(dir, ".git")); err == nil && !fi.IsDir() {
+		return fmt.Errorf("%w: %s/.git is a file (a linked worktree or --separate-git-dir); "+
+			"import the starter into a normal clone", ErrStarterDirNotEmpty, dir)
+	}
+	return nil
+}
 
 // gitCLI runs git in dir and folds its output into the error.
 func gitCLI(ctx context.Context, dir string, args ...string) (string, error) {

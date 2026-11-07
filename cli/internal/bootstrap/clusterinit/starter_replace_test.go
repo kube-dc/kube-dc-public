@@ -711,3 +711,43 @@ func TestEnsureStarter_NewRepoWithHistoryAndEmptyDocs(t *testing.T) {
 		t.Fatalf("left uncommitted:\n%s", st)
 	}
 }
+
+// A replacement killed inside `git rm` leaves unstaged deletions; the next
+// run imports the requested starter.
+func TestEnsureStarter_ResumesAfterKillInsideGitRm(t *testing.T) {
+	dir := importedOperatorCheckout(t)
+	for _, name := range starterOwnedNames() {
+		os.RemoveAll(filepath.Join(dir, name))
+	}
+	if _, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: dir, Ref: newStarterRef, Flux: versionedStarter("new\n"), Git: realGit(), OperatorRepository: true,
+	}); err != nil {
+		t.Fatalf("resume after unstaged deletions: %v", err)
+	}
+	if st := gitT(t, dir, "status", "--porcelain"); st != "?? .sops.yaml\n" {
+		t.Fatalf("status: %q", st)
+	}
+}
+
+// A linked worktree (.git is a file) is refused before anything is pulled.
+func TestEnsureStarter_RefusesGitFileCheckout(t *testing.T) {
+	main := t.TempDir()
+	gitT(t, main, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(main, "README.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitT(t, main, "add", "-A")
+	gitT(t, main, "commit", "-q", "-m", "init")
+	wt := filepath.Join(t.TempDir(), "wt")
+	gitT(t, main, "worktree", "add", "-q", wt)
+	puller := versionedStarter("new\n")
+	_, err := EnsureStarter(context.Background(), EnsureStarterOptions{
+		RepoPath: wt, Ref: newStarterRef, Flux: puller, Git: realGit(), OperatorRepository: true,
+	})
+	if !errors.Is(err, ErrStarterDirNotEmpty) || !strings.Contains(err.Error(), "linked worktree") || puller.called != 0 {
+		t.Fatalf("worktree: called=%d err=%v", puller.called, err)
+	}
+	if StarterShapePresent(wt) {
+		t.Fatalf("the starter was extracted into a worktree")
+	}
+}
