@@ -104,8 +104,24 @@ anything the tool does not cover.
   creates it and saves it in the console themselves. Never ask for a token's
   value or paste one into a tool.
 
+Check what the installation offers before the user picks; not every
+installation has a registry or builds on push:
+
+- Managed registry: a plan of family `registry` in `list kind=managed_services`
+  offerings, or an existing registry in another project of the organization
+  (see "A registry in another project" below). With neither, offer (b).
+- GitHub App: `GET https://backend.<baseDomain>/api/platform/info` (public,
+  no sign-in; `baseDomain` from `whoami`) returns `githubApp.enabled` and
+  `githubApp.installUrl`. No `githubApp`, or `enabled: false`, means no
+  builds on push and no deployment status on commits: use a GitHub Actions
+  workflow with GHCR. `deploy_app` with `buildFrom` also refuses with "This
+  installation does not build on push".
+
 Before either, the repository needs the installation's GitHub App and the
-organization's consent: the repository variable `KUBE_DC_ORGANIZATION` set to
+organization's consent. Installing the App is a GitHub organization admin's
+step in the browser: give the user `githubApp.installUrl`, ask them to pick
+**Only select repositories** with this repository, and wait until they say it
+is installed. Consent is the repository variable `KUBE_DC_ORGANIZATION` set to
 the organization (the console's **Deploy from GitHub → Allow this
 organization**, or `gh variable set KUBE_DC_ORGANIZATION -R owner/repo -b <org>`
 by a repository admin). The hosted MCP guide
@@ -123,6 +139,25 @@ Then choose how builds run (one per app; both would deploy every push twice):
     registry of the project (family `registry`) instead of `image`, also one
     still being created; the platform sets the image path when it is Ready
     and the first build waits for it (up to 30 minutes).
+  - A registry in another project: one registry serves several projects of
+    the organization. Add the app's project to that registry's
+    `parameters.projects` (`apply_manifest` on the ManagedService, by someone
+    with write access to the registry's project), wait until it is Ready again,
+    then pass `image: <registry host>/<app's project>/<app>`. The host is
+    the registry's `https` endpoint, `<registry>-<org>-<registry's
+    project>.<baseDomain>`. The list is replaced, not merged: read it first
+    and send every project, the existing ones too. Removing a project
+    later is a separate edit; deleting the project does not do it.
+  - What is built: the pushed commit, not the working tree. Files that git
+    ignores (large media, licensed assets, local `.env` files) are not in
+    the build; the app must not depend on them, or a derived file that may
+    be published must be committed instead.
+  - Static sites and single-page apps: serve the build output with an
+    unprivileged web server on a port above 1024 (for example
+    `nginxinc/nginx-unprivileged` on 8080), add a `/healthz` location for
+    `healthPath`, and fall back to `index.html` for client-side routes.
+    An app that lives under a path (`/app/`) must be built with that base
+    path.
   - First build: a new app is built from the default branch at once
     (`buildFrom.buildNow`, default true for a new app); pass `buildNow: true`
     again to rebuild an existing app without a push.
