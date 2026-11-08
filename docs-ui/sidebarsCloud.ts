@@ -150,6 +150,7 @@ const sidebars: SidebarsConfig = {
         {type: 'doc', id: 'managed-services-rabbitmq', label: 'RabbitMQ'},
         {type: 'doc', id: 'managed-services-opensearch', label: 'OpenSearch'},
         {type: 'doc', id: 'managed-services-github-runners', label: 'GitHub Actions runners'},
+        {type: 'doc', id: 'managed-services-registry', label: 'Container registry'},
       ],
     },
     {

@@ -1,7 +1,3 @@
----
-draft: true
----
-
 # Container registry
 
 A private OCI registry for your project's images. Kube-DC offers it as the
@@ -9,6 +5,9 @@ class `registry` (zot). It stores no password: CI and people sign in with
 your organization's short-lived tokens, and Kube-DC keeps the pull Secret of
 each listed project fresh. Use it with [Deploy from GitHub](deploy-from-github.md)
 or any CI that can sign in to Kube-DC.
+
+Not every provider offers this class. The registry plans appear in your
+project's catalog (**Managed services → Create**) where it is available.
 
 | Plan | Shape | Storage | Operations |
 |---|---|---|---|

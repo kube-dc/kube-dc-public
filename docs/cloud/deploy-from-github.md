@@ -29,16 +29,17 @@ admins can set repository variables.
 
 ## 2. Choose where images go
 
-Under **Where images go**, select **Your own registry**. Images then go to a
-registry you control, for example GHCR. This path behaves as follows:
+Under **Where images go**, pick a managed registry or your own. The managed
+registry is available where your provider offers the
+[container registry](managed-services-registry.md) service.
 
-| Topic | Your own registry |
-|---|---|
-| Registry | GHCR or another registry you control |
-| Secrets in GitHub | None for workflows (GitHub's `GITHUB_TOKEN`); builds on push need a personal token saved in the project |
-| Pulling | Public images need nothing; private ones need a pull Secret |
+| Topic | Managed registry (recommended) | Your own registry (for example GHCR) |
+|---|---|---|
+| Registry | A [Kube-DC container registry](managed-services-registry.md) in your project, or one in another project that lists yours | GHCR or another registry you control |
+| Secrets in GitHub | None: CI signs in with a short-lived token | None for workflows (GitHub's `GITHUB_TOKEN`); builds on push need a personal token saved in the project |
+| Pulling | Kube-DC keeps the pull Secret fresh | Public images need nothing; private ones need a pull Secret |
 
-**Builds on push: the GitHub token.** GitHub does not let
+**Own registry and builds on push: the GitHub token.** GitHub does not let
 apps push to GHCR, so builds on push need a classic personal access token:
 
 1. **Create a token on GitHub** (button on the page; scope `write:packages`).
@@ -72,7 +73,8 @@ from your choices. It uses:
 - `deploy_app` with `buildFrom` for builds on push;
 - `connect_repository` for a workflow (it opens a pull request with the
   workflows and sets the repository variables; organization admins only);
-- `create_managed_service` for a runner pool.
+- `create_managed_service` for a registry or runner pool;
+- `registry_login` for a `docker login` command for a managed registry.
 
 *Set it up by hand* on the page shows the same steps as commands and YAML.
 For a workflow it fills the repository variables for every project member,
@@ -87,8 +89,8 @@ others see placeholders to ask an admin for.
 |---|---|
 | label `build.kube-dc.com/on-push` | `"true"` |
 | `build.kube-dc.com/repository` | `owner/repo` |
-| `build.kube-dc.com/image` | registry path without a tag, for example `ghcr.io/<owner>/<app>` |
-| `build.kube-dc.com/push-secret` | the Secret from step 2 |
+| `build.kube-dc.com/image` | registry path without a tag: `<registry host>/<project>/<app>` for a managed registry, for example `images-my-org-dev.<domain>/my-project/app`, or `ghcr.io/<owner>/<app>` |
+| `build.kube-dc.com/push-secret` | own registry only: the Secret from step 2 |
 | `build.kube-dc.com/previews` | optional: a project for pull request previews |
 | `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, for example `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
 | `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |

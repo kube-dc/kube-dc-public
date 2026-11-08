@@ -44,6 +44,7 @@ The following families have guides. These examples do not define the complete ca
 | [RabbitMQ](managed-services-rabbitmq.md) | Message broker | Definitions backups. Queued messages are not backed up. Restore creates a new service |
 | [OpenSearch](managed-services-opensearch.md) | Application search indexes | Verified snapshots of application indexes. Restore creates a new service |
 | [GitHub Actions runners](managed-services-github-runners.md) | Ephemeral CI workers and Dockerfile builds | GitHub keeps workflow history and artifacts; workspaces are temporary |
+| [Container registry](managed-services-registry.md) | Private images; CI pushes with keyless sign-in | None: images are rebuildable build artifacts |
 
 Read the published plan before you select a service.
 Check its capacity, topology, operations, backup policy, and support responsibilities.
