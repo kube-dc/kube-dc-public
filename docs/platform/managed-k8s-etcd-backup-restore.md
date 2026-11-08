@@ -221,7 +221,6 @@ Common failures:
 
 | Reason | What to do |
 |---|---|
-| `MultiReplicaUnsupported` | The Managed Cluster uses more than one etcd replica. The current controller restore flow supports one replica only; follow the installed-version manual recovery runbook. |
 | `ForeignKey` | The snapshot key does not start with this Managed Cluster's name. Use `<cluster-name>/...` paths only. |
 | `RestoreJobFailed` | Inspect `kubectl logs job/<cluster>-etcd-restore`. The common causes are invalid S3 credentials, a failed snapshot integrity check, and a blocked network path to S3 from the Project backing namespace. |
 | `EtcdStartFailed` / `ControlPlaneStartFailed` | Restored etcd did not become ready. Inspect the etcd Pod logs and the Kamaji `TenantControlPlane` custom-resource status; validate snapshot integrity, peer URLs, and certificates before retrying. |

@@ -204,20 +204,20 @@ Error from server (Forbidden): pods "api" is forbidden: exceeded quota: plan-quo
 
 To resolve this:
 - Delete unused pods or VMs to free quota
-- Add a **Turbo Add-on** to expand capacity
+- Add an add-on package to expand capacity
 - Upgrade to a higher plan
 
 ---
 
-## Turbo add-ons
+## Add-ons
 
-Turbo Add-ons let you boost your organization's resources without switching plans. Add-ons apply to your **whole Organization**, and they stack. You can add the same package more than once.
+Add-ons increase your organization's resources without switching plans. Add-ons apply to your **whole Organization**, and they stack. You can add the same package more than once.
 
 Your provider defines the add-on packages, their prices, and the capacity each
 one adds. To see them, open the **Add-ons** tab on the **Billing & quotas**
 page.
 
-### Add a Turbo add-on
+### Add an add-on
 
 1. Open **Manage organization**, then **Billing & quotas**, then the
    **Add-ons** tab.
@@ -225,11 +225,12 @@ page.
 3. Wait for the billing provider to confirm the purchase and for the updated
    quota to appear on the **Billing & quotas** page.
 
-### Remove a Turbo add-on
+### Remove an add-on
 
 1. Open **Manage organization**, then **Billing & quotas**, then the
    **Add-ons** tab.
 2. Click **Remove one** on the package you want to reduce.
+3. Click **Confirm change**.
 
 :::warning Downgrade Check
 Before removing an add-on, ensure your current resource usage fits within the reduced quota. If active workloads exceed the new limit, they will continue running but no new workloads will be schedulable until usage drops below the new quota.
@@ -241,17 +242,20 @@ Before removing an add-on, ensure your current resource usage fits within the re
 
 ### Subscribe to a plan
 
-1. Navigate to **Manage Organization → Billing → Available Plans**
-2. Click **Subscribe** on your desired plan
-3. Complete checkout with the billing provider configured for your installation
-4. Return to the Billing overview and wait for the subscription to show **Active** before deploying
+1. Open **Manage organization**, then **Billing & quotas**, then the
+   **Plans** tab.
+2. Click **Choose plan** on the plan you want.
+3. Click **Confirm plan**, then complete checkout with the billing provider of
+   your installation.
+4. Return to **Billing & quotas** and wait until the subscription shows
+   **Active** before you deploy.
 
 ### Change your plan
 
-You can upgrade or downgrade at any time from the **Available Plans** tab.
+You can upgrade or downgrade at any time from the **Plans** tab:
 
-1. Click **Switch to [Plan Name]** on the target plan
-2. Confirm the change in the dialog
+1. Click **Review plan change** on the target plan.
+2. Click **Confirm plan**.
 
 **On upgrade:** Quota is updated after the billing provider confirms the
 change. Any proration is shown during checkout or in the provider portal.
@@ -260,9 +264,9 @@ change. Any proration is shown during checkout or in the provider portal.
 
 ### Cancel your subscription
 
-1. Navigate to **Manage Organization → Billing → Subscription**
-2. Click **Cancel Subscription**
-3. Confirm in the dialog
+1. Open **Manage organization**, then **Billing & quotas**.
+2. In the **Subscription** panel, click **Cancel subscription**.
+3. Click **Confirm change**.
 
 The cancellation date and any proration depend on the configured billing
 provider. The console shows the effective date and subscription state. While
@@ -295,14 +299,15 @@ Original replica counts are saved and restored automatically when you re-subscri
 
 ### Re-subscribing
 
-If your subscription is suspended or canceled, click **Subscribe** from the **Available Plans** tab to start a new subscription. All previously running workloads are automatically restored to their original state.
+If your subscription is suspended or canceled, click **Choose plan** on the **Plans** tab to start a new subscription. All previously running workloads are automatically restored to their original state.
 
 ---
 
 ## Manage payment
 
-Click **Manage Payment** from the Billing Overview to open the payment portal
-configured for your installation. Available actions depend on that provider and
+In the **Subscription** panel on **Billing & quotas**, click **Payment &
+invoices** to open the payment portal of your installation. The button appears
+only when the billing provider offers a portal. Available actions depend on that provider and
 can include:
 
 - **Update payment method**: Change credit card or SEPA details
@@ -320,18 +325,19 @@ By default, all projects share the organization quota with no individual caps. O
 
 ### Set limits in the console
 
-1. Navigate to **Manage Organization → Projects**
-2. Click the project you want to limit
-3. Open the **Resource Quotas** panel and click **Set Per-Project Quota**
-4. Enter values for CPU, Memory, Storage, and/or Pods and click **Save Quota**
+1. Open **Manage organization**, then **Projects**.
+2. Click the Project you want to limit, then open its **Quotas** tab.
+3. Click **Edit limits**.
+4. Enter values for **CPU (cores)**, **Memory**, **Storage**, or **Pods**, and
+   click **Save limits**. An empty field keeps the organization pool.
 
-The panel shows the organization's total quota alongside the per-project fields so you can see what is available.
+The **Project resource limits** panel on the same tab shows the Project's caps next to the organization quota.
 
 ### How limits are applied
 
 The effective limit for a resource is the lower of the Project cap and the
-organization's remaining quota. Remove the cap from the **Resource Quotas**
-panel to return that dimension to the shared organization pool.
+organization's remaining quota. To return the Project to the shared
+organization pool, click **Use organization pool** on its **Quotas** tab.
 
 Project `ResourceQuota` objects are platform-managed and read-only through a
 Project kubeconfig. Do not create, patch, or delete `project-quota` directly;
@@ -431,23 +437,23 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 ## Troubleshooting
 
 **New pods or VMs fail to start with "exceeded quota"**
-- Check the Overview dashboard for which resource is at its limit, or run:
+- Check **Resource usage** on **Billing & quotas** for the resource at its limit, or run:
   ```bash
   kubectl get organization <organization> -n <organization> -o jsonpath='{.status.quotaUsage}' | jq .
   ```
-- Delete unused workloads to free capacity, or add a Turbo Add-on
+- Delete unused workloads to free capacity, or add an add-on package
 
 **Pods fail to start with "must specify resource limits"**
 - This can happen if resource defaults are not yet applied in a newly created project
 - Check the Project status and LimitRange, then retry after reconciliation
 - If it persists, confirm your organization has an active subscription
 
-**Turbo Add-on added but quota did not increase**
+**Add-on added but quota did not increase**
 - Confirm that the provider reports the add-on and the subscription is `active`
 - Refresh the page after the Organization quota has reconciled
 
 **Cannot switch to a lower plan ("usage exceeds target plan")**
-- The Overview shows current usage for each resource
+- **Resource usage** on **Billing & quotas** shows current usage for each resource
 - Scale down or delete workloads until usage falls within the target plan's limits, then retry
 
 **IPv4 at 100%: you cannot create a LoadBalancer Service**
@@ -455,6 +461,6 @@ The `hrq.hnc.x-k8s.io` quota is the organization-wide HNC propagated limit. The 
 - Choose a plan with more addresses, or ask your provider
 
 **Workloads were scaled to zero unexpectedly**
-- Check the subscription status in the Overview
+- Check the subscription status in the **Subscription** panel
 - The organization may have entered `canceled` state after the 7-day grace period
 - Re-subscribe to restore all workloads automatically
