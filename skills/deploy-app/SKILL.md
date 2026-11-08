@@ -119,6 +119,23 @@ Then choose how builds run (one per app; both would deploy every push twice):
   `pushSecret`, a `kubernetes.io/dockerconfigjson` Secret the user created.
   Pushes build and deploy; pull requests build a preview when a previews
   project is given; the commit shows a `kube-dc` check run.
+  - New project registry: `buildFrom.registry: <name>` names a managed
+    registry of the project (family `registry`) instead of `image`, also one
+    still being created; the platform sets the image path when it is Ready
+    and the first build waits for it (up to 30 minutes).
+  - First build: a new app is built from the default branch at once
+    (`buildFrom.buildNow`, default true for a new app); pass `buildNow: true`
+    again to rebuild an existing app without a push.
+  - No Dockerfile: `buildFrom.builder: railpack` detects the language (Node.js,
+    Python, Go, Rust, Ruby, PHP, Java, .NET, Elixir, Deno, static sites). The
+    app must listen on `$PORT`: set `env: { PORT: "8080" }` and `port: 8080`.
+    `buildArgs` and `buildSecrets` reach every build step as environment
+    variables. A repository without app files (only a README) cannot be built.
+  - Another branch: `buildFrom.branch: <branch>` builds pushes to that branch
+    instead of the default branch; pull request previews are unchanged.
+  - The console's **Deploy from GitHub → New app from GitHub** does all of this
+    for the user in a few clicks (repository picker, registry, port, branch):
+    suggest it to users who prefer the console.
   - Build arguments: `buildFrom.buildArgs` sets Dockerfile `ARG` values for
     every build (for example `{ "VITE_API_URL": "https://api.example.com" }`)
     and `previewBuildArgs` overrides them key by key for previews. They stay
