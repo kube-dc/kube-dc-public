@@ -65,6 +65,11 @@ writing the manifests below:
   Domains**, a TXT record). The app then answers only on that domain; tell
   the user its platform hostname stops working. `domain: ""` brings the
   platform hostname back. The certificate takes 1 to 3 minutes.
+- Organization default domain: when an organization admin made a verified
+  domain the default for new apps and `*.<domain>` points at the platform, a
+  new public app without `domain` gets `<app>.<domain>` (or
+  `<app>-<project>.<domain>` when taken); the result says so. Pass
+  `domain: ""` for the platform address. Existing apps never change.
 - `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
   `failed` with the reason (image pull, crash loop, scheduling) and the
   failing pod's last log lines. Check about 30 seconds after a deploy; a new
