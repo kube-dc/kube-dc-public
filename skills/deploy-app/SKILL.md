@@ -55,12 +55,30 @@ writing the manifests below:
   limit (not with `replicas`); `volume: { size, path }` mounts a persistent
   volume `<app>-data` (one replica; kept when the app is deleted). Tell the
   user that job pods and extra replicas are billed like the app's pods.
+- Own domain: `deploy_app domain: "app.example.com"` (public apps). Its DNS
+  must point at the platform first: a CNAME to the app's current hostname,
+  or for a bare domain A records to the addresses that hostname resolves to
+  (or the DNS provider's ALIAS/ANAME). On Cloudflare the record must be
+  **DNS only**, not proxied. The call is refused with the record to add until
+  DNS resolves. Where the installation requires verified domains, an
+  organization admin must first verify the domain (console **Organization →
+  Domains**, a TXT record). The app then answers only on that domain; tell
+  the user its platform hostname stops working. `domain: ""` brings the
+  platform hostname back. The certificate takes 1 to 3 minutes.
 - `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
   `failed` with the reason (image pull, crash loop, scheduling) and the
   failing pod's last log lines. Check about 30 seconds after a deploy; a new
   hostname gets its certificate within 1 to 3 minutes.
 - `restart` and `rollback` (to the previous revision by default) change a
   running app: ask the user first.
+- Delete an app: `delete` with `kind: app` removes the Deployment, Service,
+  autoscaler, cron jobs, the warm previous version and its previews (with
+  their database copies). The data volume `<app>-data` stays unless
+  `deleteData: true`; registry images and the repository are kept. Ask the
+  user first and say what goes. A preview (`{app}-pr-<n>`) is refused: it
+  goes when its pull request closes or it expires (`extend_preview` with
+  `hours: 1` ends it within the hour; the console's **Previews → Remove**
+  ends it now).
 - Instant rollback: `deploy_app` with `warmPrevious` (for example `1h`, at
   most `24h`; `off` removes it) keeps the previous version running as
   `{app}-previous` after each rollout. `rollback` then switches traffic to it
@@ -122,8 +140,8 @@ organization's consent. Installing the App is a GitHub organization admin's
 step in the browser: give the user `githubApp.installUrl`, ask them to pick
 **Only select repositories** with this repository, and wait until they say it
 is installed. Consent is the repository variable `KUBE_DC_ORGANIZATION` set to
-the organization (the console's **Deploy from GitHub → Allow this
-organization**, or `gh variable set KUBE_DC_ORGANIZATION -R owner/repo -b <org>`
+the organization (the console's **Applications → Connect GitHub → Allow
+this organization**, or `gh variable set KUBE_DC_ORGANIZATION -R owner/repo -b <org>`
 by a repository admin). The hosted MCP guide
 `kube-dc://guide/deploy-from-repository` has the full flow.
 
@@ -168,9 +186,11 @@ Then choose how builds run (one per app; both would deploy every push twice):
     variables. A repository without app files (only a README) cannot be built.
   - Another branch: `buildFrom.branch: <branch>` builds pushes to that branch
     instead of the default branch; pull request previews are unchanged.
-  - The console's **Deploy from GitHub → New app from GitHub** does all of this
-    for the user in a few clicks (repository picker, registry, port, branch):
-    suggest it to users who prefer the console.
+  - The console's **Applications → New application** does all of this for
+    the user in a few clicks (repository picker, registry, port, branch):
+    suggest it to users who prefer the console. Each app then has a page
+    under **Applications** with its versions, processes and autoscaling, own
+    domain, previews, logs and **Settings → Delete application**.
   - Build arguments: `buildFrom.buildArgs` sets Dockerfile `ARG` values for
     every build (for example `{ "VITE_API_URL": "https://api.example.com" }`)
     and `previewBuildArgs` overrides them key by key for previews. They stay
