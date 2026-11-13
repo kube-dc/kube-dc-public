@@ -145,11 +145,17 @@ installation has a registry or builds on push:
   offerings, or an existing registry in another project of the organization
   (see "A registry in another project" below). With neither, offer (b).
 - GitHub App: `GET https://backend.<baseDomain>/api/platform/info` (public,
-  no sign-in; `baseDomain` from `whoami`) returns `githubApp.enabled` and
-  `githubApp.installUrl`. No `githubApp`, or `enabled: false`, means no
-  builds on push and no deployment status on commits: use a GitHub Actions
-  workflow with GHCR. `deploy_app` with `buildFrom` also refuses with "This
-  installation does not build on push".
+  no sign-in; `baseDomain` from `whoami`) returns `githubApp.enabled`,
+  `githubApp.installUrl` and `githubApp.builds`. No `githubApp`, or
+  `enabled: false`, means no deployment status on commits; `builds: false`
+  means no builds on push: use a GitHub Actions workflow with GHCR.
+  `deploy_app` with `buildFrom` also refuses with "This installation does not
+  build on push". The installation's operator sets the App up (admin console,
+  Platform settings → Integrations); never ask the user for App keys.
+- An installation may hide Deploy from GitHub or AI assistants from its
+  tenants. A 404 with "Deploy from GitHub is not offered on this installation"
+  (or "AI assistants are not offered") means exactly that: say so and use a
+  GitHub Actions workflow with the user's own registry instead; do not retry.
 
 Before either, the repository needs the installation's GitHub App and the
 organization's consent. Installing the App is a GitHub organization admin's

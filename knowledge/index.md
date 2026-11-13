@@ -92,6 +92,8 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `project-resources.md` | What gets created per project | ~200 lines |
 | `managed-k8s-etcd-encryption.md` | M5 etcd-at-rest encryption for KdcClusters: kms-plugin sidecar, KEK rotation, min_decryption_version safety | ~300 lines |
 | `managed-k8s-etcd-backup-restore.md` | Daily etcd snapshot CronJob, envelope-encrypted backup layout, controller-driven restore | ~320 lines |
+| `github-app.md` | The installation's GitHub App: Create GitHub App in the admin console (Platform settings → Integrations) or by hand, features, webhook, builds on push | ~330 lines |
+| `hosted-mcp.md` | Hosted MCP endpoint for AI apps: enabling it, client lists in the admin console, prerequisites, read-only enforcement, operations | ~330 lines |
 
 ## Examples (`examples/`)
 
