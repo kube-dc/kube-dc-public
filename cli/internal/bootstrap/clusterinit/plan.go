@@ -541,6 +541,7 @@ type inputsForHash struct {
 	VGPUSecretReady         bool                   `json:"vgpuSecretReady,omitempty"`
 	Addons                  []string               `json:"addons,omitempty"`
 	PAYG                    bool                   `json:"payg,omitempty"` // shape (payg.go); omitempty keeps PAYG-off plan hashes unchanged
+	PAYGManagedFees         bool                   `json:"paygManagedFees,omitempty"`
 	AllowDNSNotReady        bool                   `json:"allowDnsNotReady"`
 	AllowNoKubevirtEligible bool                   `json:"allowNoKubevirtEligible"`
 	NoKubeVirt              bool                   `json:"noKubeVirt,omitempty"`
@@ -736,6 +737,7 @@ func (o *InitOptions) inputsForHash() inputsForHash {
 		VGPUSecretReady:                 o.VGPUSecretReady,
 		Addons:                          o.Addons,
 		PAYG:                            o.PAYG,
+		PAYGManagedFees:                 o.PAYGManagedFees,
 		AllowDNSNotReady:                o.AllowDNSNotReady,
 		AllowNoKubevirtEligible:         o.AllowNoKubevirtEligible,
 		NoKubeVirt:                      o.NoKubeVirt,
@@ -1054,6 +1056,10 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 		kustDesc += " incl. " + paygLayerFileName + " + " + paygDBSecretsFileName
 		envDesc += " + PAYG_ENABLED=true, a new PAYG_INSTALLATION_UID, PAYG_PRODUCTS_REVISION"
 	}
+	if o.PAYGManagedFees {
+		kustDesc += " incl. " + paygManagedFeesLayerFileName
+		envDesc += " + " + PAYGFeeCensusImageKey + ", " + paygFeeCensusSuspendKey + "=false"
+	}
 	files := []PlanFile{
 		{Path: "clusters/" + base + "cluster-config.env", Description: envDesc, Action: "+"},
 		{Path: "clusters/" + base + "secrets.enc.yaml", Description: "secrets.enc.yaml (SOPS-encrypted)", Action: "+"},
@@ -1156,6 +1162,9 @@ func filesForOptions(o *InitOptions, fleet FleetState) []PlanFile {
 			PlanFile{Path: "clusters/" + base + "platform.yaml",
 				Description: "CNPG managed role " + paygDBRole + " for the PAYG collector", Action: "~"},
 		)
+	}
+	if o.PAYGManagedFees {
+		files = append(files, PlanFile{Path: "clusters/" + base + paygManagedFeesLayerFileName, Description: "managed-service fee evidence Flux Kustomization (./" + paygManagedFeesBundlePath + ", SUSPENDED until the scope is committed)", Action: "+"})
 	}
 	if o.TrustedCAFingerprint != "" {
 		files = append(files, PlanFile{
@@ -1315,6 +1324,9 @@ func scriptsForOptions(o *InitOptions, fleet FleetState) []ScriptInvocation {
 			Kind: "(in-process) wire PAYG usage billing",
 			Note: "payg.yaml + PAYG_ENABLED/INSTALLATION_UID (generated once)/PRODUCTS_REVISION + metering DB login (SOPS) + CNPG role; metering image from the release pins",
 		})
+	}
+	if o.PAYGManagedFees {
+		add(ScriptInvocation{Kind: "(in-process) prepare managed-service fee evidence", Note: "payg-managed-fees.yaml (suspended) + fee census image from the release pins; the scope is rendered and committed after Services runs"})
 	}
 	if services, err := ResolveManagedServices(o); err == nil && services.Mode == "on" {
 		add(ScriptInvocation{

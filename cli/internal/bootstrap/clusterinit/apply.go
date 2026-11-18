@@ -135,6 +135,9 @@ type ApplyOptions struct {
 	// layer, role patch); --payg only authorizes completing a partial setup
 	// (CheckPAYGOnResume).
 	PAYG bool
+	// PAYGManagedFees is the operator's --payg-managed-fees (Scaffold step
+	// 13b). A resume completes a missing, suspended layer.
+	PAYGManagedFees bool
 
 	// GPU carries the validated, non-secret accelerator fleet contract.
 	GPU GPUConfig
@@ -390,6 +393,7 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 		DNS01Cloudflare:   opts.DNS01Cloudflare,
 		TrustedCA:         opts.TrustedCA,
 		PAYG:              opts.PAYG,
+		PAYGManagedFees:   opts.PAYGManagedFees,
 		GPU:               opts.GPU,
 		SingleIPNAT:       opts.SingleIPNAT,
 		SystemDNSIPs:      systemDNSIPs,
@@ -493,6 +497,24 @@ func Apply(ctx context.Context, opts ApplyOptions) error {
 				return fmt.Errorf("apply: commit PAYG completion (the completed files are uncommitted in clusters/%s — commit or discard them): %w", opts.Plan.ClusterName, cerr)
 			}
 			fmt.Fprintf(out, "[apply] PAYG wiring completed on existing overlay — commit=%s\n", sha)
+			rotated = true
+		}
+	}
+	// Phase 3d: the managed-fee layer asked of a resumed overlay. It needs the
+	// overlay's PAYG wiring and is written suspended, so it cannot start a
+	// collector or charge anything; the resume push carries the commit.
+	if resuming && opts.PAYGManagedFees {
+		changed, err := WritePAYGManagedFees(opts.FleetRepo, opts.Plan.ClusterName, true, out)
+		if err != nil {
+			return fmt.Errorf("apply: managed-fee layer on resumed overlay: %w", err)
+		}
+		if changed {
+			msg := fmt.Sprintf("chore(%s): prepare managed-service fee evidence via kube-dc CLI", opts.Plan.ClusterName)
+			sha, cerr := opts.Git.Commit(ctx, opts.FleetRepo, msg)
+			if cerr != nil {
+				return fmt.Errorf("apply: commit the managed-fee layer (the files are uncommitted in clusters/%s — commit or discard them): %w", opts.Plan.ClusterName, cerr)
+			}
+			fmt.Fprintf(out, "[apply] managed-service fee layer prepared on existing overlay — commit=%s\n", sha)
 			rotated = true
 		}
 	}

@@ -620,7 +620,11 @@ func checkManagedServicesCatalog(ctx context.Context, reader managedServicesRead
 		}
 	}
 	for _, family := range managedServiceFamilies(pins) {
-		for _, tier := range []string{"development", "production"} {
+		tiers := []string{"development", "production"}
+		if family == "registry" {
+			tiers = []string{"development"}
+		}
+		for _, tier := range tiers {
 			name := family + "-" + tier
 			plan := byName[name]
 			if plan == nil || !conditionCurrentTrue(plan, "Verified") {
@@ -723,6 +727,9 @@ func verifyManagedServicesHAStorage(ctx context.Context, reader managedServicesR
 // A chart-only upgrade is incomplete until the pinned Deployment also rolls.
 func managedServiceFamilies(pins map[string]string) []string {
 	families := append([]string{}, greenfieldFamilies...)
+	if pins["SERVICES_REGISTRY_STORAGE_CLASS"] != "" {
+		families = append(families, "registry")
+	}
 	if pins["RABBITMQ_CLUSTER_OPERATOR_VERSION"] != "" || pins["RABBITMQ_TOPOLOGY_OPERATOR_VERSION"] != "" {
 		families = append(families, "rabbitmq")
 	}

@@ -358,6 +358,11 @@ type InitOptions struct {
 	// installation identity. Requires BILLING_PROVIDER stripe or whmcs;
 	// refused for installations billed by a partner.
 	PAYG bool
+	// PAYGManagedFees (`--payg-managed-fees`, requires --payg and managed
+	// services) prepares the managed-service fee layer, suspended until the
+	// operator commits the scope rendered from the running installation —
+	// see payg_managed_fees.go.
+	PAYGManagedFees bool
 
 	// --- Addons ---
 	// Addons is the de-duplicated list of `--addon` values.
@@ -741,6 +746,7 @@ func (o *InitOptions) ValidateFields() error {
 	errs = append(errs, validateGPU(o)...)
 	errs = append(errs, validateAddons(o.Addons)...)
 	errs = append(errs, validatePAYG(o)...)
+	errs = append(errs, validatePAYGManagedFees(o)...)
 	errs = append(errs, validateNodeNICs(o.NodeNICs)...)
 	errs = append(errs, validateNodeSSHHosts(o.PrimaryNode, o.NodeSSHHosts)...)
 	errs = append(errs, validateNodeSSHHostKeys(o.NodeSSHHostKeys)...)
@@ -968,6 +974,12 @@ func validateObjectStorage(o *InitOptions) []string {
 			errs = append(errs, "--ceph-osd-volume-size-gb must be >= 0 (0 = fleet default)")
 		}
 	}
+	if o.RookMode == RookCephPVC {
+		errs = append(errs, validatePVCPrimaryKeys(o)...)
+	}
+	// Storage tiers (second device set, device classes, EC data pool):
+	// rook-ceph-pvc only, refused for the other modes.
+	errs = append(errs, validateCephTiers(o)...)
 	return errs
 }
 

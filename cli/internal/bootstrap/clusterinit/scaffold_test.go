@@ -61,7 +61,7 @@ func TestScaffoldPassesReviewedManagerCountAndSuppressesPythonBytecode(t *testin
 			err := Scaffold(context.Background(), ScaffoldOptions{
 				Plan: &Plan{ClusterName: "demo", Domain: "example.test", InstallationKind: tc.kind,
 					ManagedServicesMode: tc.mode, ManagerNodes: count, ServicesDatabaseClass: "ceph-block",
-					ServicesStorageBudget: "50Gi", ServicesEgressProbeURLs: []string{"https://ghcr.io/v2/"}},
+					ServicesStorageBudget: "50Gi", ServicesEgressProbeURLs: DefaultServicesEgressProbeURLs},
 				FleetRepo: fleet, NodeExternalIP: "192.0.2.10", Runner: runner,
 			})
 			if err == nil || len(runner.calls) != 1 {

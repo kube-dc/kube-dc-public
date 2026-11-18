@@ -64,6 +64,23 @@ The endpoint has three URL forms:
 | `/mcp/<organization>` | All tools, for the whole Organization. |
 | `/mcp/<organization>/<project>` | All tools, with `<project>` as the default for every tool's Project argument. It has its own Protected Resource Metadata and accepts the Organization's token. |
 | Either URL followed by `/read_only` | Read tools only. The metadata lists only the `kube-dc:mcp:read` scope. A token with only that scope is refused on a full URL with `insufficient_scope`. |
+| `/mcp` | The public docs endpoint: only `search_docs` and `get_doc`, no sign-in. Its instructions tell an app to connect to `/mcp/<organization>` to work in an Organization. |
+
+### Public docs endpoint and discovery
+
+The bare MCP URL (`https://<backend-host>/mcp`) serves the documentation
+tools without a sign-in, so an agent can learn the platform before a user
+connects their Organization. It changes nothing and reads no cluster data.
+Its Server Card is at `/mcp/server-card` and at
+`/.well-known/mcp/server-card.json` on the backend host. The per-address
+rate limit applies.
+
+The docs come from the docs site's `llms-full.txt`. The server reads
+`MCP_DOCS_URL` (default `https://docs.kube-dc.com/llms-full.txt`), keeps it
+for an hour, and keeps the last copy when a read fails. On an installation
+without internet access, point `MCP_DOCS_URL` at a mirror, or set it to `off`
+to remove the docs tools and the public endpoint. Hiding **AI apps** in the
+admin console's sections hides the public endpoint too.
 
 The server instructions and tool descriptions steer apps to the platform
 defaults: managed services for databases, caches, and queues (development plan
@@ -77,14 +94,15 @@ route hostnames.
 
 ### Tools
 
-The server offers 32 tools. A read-only URL offers only the eight read tools:
+The server offers 39 tools. A read-only URL offers only the ten read tools:
 
 | Group | Tools |
 |---|---|
-| Read | `whoami`, `list`, `get_vm`, `get_quota`, `get_logs`, `get_resources`, `rollout_status`, `list_secrets` |
-| Projects and VMs | `create_project`, `create_vm`, `vm_power`, `expose_vm`, `create_disk`, `attach_disk`, `detach_disk`, `restore_snapshot` |
+| Read | `whoami`, `list`, `get_vm`, `get_quota`, `get_logs`, `get_resources`, `rollout_status`, `list_secrets`, `search_docs`, `get_doc` |
+| Projects and VMs | `create_project`, `create_vm`, `vm_power`, `expose_vm`, `create_disk`, `attach_disk`, `detach_disk`, `create_snapshot`, `restore_snapshot` |
+| Managed clusters | `create_cluster`, `get_kubeconfig` |
 | Networking and storage | `create_floating_ip`, `create_external_ip`, `create_bucket` |
-| Apps and services | `deploy_app`, `create_managed_service`, `create_secret`, `run_job`, `schedule_job`, `restart`, `rollback`, `apply_manifest`, `extend_preview`, `create_webhook` |
+| Apps and services | `deploy_app`, `create_managed_service`, `backup_service`, `restore_backup`, `create_secret`, `run_job`, `schedule_job`, `restart`, `rollback`, `apply_manifest`, `extend_preview`, `create_webhook` |
 | GitHub and registry | `connect_repository`, `registry_login` |
 | Delete | `delete` |
 
@@ -131,6 +149,37 @@ rules. It stores the client secrets in the Secret `kube-dc-mcp-requesters` in
 the platform namespace, with one key for each Organization. It adds
 `kube-dc:mcp:read` to every realm as a default optional scope, and to every app
 that already has `kube-dc:mcp`.
+
+## Settings in the admin console
+
+**Platform settings → Integrations → AI assistants** shows the endpoint and its
+URL forms, and lets a superadmin edit the client lists without a release:
+
+- **Allowed redirect hosts** and **Client ID metadata domains (CIMD)**: host
+  names only, no wildcards; IP addresses only `127.0.0.1`.
+- **Pre-registered apps** (apps that cannot register themselves, such as
+  ChatGPT and Codex): their client ID is their metadata URL.
+
+Each list either follows the chart (`backend.mcp.trustedRedirectHosts`,
+`cimdClientDomains`, `preregisteredApps`) or is set in the console; **Back to
+Fleet** returns it to the chart. A change re-syncs every organization realm once
+(within a minute). Widening a list asks for confirmation. The page also lists
+an organization's connected AI apps and revokes them.
+
+Whether the endpoint runs (`backend.mcp.enabled`) and read-only enforcement
+(`backend.mcp.enforceReadOnly`) stay chart settings. Providers can hide the
+endpoint from their tenants under **Branding & features** (section *AI
+assistants*): the console hides it and the endpoint answers 404 to them.
+
+The page's **Prerequisites** panel checks what the endpoint depends on:
+
+| Check | Fix when missing |
+|---|---|
+| Hosted MCP endpoint deployed and ready | `backend.mcp.enabled: true` |
+| Keycloak `cimd` feature | Append `cimd` to `KEYCLOAK_FEATURES` and restart Keycloak |
+| Audit store admits the MCP pods | Add `app.kubernetes.io/name=kube-dc-backend-mcp` to the `loki-audit` NetworkPolicy |
+| Console login (backend may impersonate in organization realms) | A manager with the impersonation grant (each realm re-syncs once) |
+| Backend hostname | `backend.gateway.hostname` |
 
 ## Enable the endpoint
 

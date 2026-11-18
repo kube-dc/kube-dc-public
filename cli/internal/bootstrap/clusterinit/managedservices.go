@@ -3,7 +3,6 @@ package clusterinit
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"regexp"
 	"strings"
@@ -90,19 +89,16 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	}
 	budget := o.ServicesStorageBudget
 	if budget == "" && o.RookMode == RookCephPVC {
-		count, size := o.CephOSDCount, o.CephOSDVolumeSizeGB
-		if count == 0 {
-			count = 2
-		}
-		if size == 0 {
-			size = 200
+		// The OSDs that hold rbd-pool (ceph-block): the set it is pinned to by
+		// CEPH_BLOCK_POOL_DEVICE_CLASS, or every set. Counts follow the
+		// scaffold's precedence (flag, then --set, then the Fleet default).
+		raw, err := pvcBlockPoolRawGB(o)
+		if err != nil {
+			return result, err
 		}
 		replicas := o.ObjectStorage().replication()
-		if replicas > 0 {
-			if size > 0 && count > math.MaxInt/size {
-				return result, fmt.Errorf("managed-services PVC capacity exceeds supported range")
-			}
-			budget = fmt.Sprintf("%dGi", count*size/replicas/4)
+		if replicas > 0 && raw > 0 {
+			budget = fmt.Sprintf("%dGi", raw/int64(replicas)/4)
 		}
 	}
 	if budget != "" {
@@ -113,14 +109,21 @@ func ResolveManagedServices(o *InitOptions) (ManagedServicesSelection, error) {
 	}
 	probes := append([]string(nil), o.ServicesEgressProbeURLs...)
 	if len(probes) == 0 {
-		probes = []string{"https://ghcr.io/v2/"}
+		probes = append(probes, DefaultServicesEgressProbeURLs...)
 	}
+	hosts := map[string]bool{}
 	for _, probe := range probes {
 		parsed, err := url.Parse(probe)
 		if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" ||
 			parsed.User != nil || strings.Contains(strings.ToLower(parsed.Hostname()), "cloudsigma.com") {
 			return result, fmt.Errorf("--services-egress-probe must be an HTTPS URL with a host outside CloudSigma")
 		}
+		hosts[strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")] = true
+	}
+	// Egress witnesses: one host would make that one domain a dependency of
+	// every placement on the plane.
+	if len(hosts) < 2 {
+		return result, fmt.Errorf("--services-egress-probe needs at least two distinct hosts (stable public endpoints of different operators), so one domain going dark cannot stop the data plane")
 	}
 	availableBucket := o.RookMode == RookCephLocal || o.RookMode == RookCephPVC || o.RookMode == RookCephMultiNode
 	qualified := availableBucket && class != "" && budget != "" && (!result.NeedsClassExpansionCheck || o.ServicesClassExpansionVerified)
@@ -156,4 +159,15 @@ func validStorageClassName(name string) bool {
 		}
 	}
 	return true
+}
+
+// DefaultServicesEgressProbeURLs are the data plane's egress witnesses when
+// the operator names none: large, stable public endpoints of different
+// operators, so that one domain going dark (codeberg.org, 2026-11-18) never
+// leaves a new cluster's plane unready. A runner from 0.9.25 passes egress
+// while any of them answers.
+var DefaultServicesEgressProbeURLs = []string{
+	"https://ghcr.io/v2/",
+	"https://registry-1.docker.io/v2/",
+	"https://www.google.com/generate_204",
 }

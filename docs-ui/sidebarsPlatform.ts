@@ -123,6 +123,8 @@ const sidebars: SidebarsConfig = {
         'upgrading-management-cluster',
         'billing-plans-configuration',
         'payg-billing',
+        'payg-installation-profile',
+        'payg-managed-fees',
         'platform-api',
       ],
     },

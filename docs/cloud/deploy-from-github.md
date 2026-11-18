@@ -1,9 +1,58 @@
 # Deploy from GitHub
 
 Build and deploy a GitHub repository on every push, with a preview for every
-pull request. In the console open your project, then **Overview → Deploy from
-GitHub** (or the *Deploy from GitHub* card on the project summary). The page
-fills in every value it knows; you type only the repository and the app name.
+pull request. In the console open your project, then **Applications**:
+**New application** creates an app from a repository in a few clicks, and
+**Connect GitHub** sets up the same step by step. The pages fill in every
+value they know; you type only the repository and the app name.
+
+## New app from GitHub
+
+When your installation enables GitHub sign-in and platform builds, you can deploy
+a repository directly from the console. If **New application** is unavailable,
+open **Connect GitHub** to set up a GitHub Actions workflow.
+
+1. Open your Project, then **Applications**, and click **New application**.
+2. Sign in to GitHub. If the GitHub App is not installed yet, GitHub asks you
+   to install it first. The list shows the repositories of the App's
+   installations that you administer on GitHub. To add more, click
+   **Install the App on more repositories**.
+3. Pick a repository. Kube-DC sets the repository variable
+   `KUBE_DC_ORGANIZATION` to your organization (see
+   [why](#1-install-the-github-app-and-allow-your-organization)). If the
+   variable names another organization, the console asks before it replaces it.
+4. Check the branch (the default branch is selected), the app name and the
+   port. Choose an unused app name that starts with a letter, and choose whether pull requests get previews (on by default), then
+   click **Create app**. Pushes to the chosen branch build and deploy the app.
+
+The page shows registry setup, the build and the rollout. **Ready** means the
+deployed replicas are available. Open the address to check the site. You can
+reload the page to check progress.
+
+Afterwards the app is under **Applications**: its versions, processes,
+autoscaling, own domain, previews and logs, and deleting it. See
+[Manage applications](applications.md).
+
+What the platform sets up:
+
+| | |
+|---|---|
+| Build | The `Dockerfile` at the repository root. Without one, the platform detects the language and builds the app with [Railpack](https://railpack.com) (Node.js, Python, Go, PHP, static sites and more) |
+| Port | The port the Dockerfile `EXPOSE`s, else `8080`. The app also gets it as `$PORT`; an app built without a Dockerfile must listen on `$PORT` |
+| Registry | The Project's managed registry. A Project without one gets a development registry (billed like any managed service); the first build waits a few minutes for it |
+| Deploys | The selected branch now and on each subsequent push to that branch |
+| Previews | `<app>-pr-<n>` for every pull request, in the same Project, removed when it closes |
+
+You need the developer role in the Project, and the GitHub user who signs in
+must be an admin of the repository.
+
+If the GitHub App is uninstalled from a repository, or the repository is
+removed from the installation, its apps keep running. Their
+`build.kube-dc.com/last-error` says why new pushes are not built.
+Installing the App again clears the error.
+
+The sections below set up the same thing step by step, with more choices
+(**Applications → Connect GitHub**).
 
 ## 1. Install the GitHub App and allow your organization
 
@@ -94,6 +143,8 @@ others see placeholders to ask an admin for.
 | `build.kube-dc.com/previews` | optional: a project for pull request previews |
 | `build.kube-dc.com/build-args` | optional: Dockerfile `ARG` values as JSON, for example `{"VITE_API_URL": "https://api.example.com"}`. Not for secrets: build arguments stay in the image history |
 | `build.kube-dc.com/preview-build-args` | optional: JSON that overrides `build-args` key by key for preview builds |
+| `build.kube-dc.com/branch` | optional: pushes to this branch build the app, instead of the repository's default branch |
+| `build.kube-dc.com/builder` | optional: `railpack` builds a repository without a Dockerfile (the language is detected; the app listens on `$PORT`). Build arguments and build secrets reach every build step as environment variables. Default `dockerfile` |
 | `build.kube-dc.com/build-secrets` | optional: comma-separated Secrets of the project; the Dockerfile reads each key with `RUN --mount=type=secret,id=<key>` (for example `NPM_TOKEN`), and nothing is stored in the image |
 | `build.kube-dc.com/preview-database` | optional: a plan such as `postgresql-development`; every preview gets a new, empty database (see [Databases in previews](#databases-in-previews)) |
 | `build.kube-dc.com/preview-database-from` | optional, instead: a managed service in the previews project; every preview gets a copy of it when a [ServiceCopyGrant](#copy-grants) allows it, else an empty database of its plan |

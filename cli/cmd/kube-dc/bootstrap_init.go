@@ -653,6 +653,8 @@ SCREAMING_SNAKE_CASE per the cluster-config.env convention).`,
 		"HTTPS URL used to verify managed-services egress (repeatable)")
 	cmd.Flags().BoolVar(&o.PAYG, "payg", false,
 		"Enable Kube-DC PAYG usage billing on this NEW installation (default off): scaffolds the platform/payg metering + billing layer, PAYG_ENABLED=true, a freshly generated PAYG_INSTALLATION_UID, PAYG_PRODUCTS_REVISION=<name>-<yyyymmdd>, the metering database login (SOPS) and its CNPG role. Requires --set BILLING_PROVIDER=stripe or whmcs; refused for installations billed by a partner. See docs/platform/installation-guide.md")
+	cmd.Flags().BoolVar(&o.PAYGManagedFees, "payg-managed-fees", false,
+		"With --payg and managed services: prepare managed-service fee evidence on this NEW installation (default off). Writes the platform/payg-managed-fee layer SUSPENDED and pins the fee census image; nothing bills until the scope rendered from the running installation is committed and the first fee period is enrolled. See docs/platform/payg-managed-fees.md")
 	cmd.Flags().BoolVar(&o.ImageAcceleration, "image-acceleration", true,
 		"Wire the on-cluster image path (tenant-addons + cdi-os-mirror + registry-depot zot) into the scaffold; spegel (RKE2 embedded registry) is enabled per node by bootstrap install (default: true)")
 	cmd.Flags().StringVar(&o.IngressAddressLayer, "ingress-address-layer", "",
@@ -1895,6 +1897,7 @@ func runApplyEngine(ctx context.Context, out io.Writer, o *clusterinit.InitOptio
 		DNS01Cloudflare:   cf,
 		TrustedCA:         trustedCA,
 		PAYG:              o.PAYG,
+		PAYGManagedFees:   o.PAYGManagedFees,
 		GPU:               o.GPU(),
 		// Hand the script-side discovery the SAME kubeconfig this process loads —
 		// but only when it has been verified to target THIS cluster (the guard a
@@ -2658,7 +2661,7 @@ func assertRequiredFlagsRegistered(fs *pflag.FlagSet) error {
 		"object-storage-mode", "rook-mode", // rook-mode = deprecated alias, one release
 		"rook-osd-node", "rook-osd-size-gb", "rook-osd-device",
 		"ceph-node", "ceph-storage-class", "ceph-osd-count", "ceph-osd-volume-size-gb",
-		"s3-hostname", "no-s3-exposure", "payg", "installation-kind", "managed-services",
+		"s3-hostname", "no-s3-exposure", "payg", "payg-managed-fees", "installation-kind", "managed-services",
 		"services-database-class", "services-storage-budget", "services-ha-storage-class", "services-ha-storage-budget", "services-egress-probe",
 		"vm-storage-mode", "vm-golden", "vm-golden-block",
 		"ingress-address-layer", "ingress-node",

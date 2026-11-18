@@ -45,6 +45,22 @@ When the active provider is `none`:
 - Subscription management endpoints (`POST/PUT/DELETE /organization-subscription`, `/verify-checkout`, `/webhook`, `/customer-portal`) are **not mounted**
 - The frontend hides Subscribe/Cancel/Manage Payment buttons automatically
 
+#### Organizations without a plan
+
+In quota-only mode the console asks an organization that has no plan and no
+explicit quota to choose a plan before it opens. An installation with no
+billing that does not want initial quotas can turn that off:
+
+| Where | Setting |
+|-------|---------|
+| At run time | `planRequired: "false"` in the `billing-config` ConfigMap (`kube-dc` namespace), set with `kubectl` or through the platform admin API (`PUT /api/admin/billing/provider-config` with `{"planRequired": false}`); no restart needed |
+| Chart | `billing.planRequired: false` (backend env `BILLING_PLAN_REQUIRED`), the default when the ConfigMap has no `planRequired` key |
+
+The default is `true`. With it off, such an organization opens the console
+directly and has no quota until an administrator assigns a plan or quota, as
+the manager has always treated it. A payment provider (`stripe`, `whmcs`)
+always requires a plan; the setting is ignored there.
+
 To assign a plan manually without a payment provider:
 ```bash
 kubectl annotate organization/<org-name> -n <org-namespace> \

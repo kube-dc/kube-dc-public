@@ -7,6 +7,10 @@ per-installation feature, and it is **off by default**. Enable it when you use
 Kube-DC to price usage and prepare PAYG statements. Keep it off when you use
 only fixed plans, quotas, or raw usage feeds.
 
+For the source bundles, preflight, and statement workflow, use
+[the billable installation profile](payg-installation-profile.md). The base
+`--payg` scaffold alone does not select every source or enable customer charges.
+
 ## Billing provider rule
 
 PAYG runs only on an installation that bills through Kube-DC. Set the billing

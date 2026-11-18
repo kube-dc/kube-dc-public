@@ -380,6 +380,18 @@ net.ipv4.ip_local_port_range = 1024 65535
 net.ipv4.tcp_max_syn_backlog = 8192
 vm.max_map_count = 262144
 SYSCTL_EOF
+# Ubuntu 26.04 sets kernel.apparmor_restrict_unprivileged_unconfined=1
+# (/usr/lib/sysctl.d/10-apparmor.conf). runc's switch into containerd's
+# AppArmor profile is then stacked (cri-containerd.apparmor.d//&unconfined),
+# and from kernel 7.0.0-41 the stack is enforced: processes in one container
+# can no longer signal each other (Postgres standbys never become ready, VMs
+# fail). 0 is the Ubuntu 24.04 default. Written only where the kernel has the
+# key, because sysctl -p fails on unknown keys (Debian kernels). Keep in step
+# with the fleet's infrastructure/node-tuning DaemonSet; drop once the bundled
+# containerd allows stacked peers (containerd#14487).
+if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined ]; then
+    echo "kernel.apparmor_restrict_unprivileged_unconfined = 0" >> /etc/sysctl.d/99-kube-dc.conf
+fi
 # Apply ONLY our file — never `sysctl --system`. --system reloads every
 # sysctl.d file on the host, so a PRE-EXISTING malformed entry in a
 # base-image/operator tuning file (field incident 2026-07-23: a worker

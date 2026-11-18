@@ -120,7 +120,7 @@ func ValidateInputSpec(src map[string]string) error {
 					return fmt.Errorf("%s must be an integer", k)
 				}
 			}
-		case KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG, KeyGPUAllowUnassigned, KeyVGPUSecretReady, "HAMI_ENABLED", "GPU_ENABLED", "GPU_CATALOG_ENABLED":
+		case KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG, KeyPAYGManagedFees, KeyGPUAllowUnassigned, KeyVGPUSecretReady, "HAMI_ENABLED", "GPU_ENABLED", "GPU_CATALOG_ENABLED":
 			switch strings.ToLower(v) {
 			case "", "true", "false", "1", "0", "yes", "no", "on", "off":
 			default:

@@ -67,6 +67,8 @@ spec:
     qualified: false
   defaultEgressProbeURLs:
   - https://<image-registry>/v2/
+  - https://registry-1.docker.io/v2/
+  - https://www.google.com/generate_204
   controlPlane: Hosted
   qualifiedFamilies: [postgresql]
   machineInfrastructureKinds: [<provider-machine>]
@@ -78,7 +80,7 @@ spec:
 |---|---|
 | `provider` | Must equal the value of `kube-dc.com/infrastructure-provider` on the tenant clusters' CAPI Clusters |
 | `storageClasses[].planeStorageBudget` | Copied into every generated plane's `spec.storageBudgets`. Without any budget the capacity ledger treats the plane's storage as unknown and refuses every revision that grows. Once one class has a budget, a class without one has a budget of zero |
-| `defaultEgressProbeURLs` | Egress every instance needs, such as image pulls. Do not list the object store here: it has its own probe, and a failure here takes the whole plane out of service |
+| `defaultEgressProbeURLs` | Witnesses of outbound HTTPS from the plane. List at least two (better three) large, stable public endpoints of different operators. With a runner from kube-dc-services 0.9.25, egress holds while any of them answers; older runners need every one to answer, and an egress failure takes the whole plane out of service. Never one small site, and not the object store: it has its own probe |
 | `controlPlane: Hosted` | The API servers run outside the data plane, so the hub attests backup admission instead of the runner. Required for destructive deletion and `RestoreToNew` on Kamaji-hosted planes |
 | `qualifiedFamilies` | Families with completed drills on this provider. A tenant plane serves only these; placement of another family is refused with `FamilyNotQualified`. An empty list, or a missing profile, qualifies no family. A plane's families are the cluster's annotated families, intersected with the grant's families and the cell's family bundles |
 | `machineInfrastructureKinds` | The CAPI Machine infrastructure kinds a tenant cluster of this provider may run. Used by [provider verification](#provider-verification) |

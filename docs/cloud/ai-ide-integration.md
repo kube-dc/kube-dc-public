@@ -33,6 +33,11 @@ is the same server with that project as the default: you can ask "list my VMs"
 without naming the project. Sign-in and permissions are the same. Add one per
 project (for example `kube-dc-dev`, `kube-dc-prod`) to keep them apart.
 
+To only **search the documentation**, connect an app to
+`https://backend.<domain>/mcp` with no Organization in the URL. It needs no
+sign-in and offers two tools, `search_docs` and `get_doc`. The Organization
+URLs offer the same two tools beside the others.
+
 For **read-only** use, add `/read_only` to either URL (or tick **Read-only** in
 the console dialog), for example
 `https://backend.<domain>/mcp/<organization>/<project>/read_only`. The app asks
@@ -74,10 +79,12 @@ Run it again to update them. Apps without skills (ChatGPT, Claude web,
 Le Chat) need nothing extra: the MCP server itself serves the guides (see
 **Guides** below).
 
-**Tools.** The server offers 32 tools. The eight read tools are `whoami`,
+**Tools.** The server offers 39 tools. The ten read tools are `whoami`,
 `list`, `get_vm`, `get_quota`, `get_logs`, `get_resources`, `rollout_status`,
-and `list_secrets`. The change tools manage projects, VMs, disks, IPs,
-buckets, managed services, secrets, apps, jobs, previews, webhooks, GitHub
+`list_secrets`, `search_docs`, and `get_doc` (the last two search and read
+this documentation). The change tools manage projects, VMs, disks and their
+snapshots, IPs, buckets, managed services and their backups, managed
+Kubernetes clusters, secrets, apps, jobs, previews, webhooks, GitHub
 repository connections, and, where your provider offers a container
 registry, registry logins. `apply_manifest` and `delete`
 work on any Kubernetes object you may change. For every tool and its effect,
@@ -85,8 +92,9 @@ see
 [Hosted MCP for administrators](mcp-for-administrators.md#what-the-tools-can-do).
 `create_managed_service` goes through the console's own path: its first call
 returns the price, and the service is created only when the app calls it
-again to confirm. Kubernetes clusters are listed; create them
-in the console. VMs get the project key pair, as in the console. Tools that delete or stop something are marked so your app
+again to confirm. `create_cluster` creates a managed Kubernetes cluster with
+the console's defaults, and `get_kubeconfig` returns its admin kubeconfig
+after you confirm. VMs get the project key pair, as in the console. Tools that delete or stop something are marked so your app
 asks you first. Everything runs as you: what you may not do in the console,
 the assistant may not do either.
 

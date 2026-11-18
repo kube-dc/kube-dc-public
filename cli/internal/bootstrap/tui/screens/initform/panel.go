@@ -303,7 +303,7 @@ func panelFields(states ...*State) []panelField {
 			func(s *State) string { return s.ServicesHAStorageClass }, func(s *State, v string) { s.ServicesHAStorageClass = v }, nil),
 		txt("Storage", "Services HA logical budget", "allocation quantity, e.g. 128Gi; does not limit the directory", false,
 			func(s *State) string { return s.ServicesHAStorageBudget }, func(s *State, v string) { s.ServicesHAStorageBudget = v }, nil),
-		txt("Storage", "Services egress probes", "comma-separated HTTPS URLs; default ghcr.io/v2/", false,
+		txt("Storage", "Services egress probes", "comma-separated HTTPS URLs of stable public endpoints; default ghcr.io, Docker Hub, Google", false,
 			func(s *State) string { return s.ServicesEgressProbes }, func(s *State, v string) { s.ServicesEgressProbes = v }, nil),
 
 		// VM root-disk storage — optional. Shown only when object storage is a

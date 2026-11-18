@@ -73,6 +73,7 @@ const (
 	// identity, so a saved spec must carry the DECISION, never the live
 	// PAYG_ENABLED/PAYG_INSTALLATION_UID of the cluster it was taken from.
 	KeyPAYG                 = InitPrefix + "PAYG"
+	KeyPAYGManagedFees      = InitPrefix + "PAYG_MANAGED_FEES"
 	KeyServicesEgressProbes = InitPrefix + "SERVICES_EGRESS_PROBES"
 )
 
@@ -92,6 +93,7 @@ var orchestrationKeys = map[string]bool{
 	KeyVMStorageMode: true, KeyVMGolden: true, KeyVMGoldenBlock: true,
 	KeyGPUPlatform: true, KeyGPUAllowUnassigned: true, KeyVGPUSecretReady: true,
 	KeyPAYG:                 true,
+	KeyPAYGManagedFees:      true,
 	KeyCephDevices:          true,
 	KeyServicesEgressProbes: true,
 }
@@ -199,7 +201,10 @@ var denyImportExact = map[string]bool{
 // denyImport reports whether a source key is scaffold/preset-owned and must
 // not ride into a clone: the exact set above, plus recognized artifact pins.
 func denyImport(k string) bool {
-	return denyImportExact[k] || isVersionKey(k) || strings.HasPrefix(k, "SERVICES_")
+	// Fee scopes, payer enrollments and activation switches describe a live
+	// installation. A clone carries only KUBE_DC_INIT_PAYG_MANAGED_FEES; its
+	// source scope is rendered and enrolled after the new Services plane runs.
+	return denyImportExact[k] || isVersionKey(k) || strings.HasPrefix(k, "SERVICES_") || strings.HasPrefix(k, "PAYG_FEE_")
 }
 
 // MaxCephSlots bounds the multi-node OSD slots. The scaffold writes each slot
@@ -262,7 +267,7 @@ var specOrder = []string{
 	KeyGPUAllowUnassigned, KeyVGPUSecretReady,
 	KeyMode, KeyFleetMode, KeyPreset, KeyProvider, KeyProviderHost,
 	KeyGitHubOwner, KeyGitHubRepo, KeyRepo, KeySSHHost, KeySSHHostKeySHA256, KeyPrimaryNode, KeyNodeSSHHosts, KeyNodeSSHHostKeys,
-	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG,
+	KeyAllowDNS, KeyAllowNoKVM, KeyAllowUnpin, KeyNoS3Exposure, KeyNoKubeVirt, KeyPAYG, KeyPAYGManagedFees,
 	InitPrefix + "INSTALLATION_KIND", InitPrefix + "MANAGED_SERVICES", InitPrefix + "SERVICES_DATABASE_CLASS", InitPrefix + "SERVICES_STORAGE_BUDGET", KeyServicesEgressProbes,
 }
 
@@ -486,6 +491,7 @@ func ImportMap(o *InitOptions, src map[string]string, flagChanged func(flag stri
 	boolean(KeyNoS3Exposure, "no-s3-exposure", &o.NoS3Exposure)
 	boolean(KeyNoKubeVirt, "no-kubevirt", &o.NoKubeVirt)
 	boolean(KeyPAYG, "payg", &o.PAYG)
+	boolean(KeyPAYGManagedFees, "payg-managed-fees", &o.PAYGManagedFees)
 	if v, ok := src[KeyServicesEgressProbes]; ok {
 		seen[KeyServicesEgressProbes] = true
 		if !flagChanged("services-egress-probe") {
@@ -793,6 +799,9 @@ func ExportMap(o *InitOptions) map[string]string {
 	}
 	if o.PAYG {
 		m[KeyPAYG] = "true"
+	}
+	if o.PAYGManagedFees {
+		m[KeyPAYGManagedFees] = "true"
 	}
 	if len(o.ServicesEgressProbeURLs) > 0 {
 		encoded, _ := json.Marshal(o.ServicesEgressProbeURLs)

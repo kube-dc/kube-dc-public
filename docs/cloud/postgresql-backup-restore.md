@@ -270,19 +270,24 @@ Use a full engine release qualified by that plan. A restore does not perform a m
              name: tenant-native
          storage:
            size: 20Gi
-         parameters:
-           database: orders
-           owner: orders
      execution:
        window: Immediate
    ```
 
    Replace the source and backup placeholders with values from the selected record.
    Replace `<target-plan>`, `<qualified-version>`, and `<data-plane>` with compatible values from your provider.
-   Adjust storage and database names for the backup. Omitted capacity fields use target plan defaults.
+   Adjust storage for the backup. Omitted capacity fields use target plan defaults.
 
-   Nothing is copied from the source service or its plan, so set these target
-   fields explicitly:
+   The target keeps the source's application database and owner, which the
+   backup records, so its binding reaches the restored tables. Set
+   `parameters.database` or `parameters.owner` only to bind to another
+   database or role that exists in the backup. A backup record that does not
+   yet show `status.backup.database` (recorded before this was added, and not
+   yet sampled again) leaves the target on the plan defaults, so set both
+   there.
+
+   Apart from the database and owner, nothing is copied from the source
+   service or its plan, so set these target fields explicitly:
 
    - `placement.mode`: omitted, it defaults to `TenantCluster`, which a plan
      offering only `ProviderShared` refuses. Placement cannot be changed later.

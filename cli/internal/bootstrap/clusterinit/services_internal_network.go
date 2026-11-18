@@ -89,8 +89,11 @@ func resolveInternalGateway(fleetRepo, clusterName string, ingressNodes []string
 		return fmt.Errorf("managed-services internal network: ENVOY_GATEWAY_INTERNAL_VIP is already set; this new-install path cannot replace it")
 	}
 	anchors := make([]string, 0, len(nodes))
+	anchorIPs := make([]string, 0, len(nodes))
 	for i, node := range nodes {
-		anchors = append(anchors, fmt.Sprintf("%s=%s/%d", node, u32ToIP4(first+uint32(i)+1), prefix))
+		ip := u32ToIP4(first + uint32(i) + 1).String()
+		anchors = append(anchors, fmt.Sprintf("%s=%s/%d", node, ip, prefix))
+		anchorIPs = append(anchorIPs, ip)
 	}
 	allowlist := func(key string) (string, error) {
 		raw := strings.TrimSpace(envValue(env, key))
@@ -101,13 +104,22 @@ func resolveInternalGateway(fleetRepo, clusterName string, ingressNodes []string
 		if err := json.Unmarshal([]byte(raw), &values); err != nil {
 			return "", fmt.Errorf("%s must be a JSON string array: %w", key, err)
 		}
+		// The VIP and every anchor. Envoy runs on the host network and dials
+		// tenant cloud addresses from its node's anchor, so each anchor must
+		// be in BOTH lists: allowed at ingress only, the SYN gets through and
+		// the tenant router drops the reply, and every Gateway route to a
+		// managed-cluster LoadBalancer Service times out with a 503 (the
+		// public managed-K8s endpoint outage, and a customer installation on 2026-11-15).
+		present := make(map[string]bool, len(values))
 		for _, value := range values {
-			if value == vip.String() {
-				encoded, _ := json.Marshal(values)
-				return string(encoded), nil
+			present[value] = true
+		}
+		for _, want := range append([]string{vip.String()}, anchorIPs...) {
+			if !present[want] {
+				values = append(values, want)
+				present[want] = true
 			}
 		}
-		values = append(values, vip.String())
 		encoded, _ := json.Marshal(values)
 		return string(encoded), nil
 	}
@@ -139,6 +151,10 @@ func resolveInternalGateway(fleetRepo, clusterName string, ingressNodes []string
 			{"EGRESS_GLOBAL_ALLOWLIST", egress},
 			{"EXT_NET_ANCHOR_IPS", strings.Join(anchors, ",")},
 			{"EXT_NET_ANCHOR_REQUIRED", "true"},
+			// The anchors are now in the tenant allowlists, so tenants could
+			// open connections to host listeners on them: drop new inbound
+			// (host-ext-cloud-route), keep replies.
+			{"EXT_NET_ANCHOR_INPUT_GUARD", "true"},
 			{KeyProjectFrontDoorDNS, "zone"},
 			// Finalize applies the anchors before the catalog is published.
 			{"SERVICES_INTERNAL_GATEWAY_REQUIRED", "true"},
@@ -172,6 +188,7 @@ func resolveInternalGateway(fleetRepo, clusterName string, ingressNodes []string
 		{"EGRESS_GLOBAL_ALLOWLIST", egress},
 		{"EXT_NET_ANCHOR_IPS", strings.Join(anchors, ",")},
 		{"EXT_NET_ANCHOR_REQUIRED", "true"},
+		{"EXT_NET_ANCHOR_INPUT_GUARD", "true"},
 		{"INFRA_ATTACHMENT_ROUTES", routes},
 		{KeyPlatformIngressVIP, vip.String()},
 		{"INFRA_ATTACHMENT_PLATFORM_INGRESS_WORKLOAD_EGRESS", "true"},

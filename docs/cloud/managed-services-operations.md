@@ -102,12 +102,13 @@ If the request stops in another phase, read `status.reason` and `status.message`
 Project roles cannot approve their own requests.
 
 `execution.window: Immediate` requests execution after the required checks and approval.
-`NextPlanWindow` waits for the recurring maintenance window in the plan.
+`NextPlanWindow` waits for the next recurring maintenance window.
 It does not bypass approval, capacity checks, or operation conflicts.
 
-The plan defines its recurring window with `maintenance.day` (`Mon` to `Sun`, or `Any`),
-`maintenance.startHour` in UTC, and `maintenance.durationMinutes`.
-Without a plan window, `NextPlanWindow` is rejected with `PlanNotEntitled`.
+The service's own `spec.maintenance.window` is used when it is set; otherwise the plan's.
+Both use `day` (`Mon` to `Sun`, or `Any`), `startHour` in UTC, and `durationMinutes`.
+Without either window, `NextPlanWindow` is rejected with `PlanNotEntitled`.
+While it waits, the operation stays `Pending` with reason `AwaitingMaintenanceWindow`.
 For `RestoreToNew`, use the target plan's policy; see [Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
 
 Each operation has an immutable specification and an idempotency key.
@@ -174,6 +175,48 @@ kubectl annotate serviceoperation <operation> -n <project> \
 Wait for `Cancelled`. A cancellation request can lose a race with execution.
 A running operation continues. Project identities cannot cancel operations created by a credential policy.
 Deleting the operation is not an instruction to reverse changes.
+
+## Upgrade a service
+
+The console's **Upgrade** action on the engine version setting follows these steps; you can also run them with manifests.
+
+1. Read the eligible targets. The platform lists only versions your plan offers, for the version the service runs now:
+
+   ```bash
+   kubectl get managedservice <service> -n <project> \
+     -o jsonpath='{.status.nativeUpgradeTargets}'
+   ```
+
+   If `available` is `false`, `reason` says why, for example `CatalogUnavailable` or `CurrentVersionUnavailable`. Each entry in `targets` has an `operation` (`MinorUpgrade` or `MajorUpgrade`), a `version`, and the exact `parameters` to submit.
+
+2. Request the upgrade. Copy one target's `operation` and `parameters` into a `ServiceOperation`. Use `window: Immediate` to start as soon as checks pass, or `NextPlanWindow` to wait for the maintenance window:
+
+   ```yaml
+   apiVersion: services.kube-dc.com/v1alpha1
+   kind: ServiceOperation
+   metadata:
+     name: cache-minor-upgrade-1
+     namespace: my-project
+   spec:
+     serviceRef:
+       name: cache
+     serviceUID: REPLACE_WITH_SERVICE_UID
+     type: MinorUpgrade
+     idempotencyKey: cache-minor-upgrade-1
+     parameters:
+       # Copy the parameters of the chosen target exactly.
+       imageName: REPLACE_WITH_TARGET_IMAGE
+     execution:
+       window: Immediate
+   ```
+
+   If your service supports declarative engine upgrades and your plan enables declarative changes (`operations.declarativeChanges: true`), you can instead set `spec.engineVersion` on the service to the target version. The platform creates the upgrade operation for you and lists it in `status.pendingChanges`. Some families accept `engineVersion` only at creation; for them, use the `ServiceOperation` above. An upgrade waits for the maintenance window unless `spec.maintenance.applyImmediately` is `true`. If neither the service nor its plan has a window, the change is held: the service reports the `ChangesPending` condition with reason `MaintenanceWindowRequired` and creates no operation. It runs once you add a window or set `applyImmediately: true`; to withdraw it, set `spec.engineVersion` back to the running version.
+
+3. Follow progress with `kubectl get serviceoperation <operation> -n <project> -w`. `status.phase` moves from `Pending` to `Accepted` and `Running`, and ends `Succeeded`, `Failed`, `Rejected` or `Cancelled`. `status.checkpoints` lists the steps completed. After `Succeeded`, the service's `status.nativeUpgradeTargets.sourceVersion` reports the new version.
+
+4. To withdraw a scheduled or waiting upgrade, use [Cancel a waiting operation](#cancel-a-waiting-operation) before it is `Running`. Cancellation can race with dispatch and runner acceptance: if the upgrade starts first, it runs to its result. Treat the upgrade as withdrawn only when `status.phase` is `Cancelled`. To withdraw an `engineVersion` change, set `spec.engineVersion` back to the running version.
+
+5. If an upgrade fails, read `status.reason`, `status.message` and `status.checkpoints` to see where it stopped, and check the version the service reports. Upgrades are not rolled back automatically, and an engine may be unable to run an older version on upgraded data. Recover data by restoring a backup taken before the upgrade into a new service; see [Restore into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
 
 ## Service-specific procedures
 

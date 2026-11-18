@@ -134,3 +134,36 @@ func TestLocalHAStoragePlanIsExplicitHashedAndHostBound(t *testing.T) {
 		}
 	}
 }
+
+// A new cluster's plane must not depend on one domain: without operator
+// input it gets several independent egress witnesses, none a provider's own
+// service, and an explicit list is kept as given.
+func TestResolveManagedServicesDefaultEgressWitnesses(t *testing.T) {
+	got, err := ResolveManagedServices(&InitOptions{InstallationKind: "kube-dc", ManagedServicesMode: "auto", RookMode: RookCephPVC})
+	if err != nil || got.Mode != "on" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	hosts := map[string]bool{}
+	for _, u := range got.EgressProbeURLs {
+		if !strings.HasPrefix(u, "https://") || strings.Contains(u, "cloudsigma") {
+			t.Fatalf("default egress witness %q", u)
+		}
+		hosts[strings.SplitN(strings.TrimPrefix(u, "https://"), "/", 2)[0]] = true
+	}
+	if len(hosts) < 3 {
+		t.Fatalf("default egress witnesses %v: want at least three distinct hosts", got.EgressProbeURLs)
+	}
+	if &got.EgressProbeURLs[0] == &DefaultServicesEgressProbeURLs[0] {
+		t.Fatal("result aliases the package default")
+	}
+	explicit := []string{"https://example.org/", "https://example.net/"}
+	got, err = ResolveManagedServices(&InitOptions{InstallationKind: "kube-dc", ManagedServicesMode: "auto", RookMode: RookCephPVC, ServicesEgressProbeURLs: explicit})
+	if err != nil || len(got.EgressProbeURLs) != 2 || got.EgressProbeURLs[0] != explicit[0] || got.EgressProbeURLs[1] != explicit[1] {
+		t.Fatalf("explicit list not kept: %+v, %v", got, err)
+	}
+	for _, single := range [][]string{{"https://ghcr.io/v2/"}, {"https://ghcr.io/v2/", "https://ghcr.io/other"}, {"https://ghcr.io/v2/", "https://GHCR.io./v2/"}} {
+		if _, err := ResolveManagedServices(&InitOptions{InstallationKind: "kube-dc", ManagedServicesMode: "auto", RookMode: RookCephPVC, ServicesEgressProbeURLs: single}); err == nil || !strings.Contains(err.Error(), "two distinct hosts") {
+			t.Fatalf("one egress host %v accepted: %v", single, err)
+		}
+	}
+}

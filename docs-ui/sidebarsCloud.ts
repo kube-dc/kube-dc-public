@@ -59,6 +59,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: 'doc',
+          id: 'applications',
+          label: 'Manage Applications',
+        },
+        {
+          type: 'doc',
           id: 'rollback',
           label: 'Roll Back an Application',
         },

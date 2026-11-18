@@ -72,6 +72,10 @@ type ObjectStorageSpec struct {
 	OSDCount        int // 0 = fleet default
 	OSDVolumeSizeGB int // 0 = fleet default
 
+	// Tiers: optional second device set, device classes and an EC data pool
+	// (rook-ceph-pvc; objectstorage_tiers.go). Zero = the Fleet mode as is.
+	Tiers CephTiers
+
 	// shared
 	S3Hostname   string // empty = s3.<domain>
 	NoS3Exposure bool
@@ -96,6 +100,7 @@ func (o *InitOptions) ObjectStorage() ObjectStorageSpec {
 		StorageClass:    o.CephStorageClass,
 		OSDCount:        o.CephOSDCount,
 		OSDVolumeSizeGB: o.CephOSDVolumeSizeGB,
+		Tiers:           parseCephTiers(o.Sets),
 		S3Hostname:      o.S3Hostname,
 		NoS3Exposure:    o.NoS3Exposure,
 	}
@@ -382,6 +387,9 @@ func objectStorageOverlayYAML(clusterName string, spec ObjectStorageSpec) string
 	}
 	if spec.Mode == RookCephMultiNode {
 		b.WriteString(strings.TrimPrefix(multiNodeStoragePatches(spec), "patches:\n"))
+	}
+	if spec.Mode == RookCephPVC {
+		b.WriteString(pvcTierPatches(spec.Tiers))
 	}
 	return b.String()
 }

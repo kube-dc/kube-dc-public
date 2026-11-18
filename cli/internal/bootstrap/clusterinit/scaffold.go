@@ -141,6 +141,9 @@ type ScaffoldOptions struct {
 	// PAYG wires opt-in PAYG usage billing (step 13, payg.go). False writes
 	// nothing PAYG-related.
 	PAYG bool
+	// PAYGManagedFees prepares the suspended managed-fee layer (step 13b,
+	// payg_managed_fees.go). Requires PAYG.
+	PAYGManagedFees bool
 
 	// SingleIPNAT triggers the findings-17/17b wiring (step 8): the
 	// node sits behind a 1:1 NAT with only one IP, so the scaffolded
@@ -525,6 +528,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// patches list the earlier writers may have started, and it reads the
 	// metering image pin postProcessClusterConfig (5) settled. No-op when off.
 	if err := WritePAYG(opts.FleetRepo, opts.Plan.ClusterName, opts.Plan.Domain, opts.PAYG, out); err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+	// (13b) The managed-service fee layer (--payg-managed-fees), suspended;
+	// after PAYG because it requires that wiring. No-op when off.
+	if _, err := WritePAYGManagedFees(opts.FleetRepo, opts.Plan.ClusterName, opts.PAYGManagedFees, out); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 	if opts.Plan.ManagedServicesMode == "on" {

@@ -18,21 +18,21 @@ Deployment `<app>-previous`:
 - its pods have their own labels (for example
   `app.kubernetes.io/name: <app>-previous`), so the Service `<app>` sends no
   traffic to it until a rollback;
-- it has the environment variable `KUBE_DC_WARM=1`;
+- it has the environment variable `KUBE_DC_WARM=1` (init containers too);
 - it belongs to `<app>`: deleting the app deletes it.
 
 On a rollback the platform:
 
-1. stops the gateway reusing connections to the application while the
-   rollback runs (each request opens its own connection);
-2. switches the Service `<app>` to the warm copy (traffic moves in a few
+1. switches the Service `<app>` to the warm copy (traffic moves in a few
    seconds; requests in flight finish);
-3. rolls `<app>` back to the previous revision behind it, and, once the
+2. rolls `<app>` back to the previous revision behind it, and, once the
    Service sends traffic to the warm copy only, stops the pods of the version
    you rolled back from, so no open connection keeps reaching it (their logs
    end there);
-4. switches the Service back to `<app>` when it is ready, and lets the gateway
-   reuse connections again.
+3. switches the Service back to `<app>` when it is ready.
+
+If `<app>` cannot start its pods (project quota, a full cluster), the single
+warm pod carries all traffic until it can.
 
 If the warm copy is not ready, the rollback starts new pods from the previous
 revision as without instant rollback. The result says which happened
@@ -62,7 +62,17 @@ selects its pods by labels (as `deploy_app` and the console create it). The
 platform refuses, and says why in the Deployment's
 `apps.kube-dc.com/warm-error` annotation, when another Service or Deployment
 in the project would select the warm copy's pods, or when the Service selects
-on a label the pods do not have.
+on a label the pods do not have. It also refuses two shapes where a second
+running version would cause harm:
+
+- a pod volume from a PersistentVolumeClaim: both versions would write to it
+  at once;
+- a NetworkPolicy in the project that selects the app's pods, or lets traffic
+  in or out, by a label the warm copy renames: the copy would get different
+  network rules than the app.
+
+A copy that already runs is removed when such a policy is added later (not
+while it is serving a rollback).
 
 Pull request previews (`<app>-pr-<n>`) do not get a warm copy unless you turn
 it on for them.

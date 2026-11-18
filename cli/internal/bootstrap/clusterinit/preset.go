@@ -1,6 +1,7 @@
 package clusterinit
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -1752,6 +1753,62 @@ func validateAnchorIPs(envMap map[string]string, extCIDR *net.IPNet, extCIDROK b
 			*errs = append(*errs, fmt.Sprintf(
 				"EXT_NET_ANCHOR_IPS: EXT_NET_ANCHOR_REQUIRED=true but gateway node(s) %s have no anchor IP — every host in KUBE_OVN_GW_NODES must appear as a key in EXT_NET_ANCHOR_IPS (MetalLB failover to an unanchored gw node silently drops tenant traffic). Either add anchors for the missing host(s) or remove them from KUBE_OVN_GW_NODES first",
 				strings.Join(missing, ", ")))
+		}
+	}
+
+	// Allowlist symmetry. Envoy runs on the host network and dials tenant
+	// cloud addresses from its node's anchor, and the tenant router drops
+	// any packet to a cloud address outside the global allowlists. An
+	// anchor missing from either list gives a half-open path: Gateway
+	// routes to managed-cluster LoadBalancer Services time out with a 503
+	// (the 2026-07 public managed-K8s endpoint outage; a customer installation,
+	// 2026-11-15, where the installer reserved anchors without listing
+	// them). A list that does not parse is reported by its own check.
+	if len(ipSeen) > 0 {
+		anchorIPs := make([]string, 0, len(ipSeen))
+		for ip := range ipSeen {
+			anchorIPs = append(anchorIPs, ip)
+		}
+		sort.Strings(anchorIPs)
+		for _, key := range []string{"INGRESS_GLOBAL_ALLOWLIST", "EGRESS_GLOBAL_ALLOWLIST"} {
+			raw := strings.TrimSpace(envMap[key])
+			if raw == "" {
+				raw = "[]"
+			}
+			var listed []string
+			if err := json.Unmarshal([]byte(raw), &listed); err != nil {
+				continue
+			}
+			// Entries are addresses or CIDRs (the allowlist API accepts
+			// both), so membership is containment, not string equality.
+			var nets []*net.IPNet
+			for _, v := range listed {
+				v = strings.TrimSpace(v)
+				if _, n, err := net.ParseCIDR(v); err == nil {
+					nets = append(nets, n)
+				} else if ip := net.ParseIP(v); ip != nil {
+					nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(len(ip)*8, len(ip)*8)})
+				}
+			}
+			var missing []string
+			for _, a := range anchorIPs {
+				ip := net.ParseIP(a)
+				covered := false
+				for _, n := range nets {
+					if n.Contains(ip) {
+						covered = true
+						break
+					}
+				}
+				if !covered {
+					missing = append(missing, a)
+				}
+			}
+			if len(missing) > 0 {
+				*errs = append(*errs, fmt.Sprintf(
+					"%s is missing anchor(s) %s — every EXT_NET_ANCHOR_IPS address must be in BOTH INGRESS_GLOBAL_ALLOWLIST and EGRESS_GLOBAL_ALLOWLIST, or Gateway routes to managed-cluster LoadBalancer Services time out (the host-network Envoy dials them from the anchor)",
+					key, strings.Join(missing, ", ")))
+			}
 		}
 	}
 }

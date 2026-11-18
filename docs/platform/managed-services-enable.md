@@ -72,7 +72,10 @@ SERVICES_FAMILIES=[postgresql, valkey]
 SERVICES_UNMANAGED_OPERATORS=[postgresql]
 SERVICES_STORAGE_BUDGETS={rbd-vm: 100Gi}
 SERVICES_STORAGE_ROLES={database: rbd-vm}
-SERVICES_EGRESS_PROBE_URLS=[https://ghcr.io/v2/]
+# Egress witnesses: several large, stable public endpoints of different
+# operators. Egress holds while any of them answers (runner 0.9.25 and later);
+# never a single small site or your provider's own S3.
+SERVICES_EGRESS_PROBE_URLS=[https://ghcr.io/v2/, https://registry-1.docker.io/v2/, https://www.google.com/generate_204]
 
 # PostgreSQL specifics, if you offer it.
 SERVICES_PG_OPERATOR_VERSION=1.29.2

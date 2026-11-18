@@ -18,16 +18,84 @@ With a GitHub App configured, Kube-DC:
   repositories included, if the App's webhook is on. Without it, previews of
   private repositories go only when they expire.
 
-Project users find the setup steps in the console under **Overview → Deploy
-from GitHub**: managed runners plus a managed registry (recommended, no token
-stored), or their own registry with a token Secret they create themselves.
+Project users can deploy a repository from **Applications → New application**.
+For a GitHub Actions workflow or an existing registry, open **Applications →
+Connect GitHub**.
 
 The feature is off unless configured. Each installation registers **its own**
-App under its own name, as described in [Register the App](#register-the-app).
+App under its own name, as described in [Register the App](#register-the-app-by-hand).
 The App's name is what customers see on their commits and pull requests, and
 its private key belongs to the operator of that installation. A GitHub App has
 one webhook URL, so one App serves one installation. A provider that runs a
 white-label installation registers the App under its own brand.
+
+## Set it up in the admin console
+
+The quickest way is **Platform settings → Integrations → Create GitHub App**
+in the admin console (superadmins):
+
+1. Name the App (customers see this name; at most 34 characters), choose its
+   owner (your personal GitHub account or a GitHub organization) and whether
+   it is **public** (the default: customers can install it) or private (only
+   the owner can install it, for a single-tenant installation).
+2. **Continue on GitHub.** GitHub opens with the App filled in: the
+   permissions and events of every feature, the webhook URL and secret, and the
+   callback URL. Confirm it there.
+3. GitHub returns you to the admin console and the App is connected: its key,
+   webhook secret and client secret are stored in the Secret
+   `integrations-settings`, never shown again.
+
+The same page connects an App you already registered (**Connect an existing
+App**: App ID, the `.pem` key, the webhook and client secrets; GitHub must accept
+the key before anything is saved), switches each feature on or off, rotates the
+webhook secret (set on GitHub too; the old one is accepted for ten minutes) and
+returns to the chart's App (**Reset to Fleet**; the App stays on GitHub). It
+also checks the App live: the key, its installations, its webhook URL and
+recent deliveries, and what each switched-on feature still misses on GitHub or
+in the cluster.
+
+An App owned by a personal account is fine to start with; when more than one
+person administers the installation, move it to an organization (GitHub: the
+App's settings → Transfer ownership).
+
+The console's App overrides the chart's `githubApp` values while it is set.
+With `integrations.consoleOverrides: false` the page is read-only and the chart
+values below are the only source. The rest of this page describes those chart
+values and the manual registration they need.
+
+Providers can hide Deploy from GitHub from their tenants under **Branding &
+features** (section *Deploy from GitHub*): the console hides it and the backend
+refuses its requests.
+
+## Enable applications on a new or upgraded installation
+
+1. Deploy the matching chart, manager, backend and consoles. Configure a public
+   HTTPS backend hostname and the GitHub callback and webhook URLs shown in
+   **Platform settings → Integrations**. A new installation needs its own App.
+   An upgrade can keep its existing App, private key and repository grants.
+2. Enable the managed-services registry family on the target data plane and
+   publish the registry catalog component with an available development plan.
+   The installation candidate configures the development plan with your selected
+   expandable volume class when managed services are enabled.
+   Check storage, project quota and the price shown during application setup.
+   For an existing installation managed by Fleet with Ceph block and bucket storage, include `components/registry` in
+   the services catalog and add `registry` to the data plane's enabled families. With a different volume class, select
+   `components/registry-applications` and set `SERVICES_REGISTRY_STORAGE_CLASS`
+   to that class.
+3. Create the App in the admin console, or configure the chart values below.
+   For an existing App, check the switches for **Builds on push and pull request
+   previews**, repository connection and organization consent. Run the
+   integration checks and resolve any missing permission or event on GitHub.
+4. To use organization-owned hostnames, enable verification under **Platform
+   settings → Custom domains**. The chart enables verification by default and
+   preserves previously held hostnames. An explicit console setting takes
+   precedence after an upgrade.
+5. Have a repository administrator install the App on a test repository and
+   authorize the Kube-DC organization. A project member can then open **Applications
+   → New application**, select that repository and branch, and review the registry
+   charge before deploying. Verify the build log, completed rollout and HTTPS
+   address. An organization admin can then connect a domain using the
+   [organization domain instructions](/cloud/applications).
 
 ## Required setup
 
@@ -48,7 +116,7 @@ it, and `KUBE_DC_ORGANIZATION` names the organization (set by a repository
 admin with **Allow this organization** or `gh variable set`). The console's
 **Deploy from GitHub** step 1 checks both.
 
-## Register the App
+## Register the App by hand
 
 As an owner of your GitHub organization: **Settings → Developer settings →
 GitHub Apps → New GitHub App**.
@@ -119,7 +187,12 @@ List the file in the cluster's `kustomization.yaml`, set `githubApp.clientId`,
 `github-app-client` here), and restart the backend worker (or the API
 pod without a worker): the secret is read at start.
 
-Enable it in the kube-dc chart values:
+The chart includes a pinned BuildKit image. Platform builds stay off until you
+enable them for your installation's GitHub App. For the console's **New
+application** flow, enable repository sign-in, platform builds, managed registry
+identity, and the registry service plan offered to the project.
+
+To configure the App through Fleet, set these chart values:
 
 ```yaml
 githubApp:
@@ -271,7 +344,7 @@ On a signed push the manager checks the repository's `KUBE_DC_ORGANIZATION`
 claim against the project's organization, puts a `contents: read` token for
 that repository (one hour) in a Secret, and runs the build Pod
 `build-<app>-<commit>` in the project: rootless BuildKit
-(`githubApp.builds.image`, the managed runners' image by digest) builds the
+(`githubApp.builds.image`, pinned by digest in the chart) builds the
 commit from GitHub and pushes it with the push Secret. A newer push replaces a
 running build. When the build succeeds the manager sets the Deployment's image
 (a new app is scaled from zero to one) and the `github.kube-dc.com/*`
@@ -280,7 +353,7 @@ start or failed is named in the Deployment's `build.kube-dc.com/last-error`,
 with the pod's reason (for example `DeadlineExceeded` or `Evicted`) and the
 last lines of the build log, which the kubelet keeps after the log is gone.
 
-Build pods request 200m CPU, 1Gi memory and 4Gi of node disk, and may use up
+Build pods request 200m CPU, 1Gi memory and 24Gi of node disk, and may use up
 to 2 CPU, 2Gi memory, 24Gi of BuildKit state (26Gi of node disk in all) and
 60 minutes. They count against the project's quota and are removed after a
 day. A cold build of a Rust and Node app needs more than 8Gi of

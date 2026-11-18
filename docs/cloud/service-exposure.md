@@ -447,6 +447,11 @@ spec:
   domain: example.com
 ```
 
+With a wildcard record (`*.example.com` pointing at the platform), no
+Service under the domain needs a DNS record of its own; an organization admin
+can also make the domain the default for new apps (see
+[Many apps under one domain](applications.md#many-apps-under-one-domain)).
+
 `kubectl get verifieddomain -n <organization>` shows the record to add
 (`status.recordName`, `status.recordValue`) and `status.verified`. Hostnames
 your Services already used when the requirement was turned on keep working

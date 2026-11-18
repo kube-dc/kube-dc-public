@@ -773,6 +773,38 @@ kubectl logs -n acme-production -l k8s-app=kccm-dev
 kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app-lb -o yaml | grep -A2 annotations
 ```
 
+### Gateway route returns 503 after about 10 seconds
+
+The route and certificate are fine, but the request reaches the Managed
+Cluster's worker nodes and nothing answers. The platform forwards the request
+to the Service's NodePort on your workers; when no pod is ready behind the
+Service, the connection is dropped rather than refused, so the Gateway waits
+for its 10-second connect timeout and answers `503`.
+
+Check the Service inside the Managed Cluster:
+
+```bash
+# Must list at least one ready pod address
+kubectl --kubeconfig=/tmp/dev-kubeconfig get endpointslices \
+  -l kubernetes.io/service-name=my-app
+
+# The pods must be Running and Ready, and carry the Service's selector labels
+kubectl --kubeconfig=/tmp/dev-kubeconfig get pods -l app=my-app -o wide
+
+# targetPort must be the port the container actually listens on
+kubectl --kubeconfig=/tmp/dev-kubeconfig get svc my-app -o jsonpath='{.spec.ports}'
+```
+
+Common causes:
+
+- the selector does not match the pods' labels, or the pods are not Ready;
+- `targetPort` is not the container's listening port;
+- `externalTrafficPolicy: Local` on a Service whose pods do not run on every
+  worker (requests that land on a worker without a local pod are dropped);
+- a `NetworkPolicy` or Cilium policy that only admits traffic from inside the
+  Managed Cluster. Gateway traffic arrives from outside it, so allow ingress
+  to the pods from outside the cluster.
+
 ### PVC stuck in Pending
 
 ```bash

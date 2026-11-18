@@ -27,6 +27,39 @@ intervals; gaps are unknown. **Measured, not priced** means that quantity has
 no applicable price on the displayed card. Ask your provider about billing
 activation or an incomplete estimate.
 
+### Payment method and invoice history
+
+An organization administrator manages the payment method for the whole
+Organization in **Manage organization > Billing & quotas**. Projects share
+that billing account. Platform administrators configure prices and billing
+policy; the paying Organization adds its own card.
+
+On installations with Stripe payments enabled:
+
+1. Open **Payment method** to check whether a default payment method is on
+   file. When available, the console shows the card's brand, last four digits,
+   and expiry date. If details are unavailable, open Stripe to inspect them.
+2. Select **Add payment method** or **Manage payment method**. Enter card
+   details on Stripe's secure page, then return to the console and select
+   **Refresh payment method**. Use a real card accepted by Stripe on a live
+   installation; Stripe test cards work only in test mode.
+3. Open **Invoices** to see issued PAYG invoices, payment status, totals, and
+   remaining balances. Select **View / pay** to open an unpaid invoice, or
+   **PDF** to download its document. A partially paid invoice shows its
+   remaining balance. No history appears until an invoice has been issued.
+
+Open **Billing periods** to inspect current and previous statement periods.
+**Statement prepared** means the statement is ready for the billing workflow;
+**Invoice issued** means an invoice reference exists. Only an invoice marked
+**Paid** confirms payment. Periods and dates use UTC.
+
+In **Project usage**, select **Usage month** to inspect the current month or
+one of the previous twelve months. **View usage estimate** on a period opens
+that month's estimate. These estimates use current list prices and can be
+incomplete; the issued invoice contains the final charges. Older periods
+remain accessible through paginated history even after their detailed usage
+is no longer retained.
+
 ### Managed-service fees and resources
 
 A managed service has two parts to its PAYG cost:
@@ -73,7 +106,7 @@ and three tabs: **Project usage**, **Plans**, and **Add-ons**. It shows:
 - **Resource usage**: a usage bar for every quota dimension:
   - CPU (cores used / total available)
   - Memory (GiB used / total available)
-  - NVMe Storage (GiB used / total available)
+  - Block storage (GiB used / total available)
   - Pods (count used / plan limit)
   - Public IPv4 (addresses used / plan limit)
   - Object Storage (GB used / plan limit)

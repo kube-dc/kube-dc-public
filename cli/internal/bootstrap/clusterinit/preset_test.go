@@ -1,7 +1,9 @@
 package clusterinit
 
 import (
+	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 	"testing"
 )
@@ -720,6 +722,12 @@ func TestValidatePresetValues_AnchorIPs(t *testing.T) {
 		}
 		if anchors != "" {
 			m["EXT_NET_ANCHOR_IPS"] = anchors
+			// These cases test the anchor map itself; list every anchor
+			// in both allowlists so the symmetry check (its own test
+			// below) does not mask what they assert.
+			ips := anchorAllowlistJSON(anchors)
+			m["INGRESS_GLOBAL_ALLOWLIST"] = ips
+			m["EGRESS_GLOBAL_ALLOWLIST"] = ips
 		}
 		if required != "" {
 			m["EXT_NET_ANCHOR_REQUIRED"] = required
@@ -1286,6 +1294,72 @@ func TestValidateOVNDbIPs(t *testing.T) {
 			validateOVNDbIPs(map[string]string{"OVN_DB_IPS": tc.value}, &errs)
 			if got := len(errs) > 0; got != tc.wantErr {
 				t.Errorf("validateOVNDbIPs(%q): err=%v want %v (%v)", tc.value, got, tc.wantErr, errs)
+			}
+		})
+	}
+}
+
+// anchorAllowlistJSON lists the IPs of a host=CIDR anchor map as a JSON array,
+// skipping malformed entries (their own cases assert those errors).
+func anchorAllowlistJSON(anchors string) string {
+	var ips []string
+	for _, pair := range strings.Split(anchors, ",") {
+		_, cidr, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if !ok {
+			continue
+		}
+		if ip, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err == nil {
+			ips = append(ips, ip.String())
+		}
+	}
+	raw, _ := json.Marshal(ips)
+	return string(raw)
+}
+
+// Every anchor must be in BOTH global allowlists: the host-network Envoy
+// dials tenant cloud addresses from it, and the tenant router drops replies to
+// an unlisted cloud address (a customer installation, 2026-11-15).
+func TestValidatePresetValues_AnchorAllowlists(t *testing.T) {
+	env := func(ingress, egress string) map[string]string {
+		m := map[string]string{
+			"EXT_NET_VLAN_ID":          "1103",
+			"EXT_NET_INTERFACE":        "bond0",
+			"EXT_PUBLIC_VLAN_ID":       "1100",
+			"EXT_PUBLIC_CIDR":          "203.0.113.48/29",
+			"EXT_PUBLIC_GATEWAY":       "203.0.113.49",
+			"KUBE_OVN_GW_NODES":        "host5-a,host6-a",
+			"EXT_NET_ANCHOR_IPS":       "host5-a=100.65.0.11/16,host6-a=100.65.0.12/16",
+			"EXT_NET_ANCHOR_REQUIRED":  "true",
+			"INGRESS_GLOBAL_ALLOWLIST": ingress,
+			"EGRESS_GLOBAL_ALLOWLIST":  egress,
+		}
+		return m
+	}
+	both := `["100.65.0.10","100.65.0.11","100.65.0.12"]`
+	for _, tc := range []struct {
+		name, ingress, egress, wantSub string
+	}{
+		{"both lists carry every anchor", both, both, ""},
+		{"egress misses one anchor", both, `["100.65.0.10","100.65.0.11"]`, "EGRESS_GLOBAL_ALLOWLIST is missing anchor(s) 100.65.0.12"},
+		{"ingress misses both anchors", `["100.65.0.10"]`, both, "INGRESS_GLOBAL_ALLOWLIST is missing anchor(s) 100.65.0.11, 100.65.0.12"},
+		{"only the VIP listed (the 2026-11-15 shape)", `["100.65.0.10"]`, `["100.65.0.10"]`, "is missing anchor(s) 100.65.0.11, 100.65.0.12"},
+		{"anchors covered by a /32 and a /30 entry", `["100.65.0.11/32","100.65.0.12/32"]`, `["100.65.0.8/30","100.65.0.12"]`, ""},
+		{"a CIDR that does not cover an anchor", `["100.65.0.8/31"]`, both, "INGRESS_GLOBAL_ALLOWLIST is missing anchor(s) 100.65.0.11, 100.65.0.12"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envMap, err := EnvMapFor(PresetCloudPublicVLAN, env(tc.ingress, tc.egress))
+			if err != nil {
+				t.Fatalf("EnvMapFor: %v", err)
+			}
+			err = ValidatePresetValues(PresetCloudPublicVLAN, envMap)
+			if tc.wantSub == "" {
+				if err != nil {
+					t.Fatalf("expected ok, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantSub) {
+				t.Fatalf("want error containing %q, got %v", tc.wantSub, err)
 			}
 		})
 	}

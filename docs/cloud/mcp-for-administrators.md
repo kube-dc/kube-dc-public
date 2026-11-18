@@ -151,8 +151,15 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `create_webhook` | write | Sends the organization's platform events (deploys, live hostnames, previews, alerts) to an HTTPS URL, signed. Organization admins only. |
 | `connect_repository` | write | Sets up keyless deploys from GitHub Actions for a repository: machine identities for its production (and preview) environment, plus the workflow files and repository variables to add. Organization admins only. |
 | `registry_login` | write | Where your provider offers a container registry service: a `docker login` command for it, valid 15 minutes, with the user's own push or pull rights. Not offered to read-only sessions. |
+| `search_docs` | read | Searches the Kube-DC documentation and returns the best-matching sections with links. |
+| `get_doc` | read | Reads one documentation page as Markdown, or lists the pages. |
+| `create_cluster` | write | Creates a managed Kubernetes cluster as the console does (catalog version and worker image, dedicated etcd, HTTPS API address). Workers count against the Project's quota. |
+| `get_kubeconfig` | write | Returns a managed cluster's admin kubeconfig, a credential. The user confirms first, and the call is audited as a reveal. Not offered to read-only sessions. |
+| `create_snapshot` | write | Takes a snapshot of a disk, with the snapshot class of its storage class. |
+| `backup_service` | write | Takes a backup of a managed service now, besides its scheduled backups. |
+| `restore_backup` | write | Restores a completed managed-service backup into a new service. The original is not changed. |
 
-Read-only URLs offer only the eight read tools.
+Read-only URLs offer only the ten read tools.
 
 ## Data handling
 
