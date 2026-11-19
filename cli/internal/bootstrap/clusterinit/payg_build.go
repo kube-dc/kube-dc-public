@@ -137,7 +137,7 @@ func paygClusterBuildConflicts(fleetRepo, clusterDir string) error {
 				return fmt.Errorf("%s: generatorOptions must be exactly the scaffold's (%s)", rel(kfile), strings.TrimSpace(paygScaffoldGeneratorOptions))
 			}
 		}
-		if err := paygKustomizationConflicts(dir, body, protected); err != nil {
+		if err := paygKustomizationConflicts(dir, body, protected, nil); err != nil {
 			return fmt.Errorf("%s: %w", rel(kfile), err)
 		}
 		resources, _ := k["resources"].([]any)

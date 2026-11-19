@@ -76,6 +76,20 @@ func NewRealSessionWithConfig(opts Options, cfg *rest.Config) (*Session, error) 
 	return assembleRealSession(opts, k8sClient, fluxClient, true), nil
 }
 
+// UseKubeconfigForScripts gives the session's scripts a kubeconfig for the
+// case where the operator's shell sets no KUBECONFIG (see
+// script.Runner.WithFallbackKubeconfig). A pinned runner keeps using its
+// pinned kubeconfig; a runner that is not the real script adapter is left as
+// it is.
+func (s *Session) UseKubeconfigForScripts(path string) {
+	if s == nil || path == "" {
+		return
+	}
+	if runner, ok := s.Scripts.(*script.Runner); ok {
+		s.Scripts = runner.WithFallbackKubeconfig(path)
+	}
+}
+
 func assembleRealSession(opts Options, k8sClient ports.K8sClient, fluxClient ports.FluxClient, pinKubeconfig bool) *Session {
 
 	// ScriptRunner needs both fleet + kube-dc roots. The kube-dc repo

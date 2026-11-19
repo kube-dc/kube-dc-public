@@ -622,7 +622,7 @@ func writePAYG(fleetRepo, clusterName, domain string, enabled bool, out io.Write
 	if err != nil {
 		return false, fmt.Errorf("payg: %w", err)
 	}
-	roleWired, err := paygRoleWiring(platformBody, dbCluster, wantRole)
+	roleWired, err := paygRoleWiring(platformBody, dbCluster, wantRole, paygEnvValue(env, "OBJECT_STORAGE_DISABLED") == "true")
 	if err != nil {
 		return false, fmt.Errorf("payg: %w", err)
 	}
@@ -814,7 +814,7 @@ func inspectPAYGOverlay(fleetRepo, clusterName, domain string, env *config.Env) 
 	if err != nil {
 		return st, err
 	}
-	roleWired, roleErr := paygRoleWiring(platform, dbCluster, wantRole)
+	roleWired, roleErr := paygRoleWiring(platform, dbCluster, wantRole, paygEnvValue(env, "OBJECT_STORAGE_DISABLED") == "true")
 	if err := paygClusterBuildConflicts(fleetRepo, clusterDir); err != nil {
 		return st, fmt.Errorf("%w: %v", ErrPAYGRefused, err)
 	}

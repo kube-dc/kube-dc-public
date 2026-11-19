@@ -398,13 +398,44 @@ func TestWriteObjectStorage_DisabledDegradedWiring(t *testing.T) {
 	}
 }
 
-func TestPatchPlatformDisabled_ExistingPatchesBlockErrors(t *testing.T) {
-	// A hand-edited platform.yaml that already carries a patches:
-	// block must ERROR — appending a second `patches:` key would be
-	// duplicate-key YAML. The operator merges manually.
-	lines := strings.Split(genPlatformYAML+"  patches:\n    - patch: |\n        {}\n", "\n")
-	if _, _, err := patchPlatformDisabledObjectStorage(lines); err == nil {
-		t.Fatal("existing patches: block must error, not append a duplicate key")
+func TestPatchPlatformDisabled_ExistingPatchesBlock(t *testing.T) {
+	lines := strings.Split(addClusterPlatformYAML, "\n")
+	patched, changed, err := patchPlatformDisabledObjectStorage(lines)
+	if err != nil || !changed {
+		t.Fatalf("generated patches list: changed=%v err=%v", changed, err)
+	}
+	var doc struct {
+		Spec struct {
+			Patches []struct {
+				Target struct{ Name string }
+			}
+		}
+	}
+	if err := yaml.Unmarshal([]byte(strings.Join(patched, "\n")), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if p := doc.Spec.Patches; len(p) != 4 || p[0].Target.Name != "kube-dc" || p[1].Target.Name != "grafana-pg" {
+		t.Fatalf("generated and disabled patches must share one list: %+v", p)
+	}
+}
+
+func TestPatchPlatformDisabled_UnsupportedPatchesBlockErrors(t *testing.T) {
+	spec, body, _ := strings.Cut(addClusterPlatformYAML, "spec:\n")
+	head, patches, _ := strings.Cut(addClusterPlatformYAML, "  patches:\n")
+	version, tail, _ := strings.Cut(genPlatformYAML, "metadata:\n")
+	metadata, specBody, _ := strings.Cut(tail, "spec:\n")
+	for name, input := range map[string]string{
+		"non-final patches list": addClusterPlatformYAML + "  wait: true\n",
+		"four-space spec keys":   spec + "spec:\n" + indentLines(body, "  "),
+		"six-space patch items":  head + "  patches:\n" + indentLines(patches, "  "),
+		"trailing metadata":      version + "spec:\n" + specBody + "metadata:\n" + metadata,
+		"merged patches list":    version + "metadata:\n" + metadata + "spec:\n  <<: {patches: []}\n" + specBody,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := patchPlatformDisabledObjectStorage(strings.Split(input, "\n")); err == nil {
+				t.Fatal("unsupported patches layout must be refused")
+			}
+		})
 	}
 }
 

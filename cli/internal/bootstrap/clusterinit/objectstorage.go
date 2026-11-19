@@ -545,29 +545,28 @@ func patchKustomizationResources(lines []string) ([]string, bool, error) {
 // comment merely MENTIONING it elsewhere can't false-positive).
 const disabledPlatformPatchesMarker = "# OS-4 object-storage-disabled patches (do not duplicate this block)"
 
-// disabledPlatformPatches is the spec.patches block appended to the
+const disabledGrafanaBackupPath = "/spec/backup"
+
+// disabledPlatformPatches is the list of spec.patches entries appended to the
 // generated platform.yaml in disabled mode. Shape mirrors the live
 // fleet's $patch:delete usage (target-selected, name in the patch
 // body unused for deletes). Patch targets are shared-tree object
 // names — the fleet-side modes/disabled/kustomization.yaml comment
 // lists them, and Flux fails LOUDLY on a missing patch target, so a
 // fleet-side rename surfaces immediately rather than silently.
-const disabledPlatformPatches = `  ` + disabledPlatformPatchesMarker + `
-  # (kube-dc installer-object-storage-scaffold PRD section 6): this
-  # cluster runs --object-storage-mode=disabled. Remove grafana-pg's
-  # backup path so WAL archiving + daily backups don't fail forever
-  # against a Pending bucket claim — the Grafana DB runs UNPROTECTED.
-  # Mimir + Loki are suspended separately via OBJECT_STORAGE_DISABLED
-  # in cluster-config.env. Fresh-scaffold only: flipping an ENABLED
-  # cluster to disabled needs manual cleanup (prune:false).
-  patches:
+const disabledPlatformPatches = `    ` + disabledPlatformPatchesMarker + `
+    # Remove the backup path so WAL archiving and daily backups do not
+    # wait for a bucket. The Grafana database runs without backups.
+    # OBJECT_STORAGE_DISABLED suspends Mimir and Loki. This wiring is
+    # for a fresh installation. Disabling an existing store needs cleanup.
     - patch: |
         - op: remove
-          path: /spec/backup
+          path: ` + disabledGrafanaBackupPath + `
       target:
         group: postgresql.cnpg.io
         kind: Cluster
         name: grafana-pg
+        namespace: monitoring
     - patch: |
         apiVersion: objectbucket.io/v1alpha1
         kind: ObjectBucketClaim
@@ -589,23 +588,39 @@ const disabledPlatformPatches = `  ` + disabledPlatformPatchesMarker + `
         kind: ScheduledBackup
         name: grafana-pg-daily`
 
-// patchPlatformDisabledObjectStorage appends the disabled-mode
-// spec.patches block to the generated platform.yaml. The generated
-// file ends inside `spec:` (postBuild is its last key), so a
-// two-space-indented `patches:` appended at EOF lands under spec.
-// Idempotent via the exact marker line; errors if the file already
-// carries a DIFFERENT patches: block (hand-edited — appending a
-// second one would produce duplicate YAML keys).
+// patchPlatformDisabledObjectStorage appends the disabled-mode entries to
+// the generated spec.patches list. This list is the last key when present.
 func patchPlatformDisabledObjectStorage(lines []string) ([]string, bool, error) {
 	for _, l := range lines {
 		if strings.TrimSpace(l) == disabledPlatformPatchesMarker {
 			return lines, false, nil // already patched
 		}
 	}
-	for _, l := range lines {
-		if strings.TrimSpace(l) == "patches:" {
-			return nil, false, fmt.Errorf("platform.yaml already has a patches: block (hand-edited?) — merge the OS-4 disabled patches manually, see installer-object-storage-scaffold PRD section 6")
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &doc); err != nil {
+		return nil, false, fmt.Errorf("parse platform.yaml: %w", err)
+	}
+	if len(doc.Content) != 1 || mappingGet(doc.Content[0], "<<") != nil {
+		return nil, false, fmt.Errorf("platform.yaml requires an explicit spec mapping")
+	}
+	spec := mappingGet(doc.Content[0], "spec")
+	if spec == nil || spec.Kind != yaml.MappingNode || len(spec.Content) == 0 || spec.Content[0].Column != 3 || mappingGet(spec, "<<") != nil {
+		return nil, false, fmt.Errorf("platform.yaml requires the generated spec mapping indentation")
+	}
+	block := disabledPlatformPatches
+	expectedEntries := 3
+	if patches := mappingGet(spec, "patches"); patches != nil {
+		if patches.Kind != yaml.SequenceNode || len(patches.Content) == 0 || !patchesListIsLastSpecKey(lines) {
+			return nil, false, fmt.Errorf("spec.patches must be the final block list in platform.yaml to add the object-storage-disabled entries")
 		}
+		firstItem := lines[patches.Content[0].Line-1]
+		if !strings.HasPrefix(firstItem, "  - ") && !strings.HasPrefix(firstItem, "    - ") {
+			return nil, false, fmt.Errorf("platform.yaml requires the generated spec.patches list indentation")
+		}
+		expectedEntries += len(patches.Content)
+		block = alignPatchEntries(lines, block)
+	} else {
+		block = "  patches:\n" + block
 	}
 	// Drop trailing blank lines so the block lands directly after the
 	// last real line; re-add a single trailing newline via the join.
@@ -615,8 +630,17 @@ func patchPlatformDisabledObjectStorage(lines []string) ([]string, bool, error) 
 	}
 	out := make([]string, 0, end+40)
 	out = append(out, lines[:end]...)
-	out = append(out, strings.Split(disabledPlatformPatches, "\n")...)
+	out = append(out, strings.Split(block, "\n")...)
 	out = append(out, "")
+	var composed struct {
+		Spec struct{ Patches []yaml.Node }
+	}
+	if err := yaml.Unmarshal([]byte(strings.Join(out, "\n")), &composed); err != nil {
+		return nil, false, fmt.Errorf("compose platform.yaml: %w", err)
+	}
+	if len(composed.Spec.Patches) != expectedEntries {
+		return nil, false, fmt.Errorf("object-storage-disabled entries must be written under spec.patches in platform.yaml")
+	}
 	return out, true, nil
 }
 

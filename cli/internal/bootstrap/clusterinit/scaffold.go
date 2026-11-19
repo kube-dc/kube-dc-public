@@ -115,6 +115,10 @@ type ScaffoldOptions struct {
 	// ImageAccel wires the image-acceleration trio (tenant-addons,
 	// cdi-os-mirror, registry-depot). Default-on; see imageaccel.go.
 	ImageAccel ImageAccelSpec
+	// RegistryCredentialWired, when set, receives whether the scaffold wired
+	// the registry-depot overlay (which references the credential in
+	// platform/registry-depot/secret.enc.yaml).
+	RegistryCredentialWired *bool
 
 	// GPU is the public accelerator contract. It contributes only non-secret
 	// substitutions; licenses and registry credentials remain SOPS-owned.
@@ -274,6 +278,17 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// The Fleet helper imports Python modules from scripts/. Preparation reviews
 	// every shared source file, so bytecode emitted there is an unreviewed write.
 	scaffoldEnv := map[string]string{"PYTHONDONTWRITEBYTECODE": "1"}
+	// The script runner passes only selected host variables on. TMPDIR must
+	// be one of them: Apply points it at the run's own scratch directory, so
+	// that what the script (or a child it starts) leaves behind when killed
+	// is not where the operator's TMPDIR points.
+	if tmp := os.Getenv("TMPDIR"); tmp != "" {
+		scaffoldEnv["TMPDIR"] = tmp
+		// kubectl (the script runs `kubectl get nodes`) keeps its discovery
+		// cache under $HOME/.kube/cache unless told otherwise, and HOME can
+		// be a job-local directory inside the checkout.
+		scaffoldEnv["KUBECACHEDIR"] = filepath.Join(tmp, "kube-cache")
+	}
 	if opts.Plan.InstallationKind != "" {
 		scaffoldEnv["SCAFFOLD_INSTALLATION_KIND"] = opts.Plan.InstallationKind
 		scaffoldEnv["SCAFFOLD_MANAGED_SERVICES"] = opts.Plan.ManagedServicesMode
@@ -469,7 +484,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 	// Default-on; pieces absent from an older starter are skipped with a
 	// warning. tenant-addons deliberately no longer rides here — see (9b)
 	// and the WriteTenantBaseline doc comment.
-	if err := WriteImageAccel(opts.FleetRepo, opts.Plan.ClusterName, opts.ImageAccel, out); err != nil {
+	credentialWired, err := writeImageAccel(opts.FleetRepo, opts.Plan.ClusterName, opts.ImageAccel, out)
+	if opts.RegistryCredentialWired != nil {
+		*opts.RegistryCredentialWired = credentialWired
+	}
+	if err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
@@ -572,7 +591,11 @@ func Scaffold(ctx context.Context, opts ScaffoldOptions) error {
 		args = append(args, opts.Plan.ClusterName)
 		cmd := exec.CommandContext(ctx, "bash", args...)
 		cmd.Dir = opts.FleetRepo
-		cmd.Env = append(os.Environ(), "SERVICES_CATALOG_BASE_REF=HEAD")
+		// PYTHONDONTWRITEBYTECODE as for add-cluster.sh above: the helper's
+		// Python imports would otherwise write bytecode, and a
+		// PYTHONPYCACHEPREFIX in the environment can point that anywhere,
+		// the operator's checkout included.
+		cmd.Env = append(os.Environ(), "SERVICES_CATALOG_BASE_REF=HEAD", "PYTHONDONTWRITEBYTECODE=1")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			if errors.Is(readErr, os.ErrNotExist) {

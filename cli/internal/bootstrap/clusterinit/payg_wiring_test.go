@@ -322,7 +322,7 @@ func TestPAYGRoleWiring_ExactRecognition(t *testing.T) {
         kind: Cluster
         group: postgresql.cnpg.io
 `
-	if wired, err := paygRoleWiring([]byte(reordered), "grafana-pg", want); err != nil || !wired {
+	if wired, err := paygRoleWiring([]byte(reordered), "grafana-pg", want, false); err != nil || !wired {
 		t.Fatalf("the rendered patch, reordered and unmarked: wired=%v err=%v", wired, err)
 	}
 	for name, mutate := range map[string]func(string) string{
@@ -342,14 +342,77 @@ func TestPAYGRoleWiring_ExactRecognition(t *testing.T) {
 			return strings.Replace(s, "        name: grafana-pg\n        kind", "        name: grafana-.*\n        kind", 1)
 		},
 	} {
-		if wired, err := paygRoleWiring([]byte(mutate(reordered)), "grafana-pg", want); wired || err == nil || !strings.Contains(err.Error(), "might select") {
+		if wired, err := paygRoleWiring([]byte(mutate(reordered)), "grafana-pg", want, false); wired || err == nil || !strings.Contains(err.Error(), "might select") {
 			t.Errorf("%s: wired=%v err=%v, want a might-select refusal", name, wired, err)
 		}
 	}
 	// The same patch is not wired against a base that now declares roles:
 	// its `add /spec/managed` would replace them.
 	appendWant, _ := paygExpectedRolePatch("grafana-pg", 8, paygManagedRoles)
-	if wired, err := paygRoleWiring([]byte(reordered), "grafana-pg", appendWant); wired || err == nil {
+	if wired, err := paygRoleWiring([]byte(reordered), "grafana-pg", appendWant, false); wired || err == nil {
 		t.Errorf("a create-managed patch against a base with roles: wired=%v err=%v", wired, err)
+	}
+}
+
+func TestPAYGRoleWiring_ObjectStorageDisabled(t *testing.T) {
+	want, err := paygExpectedRolePatch("grafana-pg", 8, paygNoManaged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, _, err := patchPlatformDisabledObjectStorage(strings.Split(addClusterPlatformYAML, "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, _, err = patchPlatformPAYGRole(renderPAYGRolePatch("grafana-pg", 8, paygNoManaged))(lines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform := strings.Join(lines, "\n")
+	if wired, err := paygRoleWiring([]byte(platform), "grafana-pg", want, true); err != nil || !wired {
+		t.Fatalf("generated backup removal and PAYG role: wired=%v err=%v", wired, err)
+	}
+	if _, err := paygRoleWiring([]byte(platform), "grafana-pg", want, false); err == nil || !strings.Contains(err.Error(), "might select") {
+		t.Fatalf("backup removal with object storage enabled must be refused, got %v", err)
+	}
+	modified := strings.Replace(platform, disabledGrafanaBackupPath, "/spec/managed", 1)
+	if _, err := paygRoleWiring([]byte(modified), "grafana-pg", want, true); err == nil || !strings.Contains(err.Error(), "might select") {
+		t.Fatalf("modified backup patch must be refused, got %v", err)
+	}
+}
+
+func TestPAYGRoleWiring_StarterDBSettings(t *testing.T) {
+	const component = `apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+      name: grafana-pg
+      namespace: monitoring
+    patch: |
+      - op: add
+        path: /spec/postgresql/synchronous
+        value: {method: any, number: 1, dataDurability: required, failoverQuorum: true}
+      - op: add
+        path: /spec/postgresql/parameters/synchronous_commit
+        value: "on"
+`
+	fleet := paygFleet(t, paygBaseEnv)
+	path := filepath.Join(fleet, "platform", "monitoring", "grafana-pg", "components", "ledger-durability", "kustomization.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(component), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if shape, err := findPAYGBaseCluster(fleet, "grafana-pg"); err != nil || shape != paygNoManaged {
+		t.Fatalf("shipped durability settings: shape=%v err=%v", shape, err)
+	}
+	modified := strings.Replace(component, "/spec/postgresql/synchronous", "/spec/managed", 1)
+	if err := os.WriteFile(path, []byte(modified), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findPAYGBaseCluster(fleet, "grafana-pg"); err == nil || !strings.Contains(err.Error(), "might select") {
+		t.Fatalf("a role-changing patch must be refused, got %v", err)
 	}
 }

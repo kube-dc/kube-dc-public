@@ -84,7 +84,7 @@ func fakeSopsOnPath(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	script := `#!/bin/sh
-f="$3"
+for f in "$@"; do :; done # the file is the last argument
 [ -n "$f" ] || exit 2
 sed -E 's/^(    (username|password|uri): ).*/\1ENC[AES256_GCM,data:fake,iv:x,tag:y,type:str]/' "$f" > "$f.x" && mv "$f.x" "$f"
 printf 'sops:\n    mac: ENC[AES256_GCM,data:mac,iv:x,tag:y,type:str]\n    age: []\n' >> "$f"
@@ -829,7 +829,7 @@ func paygAddClusterRunner(t *testing.T, repo string) *fakeScriptRunner {
 				"infrastructure.yaml": "apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: infra-cni\n  namespace: flux-system\n",
 				"platform.yaml":       addClusterPlatformYAML,
 				"kustomization.yaml":  scaffoldRootKustomization,
-				"secrets.enc.yaml":    "stringData:\n    K: ENC[AES256_GCM,data:abc]\nsops:\n    mac: ENC[AES256_GCM,data:mac]\n",
+				"secrets.enc.yaml":    "stringData:\n    K: ENC[AES256_GCM,data:abc,iv:xyz,tag:tag,type:str]\nsops:\n    mac: ENC[AES256_GCM,data:mac]\n",
 			}
 			if err := os.MkdirAll(clusterDir, 0o755); err != nil {
 				return err

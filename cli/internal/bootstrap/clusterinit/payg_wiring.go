@@ -9,8 +9,9 @@ package clusterinit
 //   - payg.yaml is, after parsing, identical to what the CLI renders;
 //   - the CNPG role is wired only by a patch identical, after parsing, to the
 //     one the CLI renders for the current base Cluster;
-//   - any OTHER patch or replacement that might select the CNPG Cluster (in
-//     platform.yaml or the shared tree) is refused, whatever it does;
+//   - an object-storage-disabled overlay may remove the Grafana backup;
+//   - shared-tree patches that might select the CNPG Cluster are refused
+//     except for the backup and durability settings in the shipped components;
 //   - the cluster directory's own build is checked in payg_build.go.
 //
 // See payg_build.go for the threat model: these checks catch accidental
@@ -285,10 +286,10 @@ func paygExpectedRolePatch(dbCluster string, connectionLimit int, shape paygMana
 // by an entry IDENTICAL, after parsing, to the one the CLI renders for the
 // current base: exact target (group, kind, name, namespace, no selectors),
 // exact op list — and so a role with login true, its passwordSecret and
-// ensure: present. Every other entry that might select the Cluster is
-// refused, whatever it does; the kube-dc marker without its patch is a
-// broken overlay.
-func paygRoleWiring(platformBody []byte, dbCluster string, want paygRolePatch) (bool, error) {
+// ensure: present. The generated degraded-profile removal of /spec/backup
+// can coexist with that role. All other patches that might select the Cluster
+// are refused. The kube-dc role marker without its patch is a broken overlay.
+func paygRoleWiring(platformBody []byte, dbCluster string, want paygRolePatch, objectStorageDisabled bool) (bool, error) {
 	var k struct {
 		Spec struct {
 			Patches []map[string]any `yaml:"patches"`
@@ -299,6 +300,7 @@ func paygRoleWiring(platformBody []byte, dbCluster string, want paygRolePatch) (
 	}
 	cluster := paygCNPGCluster(dbCluster)
 	wired := false
+	backupRemoved := false
 	for i, entry := range k.Spec.Patches {
 		target, _ := entry["target"].(map[string]any)
 		body, _ := entry["patch"].(string)
@@ -315,6 +317,14 @@ func paygRoleWiring(platformBody []byte, dbCluster string, want paygRolePatch) (
 				continue
 			}
 		}
+		if objectStorageDisabled && len(entry) == 2 && isPAYGDefaultDBTarget(target) &&
+			strings.TrimSpace(body) == "- op: remove\n  path: "+disabledGrafanaBackupPath {
+			if backupRemoved {
+				return false, fmt.Errorf("platform.yaml removes the Grafana database backup more than once")
+			}
+			backupRemoved = true
+			continue
+		}
 		if cluster.patchMightSelect(target, body) {
 			return false, fmt.Errorf("platform.yaml patch %d might select the CNPG %s, and any such patch could change its spec.managed roles; only the exact patch the CLI renders is accepted — remove it or merge the %s role into it by hand (platform/payg/README.md step 2)", i, cluster, paygDBRole)
 		}
@@ -323,6 +333,48 @@ func paygRoleWiring(platformBody []byte, dbCluster string, want paygRolePatch) (
 		return false, fmt.Errorf("platform.yaml carries the %q marker but no patch that adds %s the way the CLI renders it — restore the patch or remove the marker by hand", paygDBRoleMarker, paygDBRole)
 	}
 	return wired, nil
+}
+
+func isPAYGDefaultDBTarget(target map[string]any) bool {
+	return reflect.DeepEqual(target, map[string]any{
+		"group": "postgresql.cnpg.io", "kind": "Cluster", "name": paygDefaultDBCluster, "namespace": paygNamespace,
+	})
+}
+
+type paygSettingOperation struct {
+	Op   string `yaml:"op"`
+	Path string `yaml:"path"`
+}
+
+// The starter carries these optional components even when the overlay does
+// not select them. Their settings affect neither the role nor its Secret.
+func paygStarterDBSettings(root, dir string) []paygSettingOperation {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return nil
+	}
+	switch filepath.ToSlash(rel) {
+	case "monitoring/grafana-pg/components/ledger-durability":
+		return []paygSettingOperation{
+			{"add", "/spec/postgresql/synchronous"},
+			{"add", "/spec/postgresql/parameters/synchronous_commit"},
+		}
+	case "monitoring/grafana-pg/components/logical-backups":
+		return []paygSettingOperation{
+			{"remove", disabledGrafanaBackupPath},
+			{"add", "/spec/postgresql/parameters/max_wal_size"},
+			{"replace", "/spec/postgresql/parameters/max_slot_wal_keep_size"},
+		}
+	case "components/platform-backup-ca":
+		return []paygSettingOperation{{"add", "/spec/backup/barmanObjectStore/endpointCA"}}
+	case "components/platform-state-on-managers":
+		return []paygSettingOperation{
+			{"add", "/spec/storage/storageClass"},
+			{"add", "/spec/affinity"},
+		}
+	default:
+		return nil
+	}
 }
 
 // findPAYGBaseCluster reads the CNPG Cluster the role is added to from the
@@ -351,7 +403,8 @@ func findPAYGBaseCluster(fleetRepo, dbCluster string) (paygManagedShape, error) 
 		}
 		base := filepath.Base(path)
 		if base == "kustomization.yaml" || base == "kustomization.yml" {
-			if err := paygKustomizationConflicts(filepath.Dir(path), body, []paygObject{cluster}); err != nil && conflict == nil {
+			dir := filepath.Dir(path)
+			if err := paygKustomizationConflicts(dir, body, []paygObject{cluster}, paygStarterDBSettings(root, dir)); err != nil && conflict == nil {
 				conflict = fmt.Errorf("%s: %w", path, err)
 			}
 			return nil
@@ -421,8 +474,8 @@ func findPAYGBaseCluster(fleetRepo, dbCluster string) (paygManagedShape, error) 
 // paygKustomizationConflicts refuses a kustomization with any patch or
 // replacement that might select one of objs — patches, patchesJson6902,
 // patchesStrategicMerge, replacements; inline or in a file. What the patch
-// does is not examined.
-func paygKustomizationConflicts(dir string, body []byte, objs []paygObject) error {
+// does is not examined unless it is a known starter database-settings patch.
+func paygKustomizationConflicts(dir string, body []byte, objs []paygObject, dbSettings []paygSettingOperation) error {
 	var k struct {
 		Patches               []map[string]any `yaml:"patches"`
 		PatchesJSON6902       []map[string]any `yaml:"patchesJson6902"`
@@ -437,6 +490,12 @@ func paygKustomizationConflicts(dir string, body []byte, objs []paygObject) erro
 		return string(b), err == nil
 	}
 	check := func(what string, target map[string]any, inline, file string) error {
+		if len(dbSettings) != 0 && file == "" && isPAYGDefaultDBTarget(target) {
+			var ops []paygSettingOperation
+			if yaml.Unmarshal([]byte(inline), &ops) == nil && reflect.DeepEqual(ops, dbSettings) {
+				return nil
+			}
+		}
 		content := inline
 		if file != "" {
 			c, ok := read(file)

@@ -147,11 +147,23 @@ func (o *InitOptions) ImageAccel() ImageAccelSpec {
 // WriteImageAccel scaffolds the per-cluster wiring for the image
 // acceleration stack. No-op when disabled.
 func WriteImageAccel(fleetRepo, clusterName string, spec ImageAccelSpec, out io.Writer) error {
+	_, err := writeImageAccel(fleetRepo, clusterName, spec, out)
+	return err
+}
+
+// registryDepotCredentialPath is the registry-depot push credential the
+// registry-depot overlay references (ensureRegistryDepotSecret mints it).
+const registryDepotCredentialPath = "platform/registry-depot/secret.enc.yaml"
+
+// writeImageAccel is WriteImageAccel that also reports whether it wired the
+// registry-depot overlay, which references registryDepotCredentialPath: the
+// bootstrap commit must then carry that credential (overlayCommitCheck).
+func writeImageAccel(fleetRepo, clusterName string, spec ImageAccelSpec, out io.Writer) (credentialWired bool, err error) {
 	if out == nil {
 		out = io.Discard
 	}
 	if !spec.Enabled {
-		return nil
+		return false, nil
 	}
 	clusterDir := filepath.Join(fleetRepo, "clusters", clusterName)
 
@@ -164,32 +176,33 @@ func WriteImageAccel(fleetRepo, clusterName string, spec ImageAccelSpec, out io.
 		fi, err := os.Stat(filepath.Join(fleetRepo, p.platform))
 		if err != nil {
 			if !os.IsNotExist(err) {
-				return fmt.Errorf("image-accel: stat %s: %w", p.platform, err)
+				return credentialWired, fmt.Errorf("image-accel: stat %s: %w", p.platform, err)
 			}
 			fmt.Fprintf(out, "[scaffold] image-accel: %s skipped (%s not in this starter)\n", p.name, p.platform)
 			continue
 		}
 		if !fi.IsDir() {
-			return fmt.Errorf("image-accel: %s exists but is not a directory", p.platform)
+			return credentialWired, fmt.Errorf("image-accel: %s exists but is not a directory", p.platform)
 		}
 		if p.needSecret {
 			if err := ensureRegistryDepotSecret(fleetRepo, out); err != nil {
-				return err
+				return credentialWired, err
 			}
 			// The registry HTTPRoute targets a dedicated Gateway listener.
 			// It is cluster-specific because the shared platform must stay
 			// healthy when registry-depot is disabled.
 			if err := ensureRegistryDepotListener(clusterDir, out); err != nil {
-				return err
+				return credentialWired, err
 			}
 		}
 		file := filepath.Join(clusterDir, p.name+".yaml")
+		credentialWired = credentialWired || p.needSecret
 		if err := os.WriteFile(file, []byte(p.yamlFn(clusterName)), 0o644); err != nil {
-			return fmt.Errorf("image-accel: write %s: %w", file, err)
+			return credentialWired, fmt.Errorf("image-accel: write %s: %w", file, err)
 		}
 		if err := patchFileLines(filepath.Join(clusterDir, "kustomization.yaml"),
 			patchKustomizationResource(p.name+".yaml")); err != nil {
-			return fmt.Errorf("image-accel: patch kustomization.yaml for %s: %w", p.name, err)
+			return credentialWired, fmt.Errorf("image-accel: patch kustomization.yaml for %s: %w", p.name, err)
 		}
 		wired = append(wired, p.name)
 	}
@@ -197,7 +210,7 @@ func WriteImageAccel(fleetRepo, clusterName string, spec ImageAccelSpec, out io.
 		fmt.Fprintf(out, "[scaffold] image-acceleration wired (%s; spegel is enabled by bootstrap install)\n",
 			joinComma(wired))
 	}
-	return nil
+	return credentialWired, nil
 }
 
 func joinComma(ss []string) string {
@@ -218,7 +231,7 @@ func joinComma(ss []string) string {
 // The plaintext never persists: on any encrypt failure the file is removed
 // and the scaffold fails.
 func ensureRegistryDepotSecret(fleetRepo string, out io.Writer) error {
-	secretPath := filepath.Join(fleetRepo, "platform", "registry-depot", "secret.enc.yaml")
+	secretPath := filepath.Join(fleetRepo, filepath.FromSlash(registryDepotCredentialPath))
 	if fi, err := os.Lstat(secretPath); err == nil {
 		if !fi.Mode().IsRegular() {
 			return fmt.Errorf("image-accel: %s exists but is not a regular file", secretPath)
@@ -293,8 +306,8 @@ func sopsEncryptToFile(fleetRepo, finalPath, plaintext string, mustNotLeak []str
 	// Serialize the whole sweep→write→encrypt→rename sequence per artifact:
 	// without the lock, one process's stale-temp sweep can delete ANOTHER
 	// process's live temp, and two completing runs race last-rename-wins
-	// (codex pass-5, HIGH). The lock lives in the OS temp dir, keyed by the
-	// absolute artifact path: flock is machine-local either way, and a lock
+	// (codex pass-5, HIGH). The lock lives in the user's cache dir, keyed by
+	// the absolute artifact path: flock is machine-local either way, and a lock
 	// file inside the overlay would end up committed by wholesale git adds.
 	release, err := lockFile(sopsLockPath(finalPath))
 	if err != nil {
@@ -340,7 +353,11 @@ func sopsEncryptToFile(fleetRepo, finalPath, plaintext string, mustNotLeak []str
 		return fmt.Errorf("close %s: %w", tmp, err)
 	}
 	cleanup := func() { _ = os.Remove(tmp) }
-	cmd := exec.Command("sops", "--encrypt", "--in-place", tmp)
+	// --filename-override: SOPS picks the creation rule (and so the
+	// recipients) by file name. The plaintext is in a temp file, which a rule
+	// written for the final path does not match; a broader fallback rule
+	// with other recipients would be used instead.
+	cmd := exec.Command("sops", "--encrypt", "--filename-override", finalPath, "--in-place", tmp)
 	cmd.Dir = fleetRepo
 	if outB, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
@@ -375,8 +392,46 @@ func sopsLockPath(finalPath string) string {
 	if err != nil {
 		abs = finalPath
 	}
-	sum := sha256.Sum256([]byte(abs))
-	return filepath.Join(os.TempDir(), fmt.Sprintf("kube-dc-sops-%x.lock", sum[:8]))
+	// Keyed by the artifact's path inside its repository, not its absolute
+	// path: a private checkout is at a new path on every run, and a key made
+	// from that would leave one more lock file behind each time.
+	key := abs
+	if out, err := cleanGit(filepath.Dir(abs), "rev-parse", "--show-toplevel").Output(); err == nil {
+		if rel, err := filepath.Rel(strings.TrimSpace(string(out)), abs); err == nil && !strings.HasPrefix(rel, "..") {
+			key = filepath.ToSlash(rel)
+		}
+	}
+	sum := sha256.Sum256([]byte(key))
+	return filepath.Join(sopsLockDir(finalPath), fmt.Sprintf("kube-dc-sops-%x.lock", sum[:8]))
+}
+
+// sopsLockDir is where the lock file of an artifact lives. It must never be a
+// place where the file shows up as an untracked file of a checkout, and the
+// temp directory or the cache directory can be exactly that (TMPDIR or
+// XDG_CACHE_HOME pointed into the fleet checkout). So, in order:
+//  1. the Git directory of the repository the artifact is in (its
+//     kube-dc-init/locks): Git never reports what is inside it;
+//  2. outside a repository (a scaffold prepared without Git): the user's
+//     cache directory, then the temp directory.
+func sopsLockDir(finalPath string) string {
+	if out, err := cleanGit(filepath.Dir(finalPath), "rev-parse", "--git-common-dir").Output(); err == nil {
+		common := strings.TrimSpace(string(out))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(filepath.Dir(finalPath), common)
+		}
+		// Inside a repository this is the only place: when it cannot be
+		// created, taking the lock fails and so does the write. Falling back
+		// to the cache or temp directory could put the file in the checkout.
+		locks := filepath.Join(common, "kube-dc-init-locks")
+		_ = os.MkdirAll(locks, 0o700)
+		return locks
+	}
+	if cache, err := os.UserCacheDir(); err == nil {
+		if locks := filepath.Join(cache, "kube-dc", "locks"); os.MkdirAll(locks, 0o700) == nil {
+			return locks
+		}
+	}
+	return os.TempDir()
 }
 
 // patchKustomizationResource returns a patchFileLines patch that appends

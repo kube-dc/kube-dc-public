@@ -39,6 +39,12 @@ type fakeGit struct {
 
 	resetCalls []string // SHAs passed to ResetHard
 	resetErr   error
+
+	// The private-checkout calls (isolated_fakes_test.go).
+	fleetDir   string // the fleet directory, as the parent tree of a commit check
+	iso        fakeIsolation
+	advanceErr error
+	discardErr error
 }
 
 func (g *fakeGit) Clone(_ context.Context, _, _, _ string) error { return nil }
@@ -150,7 +156,7 @@ configMapGenerator:
       - cluster-config.env
 `
 	encryptedSecrets := `stringData:
-    KEYCLOAK_ADMIN_PASSWORD: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
+    KEYCLOAK_ADMIN_PASSWORD: ENC[AES256_GCM,data:abc,iv:xyz,tag:tag,type:str]
 sops:
     mac: ENC[AES256_GCM,data:mac,iv:miv]
 `
@@ -177,6 +183,11 @@ sops:
 			// omitting it here let scaffold steps that edit it (addons)
 			// pass in tests while failing on a real overlay.
 			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
+				return err
+			}
+			// The real add-cluster.sh writes every file its kustomization
+			// lists; Apply refuses to publish an overlay that lacks one.
+			if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(genPlatformYAML), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)
@@ -378,11 +389,10 @@ func TestApply_HappyPath(t *testing.T) {
 	}
 }
 
-func TestApply_PushFailure_RollsBackToPreSHA(t *testing.T) {
-	// Critical: push fails → ResetHard MUST be called with the SHA
-	// captured BEFORE the commit attempt (memory contract: never
-	// HEAD~1). The fakeGit records ResetHard ref args; we assert
-	// the value matches the preSHA we seeded.
+func TestApply_PushFailure_LeavesFleetUntouched(t *testing.T) {
+	// Critical: the commit is made in the private checkout, so a failed
+	// push needs no rollback: the fleet directory is exactly as it was,
+	// and it is never reset or fast-forwarded.
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
 	pushErr := errors.New("simulated push failure: network unreachable")
@@ -402,13 +412,14 @@ func TestApply_PushFailure_RollsBackToPreSHA(t *testing.T) {
 	if !errors.Is(err, pushErr) {
 		t.Fatalf("expected wrap of push error, got %v", err)
 	}
-	// Exactly one ResetHard call, with the captured pre-commit SHA.
-	if len(git.resetCalls) != 1 {
-		t.Fatalf("expected 1 ResetHard call, got %d: %v", len(git.resetCalls), git.resetCalls)
+	if len(git.resetCalls) != 0 || len(git.iso.advanced) != 0 {
+		t.Fatalf("a failed push must neither reset nor fast-forward the fleet: reset=%v advanced=%v", git.resetCalls, git.iso.advanced)
 	}
-	if git.resetCalls[0] != "PRECOMMIT-SHA-WE-CAPTURED" {
-		t.Fatalf("ResetHard called with %q, want PRECOMMIT-SHA-WE-CAPTURED (never HEAD~1)",
-			git.resetCalls[0])
+	if _, serr := os.Stat(filepath.Join(repo, "clusters", "east1")); !os.IsNotExist(serr) {
+		t.Fatalf("the fleet directory was written to before the push succeeded: %v", serr)
+	}
+	if _, serr := os.Stat(git.iso.work); !os.IsNotExist(serr) {
+		t.Fatalf("the private checkout was not discarded: %v", serr)
 	}
 	// flux-install must NOT run after push failure.
 	for _, c := range runner.calls {
@@ -416,36 +427,34 @@ func TestApply_PushFailure_RollsBackToPreSHA(t *testing.T) {
 			t.Errorf("flux-install ran despite push failure: %v", c)
 		}
 	}
-	// Operator-facing log mentions rollback.
-	if !strings.Contains(out.String(), "rolling back") {
-		t.Errorf("output should mention rollback:\n%s", out.String())
+	if !strings.Contains(err.Error(), "nothing was changed") {
+		t.Errorf("the error should say the checkout is unchanged: %v", err)
 	}
 }
 
-func TestApply_PushAndRollbackBothFail_Wraps(t *testing.T) {
-	// Defensive: when push fails AND rollback fails, both errors
-	// must surface so the operator knows manual recovery is needed.
+func TestApply_PushedButNotFastForwarded(t *testing.T) {
+	// The push succeeded, but the fleet checkout could not be
+	// fast-forwarded (a local change overlaps): the error says the commit
+	// is on the remote and that the checkout was left alone, and
+	// flux-install does not run against a checkout without the overlay.
 	repo := applyFleet(t)
 	runner := applyRunner(t, repo)
-	pushErr := errors.New("push failed")
-	resetErr := errors.New("reset failed too")
-	git := &fakeGit{
-		preSHA:    "pre",
-		commitSHA: "post",
-		pushErr:   pushErr,
-		resetErr:  resetErr,
+	advanceErr := errors.New("local changes overlap the new commit")
+	git := &fakeGit{preSHA: "pre", commitSHA: "post", advanceErr: advanceErr}
+	err := Apply(context.Background(), east1ApplyOpts(t, repo, runner, git))
+	if !errors.Is(err, ErrCheckoutNotAdvanced) || !strings.Contains(err.Error(), advanceErr.Error()) {
+		t.Fatalf("want ErrCheckoutNotAdvanced naming the cause, got %v", err)
 	}
-	opts := east1ApplyOpts(t, repo, runner, git)
-	err := Apply(context.Background(), opts)
-	if err == nil {
-		t.Fatal("expected error")
+	if !git.pushed {
+		t.Fatal("the commit should have been pushed first")
 	}
-	if !strings.Contains(err.Error(), "manual recovery needed") {
-		t.Errorf("error should signal manual-recovery: %v", err)
+	for _, c := range runner.calls {
+		if c.Kind == ports.ScriptFluxInstall {
+			t.Errorf("flux-install ran against a checkout without the overlay: %v", c)
+		}
 	}
-	// Both push and rollback errors should appear in the message.
-	if !strings.Contains(err.Error(), "push failed") || !strings.Contains(err.Error(), "reset failed too") {
-		t.Errorf("error should mention both failures: %v", err)
+	if _, serr := os.Stat(filepath.Join(repo, "clusters", "east1")); !os.IsNotExist(serr) {
+		t.Fatalf("the fleet directory was written to: %v", serr)
 	}
 }
 
@@ -535,7 +544,7 @@ configMapGenerator:
       - cluster-config.env
 `
 	encryptedSecrets := `stringData:
-    K: ENC[AES256_GCM,data:abc,iv:xyz,type:str]
+    K: ENC[AES256_GCM,data:abc,iv:xyz,tag:tag,type:str]
 sops:
     mac: ENC[AES256_GCM,data:mac,iv:miv]
 `
@@ -562,6 +571,9 @@ sops:
 			// omitting it here let scaffold steps that edit it (addons)
 			// pass in tests while failing on a real overlay.
 			if err := os.WriteFile(filepath.Join(clusterDir, "kustomization.yaml"), []byte(rootKustomization), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile(filepath.Join(clusterDir, "platform.yaml"), []byte(genPlatformYAML), 0o644); err != nil {
 				return err
 			}
 			return os.WriteFile(filepath.Join(clusterDir, "secrets.enc.yaml"), []byte(encryptedSecrets), 0o644)
@@ -658,8 +670,11 @@ stringData:
 		}
 		t.Fatalf("partial scaffold survived cleanup at %s: %v (stat err=%v)", clusterDir, names, err)
 	}
-	if !strings.Contains(out.String(), "cleaned up partial scaffold") {
-		t.Errorf("output should mention cleanup:\n%s", out.String())
+	if !strings.Contains(out.String(), "nothing was written to "+repo) {
+		t.Errorf("output should say the fleet was not written to:\n%s", out.String())
+	}
+	if _, serr := os.Stat(git.iso.work); !os.IsNotExist(serr) {
+		t.Errorf("the private checkout (it may hold a plaintext secret) was not discarded: %v", serr)
 	}
 	// Commit/push must NOT have run.
 	if git.commitCall != 0 {
@@ -751,6 +766,7 @@ func TestApply_Resume_PushesThenFluxInstall(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	completeResumeOverlay(t, overlay)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
 
@@ -791,6 +807,7 @@ func TestApply_Resume_PushFailure_BlocksFluxInstall(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	completeResumeOverlay(t, overlay)
 	runner := applyRunner(t, repo)
 	pushErr := errors.New("simulated resume push failure")
 	git := &fakeGit{preSHA: "abc123", pushErr: pushErr}
@@ -818,6 +835,7 @@ func TestApply_Resume_RefusesPAYGOnNonPAYGOverlay(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(overlay, "cluster-config.env"), []byte("CLUSTER_NAME=east1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	completeResumeOverlay(t, overlay)
 	runner := applyRunner(t, repo)
 	git := &fakeGit{preSHA: "abc123", commitSHA: "def456"}
 	opts := east1ApplyOpts(t, repo, runner, git)
@@ -953,9 +971,9 @@ func TestApply_Resume_RefusesCopiedPAYGIdentity(t *testing.T) {
 }
 
 // A fresh scaffold that fails after Scaffold (here: a site component naming
-// a layer the overlay lacks) is rolled back, so the plain re-run does not
-// trip the clean-tree gate on this run's own files.
-func TestApply_SiteComponentFailure_RollsBackFreshScaffold(t *testing.T) {
+// a layer the overlay lacks) leaves nothing in the fleet, so the plain re-run
+// does not trip the clean-tree gate on this run's own files.
+func TestApply_SiteComponentFailure_LeavesFleetUntouched(t *testing.T) {
 	repo := applyFleet(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
@@ -969,13 +987,31 @@ func TestApply_SiteComponentFailure_RollsBackFreshScaffold(t *testing.T) {
 	if err := Apply(context.Background(), opts); err == nil {
 		t.Fatal("expected the site component to fail")
 	}
-	if len(git.resetCalls) != 1 || git.resetCalls[0] != "PRE" {
-		t.Fatalf("ResetHard calls = %v, want [PRE]", git.resetCalls)
+	if len(git.resetCalls) != 0 {
+		t.Fatalf("ResetHard calls = %v, want none", git.resetCalls)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "clusters", "east1", "kustomization.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(repo, "clusters", "east1")); !os.IsNotExist(err) {
 		t.Fatalf("the uncommitted overlay was left behind: %v", err)
 	}
 	if git.commitCall != 0 {
 		t.Fatal("a failed scaffold was committed")
+	}
+}
+
+// completeResumeOverlay adds the files every committed overlay has besides
+// cluster-config.env (Apply refuses to publish an overlay without them).
+func completeResumeOverlay(t *testing.T, overlay string) {
+	t.Helper()
+	for name, body := range map[string]string{
+		"kustomization.yaml": "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - flux-system\n  - secrets.enc.yaml\n",
+		"secrets.enc.yaml":   "stringData:\n    k: ENC[AES256_GCM,data:x,iv:y,tag:z,type:str]\nsops:\n    mac: ENC[AES256_GCM,data:mac,iv:miv]\n",
+	} {
+		p := filepath.Join(overlay, name)
+		if _, err := os.Stat(p); err == nil {
+			continue
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -122,6 +122,10 @@ type Runner struct {
 	kubeDCRepo       string // optional; required only for ScriptRoot=RootKubeDC entries
 	cb               ports.SentinelCallback
 	pinnedKubeconfig string
+	// fallbackKubeconfig is given to a script as KUBECONFIG only when
+	// nothing else names one: not the caller, not the operator's shell.
+	// See WithFallbackKubeconfig.
+	fallbackKubeconfig string
 
 	// cmdFactory builds the *exec.Cmd to invoke. Production builds it
 	// from the script path resolved via scriptPaths; tests override
@@ -159,6 +163,20 @@ func (r *Runner) WithSentinelCallback(cb ports.SentinelCallback) ports.ScriptRun
 	return &cp
 }
 
+// WithFleetRepo returns a copy of r that resolves and runs the fleet scripts
+// in another copy of the fleet repository: the private checkout `init`
+// generates in (ports.FleetScriptRunner).
+func (r *Runner) WithFleetRepo(dir string) ports.ScriptRunner {
+	cp := *r
+	cp.fleetRepo = dir
+	// The default factory is bound to its receiver: rebind it, or the copy
+	// would still run the scripts of the original repository.
+	cp.cmdFactory = cp.defaultCmdFactory
+	return &cp
+}
+
+var _ ports.FleetScriptRunner = (*Runner)(nil)
+
 // WithPinnedKubeconfig binds every script in a verified child session to its
 // private kubeconfig. A conflicting environment value or add-cluster argument
 // is rejected before a subprocess starts.
@@ -168,8 +186,32 @@ func (r *Runner) WithPinnedKubeconfig(path string) *Runner {
 	return &cp
 }
 
+// WithFallbackKubeconfig names the kubeconfig a script gets when neither the
+// caller nor the operator's shell sets KUBECONFIG. It is for a caller that has
+// already settled which cluster it works on (its own API client is built on
+// this file): without it, a script that requires KUBECONFIG is refused in a
+// shell that relies on the default kubeconfig, although the CLI itself is
+// working through that very file. It decides nothing when a KUBECONFIG is
+// given, and unlike WithPinnedKubeconfig it refuses nothing and adds no
+// argument.
+func (r *Runner) WithFallbackKubeconfig(path string) *Runner {
+	cp := *r
+	cp.fallbackKubeconfig = path
+	return &cp
+}
+
 // Run implements ports.ScriptRunner.Run.
 func (r *Runner) Run(ctx context.Context, name ports.ScriptKind, env map[string]string, args ...string) (<-chan ports.Line, error) {
+	if r.pinnedKubeconfig == "" && r.fallbackKubeconfig != "" {
+		if _, given := env["KUBECONFIG"]; !given && lookupEnv("KUBECONFIG") == "" {
+			envCopy := make(map[string]string, len(env)+1)
+			for key, value := range env {
+				envCopy[key] = value
+			}
+			envCopy["KUBECONFIG"] = r.fallbackKubeconfig
+			env = envCopy
+		}
+	}
 	if r.pinnedKubeconfig != "" {
 		if supplied := env["KUBECONFIG"]; supplied != "" && supplied != r.pinnedKubeconfig {
 			return nil, fmt.Errorf("script %s: kubeconfig differs from the verified child session", name)

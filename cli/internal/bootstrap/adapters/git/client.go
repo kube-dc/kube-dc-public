@@ -119,7 +119,7 @@ func (c *Client) Pull(ctx context.Context, dir, token string) error {
 	if err := c.checkProviderDestination(ctx, dir); err != nil {
 		return err
 	}
-	repo, err := gogit.PlainOpen(dir)
+	repo, err := openRepo(dir)
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
 	}
@@ -142,31 +142,54 @@ func (c *Client) Pull(ctx context.Context, dir, token string) error {
 	return nil
 }
 
-func (c *Client) Diff(_ context.Context, dir string) (ports.Diff, error) {
-	repo, err := gogit.PlainOpen(dir)
-	if err != nil {
-		return ports.Diff{}, fmt.Errorf("git: open %s: %w", dir, err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return ports.Diff{}, fmt.Errorf("git: worktree %s: %w", dir, err)
-	}
-	status, err := wt.Status()
+func (c *Client) Diff(ctx context.Context, dir string) (ports.Diff, error) {
+	// The git binary, not go-git's Worktree.Status: for a submodule that is
+	// configured but not cloned, go-git initialises its repository and
+	// leaves <submodule>/.git in the worktree. A status check must not write
+	// to the checkout (--no-optional-locks: not even an index refresh).
+	out, err := runGitRaw(ctx, dir, nil, nil, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {
 		return ports.Diff{}, fmt.Errorf("git: status %s: %w", dir, err)
 	}
-	var out ports.Diff
-	for path, st := range status {
-		out.Files = append(out.Files, ports.FileDiff{
-			Path:   path,
-			Status: statusCode(st.Worktree, st.Staging),
-		})
+	var diff ports.Diff
+	entries := strings.Split(out, "\x00")
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
+		if len(entry) < 4 {
+			continue
+		}
+		x, y, path := entry[0], entry[1], entry[3:]
+		if x == 'R' || x == 'C' || y == 'R' || y == 'C' {
+			i++ // the next field is the path it was renamed or copied from
+		}
+		diff.Files = append(diff.Files, ports.FileDiff{Path: path, Status: porcelainStatus(x, y)})
 	}
-	return out, nil
+	return diff, nil
+}
+
+// porcelainStatus maps `git status --porcelain` XY into the port's one code.
+// Priority, as before: untracked > worktree change > staged change.
+func porcelainStatus(x, y byte) string {
+	if x == '?' {
+		return "??"
+	}
+	for _, c := range []byte{y, x} {
+		switch c {
+		case 'D':
+			return "D"
+		case 'M', 'T', 'U':
+			return "M"
+		case 'R', 'C':
+			return "R"
+		case 'A':
+			return "A"
+		}
+	}
+	return "?"
 }
 
 func (c *Client) Head(_ context.Context, dir string) (string, error) {
-	repo, err := gogit.PlainOpen(dir)
+	repo, err := openRepo(dir)
 	if err != nil {
 		return "", fmt.Errorf("git: open %s: %w", dir, err)
 	}
@@ -200,38 +223,90 @@ func (c *Client) Push(ctx context.Context, dir, token string) error {
 	if err := c.checkProviderDestination(ctx, dir); err != nil {
 		return err
 	}
-	repo, err := gogit.PlainOpen(dir)
+	return c.push(ctx, dir, token, "", "")
+}
+
+// push pushes src to the remote branch dst. Empty src and dst push HEAD's
+// branch to itself; a commit ID as src pushes exactly that commit to dst,
+// whatever HEAD names.
+func (c *Client) push(ctx context.Context, dir, token, src string, dst plumbing.ReferenceName) error {
+	repo, err := openRepo(dir)
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
 	}
-	head, err := repo.Head()
-	if err != nil {
-		return fmt.Errorf("git: head %s: %w", dir, err)
-	}
-	if !head.Name().IsBranch() {
-		return fmt.Errorf("git: cannot push detached HEAD in %s", dir)
+	ref := dst
+	if ref == "" {
+		head, err := repo.Head()
+		if err != nil {
+			return fmt.Errorf("git: head %s: %w", dir, err)
+		}
+		if !head.Name().IsBranch() {
+			return fmt.Errorf("git: cannot push detached HEAD in %s", dir)
+		}
+		ref = head.Name() // refs/heads/<branch>
 	}
 	// Explicit refspec for the current branch so the push does NOT depend
 	// on branch upstream tracking being configured. A freshly `git init`'d
 	// fleet whose origin was added but never `--set-upstream` otherwise
 	// fails with an empty, unhelpful go-git error — the resume path hit
 	// exactly that (e2e r6).
-	ref := head.Name() // refs/heads/<branch>
-	spec := config.RefSpec(fmt.Sprintf("%s:%s", ref, ref))
+	if src == "" {
+		src = ref.String()
+	}
 	// Push auth MUST come from the push URL, not the fetch URL.
 	pushURL, auth, err := c.requestForDirection(repo, dirPush, token)
 	if err != nil {
 		return err
 	}
-	if pushErr := repo.PushContext(ctx, &gogit.PushOptions{
+	return c.pushTo(ctx, dir, repo, pushURL, auth, src, ref)
+}
+
+// pushTo pushes src to the branch ref at an already resolved destination.
+func (c *Client) pushTo(ctx context.Context, dir string, repo *gogit.Repository, pushURL string, auth transport.AuthMethod, src string, ref plumbing.ReferenceName) error {
+	spec := config.RefSpec(fmt.Sprintf("%s:%s", src, ref))
+	pushErr := repo.PushContext(ctx, &gogit.PushOptions{
 		RemoteURL: pushURL,
 		RefSpecs:  []config.RefSpec{spec},
 		Auth:      auth,
 		Progress:  io.Discard,
-	}); pushErr != nil && pushErr != gogit.NoErrAlreadyUpToDate {
-		return fmt.Errorf("git: push %s (%s): %w", dir, ref.Short(), pushErr)
+	})
+	if pushErr == gogit.NoErrAlreadyUpToDate {
+		pushErr = nil
 	}
-	return nil
+	if validSHA(src) != nil {
+		if pushErr != nil {
+			return fmt.Errorf("git: push %s (%s): %w", dir, ref.Short(), pushErr)
+		}
+		return nil
+	}
+	// A push of a named commit is judged by the remote, not by go-git's
+	// return value, which is wrong both ways: it reports an error when the
+	// server accepted the push but a local tracking ref could not be written
+	// afterwards, and it reports "already up to date" without sending
+	// anything when it cannot find the commit itself (objects reached only
+	// through alternates, as in a `git clone --shared`).
+	verify := gogit.NewRemote(repo.Storer, &config.RemoteConfig{Name: "kube-dc-verify", URLs: []string{pushURL}})
+	// Its own, bounded context: the push's may be the very thing that was
+	// cancelled after the server accepted it.
+	verifyCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	refs, lerr := verify.ListContext(verifyCtx, &gogit.ListOptions{Auth: auth})
+	if lerr == nil {
+		for _, r := range refs {
+			if r.Name() == ref && r.Hash().String() == src {
+				return nil
+			}
+		}
+	}
+	switch {
+	case pushErr != nil:
+		return fmt.Errorf("git: push %s (%s): %w", dir, ref.Short(), pushErr)
+	case lerr != nil:
+		// The listing error is not quoted: a transport error names the request
+		// URL, and a URL can carry a credential.
+		return fmt.Errorf("%w: push of %s to %s from %s reported no error, but the remote could not be asked afterwards whether it has that commit (the request to list its branches failed)", ports.ErrPushUnconfirmed, src, ref.Short(), dir)
+	}
+	return fmt.Errorf("git: push %s (%s): the push reported no error, but %s on the remote is not at %s; nothing was published", dir, ref.Short(), ref.Short(), src)
 }
 
 // Commit is CommitAndPush minus the push step (see ports/git.go).
@@ -268,7 +343,7 @@ func (c *Client) Commit(_ context.Context, dir, msg string) (string, error) {
 // (the agent-rule "stage only what you want" contract is enforced by
 // the caller's clean-tree pre-check, not here).
 func (c *Client) commitLocal(dir, msg string) (string, error) {
-	repo, err := gogit.PlainOpen(dir)
+	repo, err := openRepo(dir)
 	if err != nil {
 		return "", fmt.Errorf("git: open %s: %w", dir, err)
 	}
@@ -293,7 +368,7 @@ func (c *Client) commitLocal(dir, msg string) (string, error) {
 }
 
 func (c *Client) ResetHard(_ context.Context, dir, ref string) error {
-	repo, err := gogit.PlainOpen(dir)
+	repo, err := openRepo(dir)
 	if err != nil {
 		return fmt.Errorf("git: open %s: %w", dir, err)
 	}
@@ -598,36 +673,6 @@ func remoteURLsOf(repo *gogit.Repository, name string) (fetchURL, pushURL string
 	return urls[0], urls[len(urls)-1]
 }
 
-// statusCode maps go-git's (worktree, staging) status codes into the
-// `git status --porcelain` two-letter shorthand the port contract
-// describes.
-func statusCode(wt, staging gogit.StatusCode) string {
-	// Priority: untracked > worktree change > staged change.
-	switch wt {
-	case gogit.Untracked:
-		return "??"
-	case gogit.Deleted:
-		return "D"
-	case gogit.Modified:
-		return "M"
-	case gogit.Renamed:
-		return "R"
-	case gogit.Added:
-		return "A"
-	}
-	switch staging {
-	case gogit.Modified:
-		return "M"
-	case gogit.Added:
-		return "A"
-	case gogit.Deleted:
-		return "D"
-	case gogit.Renamed:
-		return "R"
-	}
-	return "?"
-}
-
 // existsAndPopulated returns true when dir exists and contains at
 // least one entry. Empty dir or missing dir → false.
 func existsAndPopulated(dir string) bool {
@@ -661,4 +706,12 @@ func assertAncestorOfHEAD(repo *gogit.Repository, target plumbing.Hash) error {
 		}
 	}
 	return fmt.Errorf("ref is not an ancestor of HEAD")
+}
+
+// openRepo opens the repository of the checkout at dir. A linked worktree
+// keeps HEAD and its index in its own Git directory, and branches and objects
+// in the common one: without EnableDotGitCommonDir go-git cannot resolve its
+// branch.
+func openRepo(dir string) (*gogit.Repository, error) {
+	return gogit.PlainOpenWithOptions(dir, &gogit.PlainOpenOptions{EnableDotGitCommonDir: true})
 }

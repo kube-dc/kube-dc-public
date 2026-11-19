@@ -77,6 +77,31 @@ func runPostApplyWithRuntime(ctx context.Context, out io.Writer, o *clusterinit.
 		}
 	} else {
 		session, err = bootstrap.NewSession(bootstrap.Options{FleetRepoPath: o.Repo, Kubeconfig: kubeconfig})
+		// The finalize scripts (OpenBao init, the Keycloak ceremony) require
+		// KUBECONFIG. In a shell that relies on the default kubeconfig there
+		// is none, and both steps were deferred on an installation that was
+		// otherwise complete. They get a private snapshot of the file this
+		// session is built on, taken now: finalize waits for minutes, and a
+		// context switched in the default kubeconfig meanwhile (another
+		// shell) must not send the scripts to another cluster than the one
+		// this session's own clients are bound to.
+		if err == nil && os.Getenv("KUBECONFIG") == "" {
+			snapshot, discard, snapErr := snapshotKubeconfigForScripts(kubeconfig)
+			if snapErr != nil {
+				// No private copy can be made (a read-only home, for one):
+				// the scripts get the file itself, which is what kubectl
+				// reads without KUBECONFIG anyway. KNOWN LIMIT: in this case,
+				// as in every run with KUBECONFIG exported, a context
+				// switched in that file while finalize waits is followed by
+				// the scripts. The alternative is to refuse the scripts and
+				// leave the installation unfinished.
+				fmt.Fprintf(out, "[finalize] no private kubeconfig snapshot for the scripts (%v); they use %s as it is when they run\n", snapErr, kubeconfig)
+				session.UseKubeconfigForScripts(kubeconfig)
+			} else {
+				defer discard()
+				session.UseKubeconfigForScripts(snapshot)
+			}
+		}
 	}
 	if err != nil {
 		reason := fmt.Sprintf("build session on %s failed: %v", kubeconfig, err)

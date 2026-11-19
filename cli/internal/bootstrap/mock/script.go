@@ -46,6 +46,13 @@ func (r *ScriptRunner) WithSentinelCallback(cb ports.SentinelCallback) ports.Scr
 	return &cp
 }
 
+// WithFleetRepo satisfies ports.FleetScriptRunner: the mock replays fixture
+// output and writes no files, so it is the same runner for any copy of the
+// fleet repository.
+func (r *ScriptRunner) WithFleetRepo(string) ports.ScriptRunner { return r }
+
+var _ ports.FleetScriptRunner = (*ScriptRunner)(nil)
+
 // Run streams the configured fixture for `name`. Returns ErrUnknownScript
 // when the scenario doesn't have a fixture for the requested ScriptKind
 // (mock parity with the real adapter, which validates against the

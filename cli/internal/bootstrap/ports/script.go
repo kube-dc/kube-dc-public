@@ -56,6 +56,12 @@ type ScriptRunner interface {
 	WithSentinelCallback(cb SentinelCallback) ScriptRunner
 }
 
+// FleetScriptRunner is implemented by runners that can run the fleet scripts
+// from another copy of the fleet repository (a private checkout of it).
+type FleetScriptRunner interface {
+	WithFleetRepo(dir string) ScriptRunner
+}
+
 // ScriptKind enumerates the fleet-repo scripts the runner knows how to
 // invoke. The registry (M3-T03) maps each Kind to:
 //   - the script's relative path inside the fleet repo

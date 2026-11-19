@@ -732,6 +732,79 @@ before it changes anything. macOS ships Bash 3.2 as `/bin/bash`: install
 Bash with Homebrew (`brew install bash`) and keep Homebrew's `bin` directory
 before `/bin` in `PATH`.
 
+### 3.1.1 Git provider token
+
+Unless you run with `--no-push`, `bootstrap init` needs a token for the Git host
+that holds the Fleet repository. It is used for:
+
+- the push of the generated overlay, when the repository's push URL is HTTPS;
+- `flux bootstrap`, which stores the token in the cluster (Secret `flux-system`
+  in namespace `flux-system`), where Flux uses it to read the repository over
+  HTTPS;
+- when the push URL is SSH: one read of the project through the provider's API,
+  to confirm that the SSH address is the address of the project Flux is
+  installed for;
+- with `--fleet-mode=new-repo` (and no `--no-create-repo`): creating the
+  repository, which also needs the right to create a project in that owner or
+  group.
+
+| Provider | Scopes | Where the CLI looks, in order |
+| --- | --- | --- |
+| GitHub (`github.com`) | `repo`, `workflow` | `--github-token`, then `GITHUB_TOKEN`, then `GH_TOKEN`, then `gh auth token` |
+| GitHub Enterprise host | `repo`, `workflow` | `--github-token`, then what `gh` stored for that host |
+| GitLab (`--provider gitlab`) | `api`, `write_repository` | `--github-token`, then `GITLAB_TOKEN`, then what `glab` stored for that host |
+
+`--github-token` carries the token for either provider. A token in the
+environment wins over a `gh` or `glab` login, so unset a stale one. Without
+`--provider`, for a host other than `github.com`, the environment is not read:
+only the flag and the credential `glab` or `gh` stored for that host are used.
+The token is never logged and never written by `--save-config`.
+
+**GitLab.** Create a personal access token under *Preferences → Access tokens*
+(`https://<host>/-/user_settings/personal_access_tokens`) with the scopes `api`
+and `write_repository`. The user needs a role on the project that may push to
+the branch Flux reads; for a protected branch that is usually Maintainer. A
+group or project access token works the same way if it has these scopes, a
+role that may push to that branch, and can read both the group and the project
+through the API, because `flux bootstrap gitlab` reads both.
+
+GitLab 18.10 and later also offer *fine-grained* tokens, and call the token
+with scopes a *legacy* token (**Generate token → Legacy token**). A
+fine-grained token needs access to the group that owns the repository and
+these permissions: **Repository → Code: Download and Push** and
+**Projects → Project: Read**. **Groups → Group: Read** is optional with the
+0.9.25 starter and later: when the token may not read the group, the install
+script sets Flux up over plain Git instead of `flux bootstrap gitlab`, with
+the same result for an existing repository (the same `GitRepository` and the
+same `flux-system` Secret). Earlier starters stop with a 403 or 404 from the
+group API.
+
+```bash
+# Check that the token can read the project: it must print the project path.
+# Write the path with every "/" as %2F (parent%2Fsubgroup%2Ffleet).
+curl -sS -H "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://<host>/api/v4/projects/<group>%2F<repository>" | jq -r .path_with_namespace
+
+export GITLAB_TOKEN        # for this shell only; do not write it to a tracked file
+kube-dc bootstrap init --provider gitlab --provider-host <host> ...
+```
+
+Give the owner as a group (nested groups are written `parent/subgroup`). The
+cluster nodes must reach the host over HTTPS (port 443, or the port given in
+`--provider-host`) and trust its certificate.
+
+**The token expires.** GitLab access tokens have an expiry date. When the token
+in the cluster expires, Flux stops reading the repository and reports an
+authentication error on `GitRepository/flux-system`; the platform keeps running
+but receives no changes. Note the date, and replace the token before it:
+
+```bash
+flux create secret git flux-system --namespace flux-system \
+  --url="https://<host>/<group>/<repository>.git" \
+  --username=git --password="$GITLAB_TOKEN"
+flux reconcile source git flux-system
+```
+
 ### 3.2 Configure wildcard DNS (required before init)
 
 Point a **wildcard A record** at the public IP of `master-1`. `init`

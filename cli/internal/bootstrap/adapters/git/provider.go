@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/shalb/kube-dc/cli/internal/bootstrap/ports"
 )
@@ -91,7 +90,7 @@ func (c *Client) inspectProviderDestination(ctx context.Context, directory strin
 	if err != nil || resolved != c.providerDirectory {
 		return nil, fmt.Errorf("Git client belongs to another reviewed checkout")
 	}
-	repo, err := gogit.PlainOpen(directory)
+	repo, err := openRepo(directory)
 	if err != nil {
 		return nil, fmt.Errorf("cannot inspect reviewed Git checkout")
 	}

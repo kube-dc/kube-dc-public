@@ -20,7 +20,7 @@ func fakeSops(t *testing.T) {
 	dir := t.TempDir()
 	script := `#!/bin/sh
 # fake sops: --encrypt --in-place <file>
-f="$3"
+for f in "$@"; do :; done # the file is the last argument
 [ -n "$f" ] || exit 2
 printf 'data: ENC[AES256_GCM,data:fake]\nsops:\n    age: []\n    lastmodified: "2026-01-01T00:00:00Z"\n' > "$f"
 `
@@ -239,7 +239,7 @@ func TestWriteWildcardTLS_LateTargetFailureIsAllOrNothing(t *testing.T) {
 func TestSopsEncryptToFile_RejectsLeakyOutput(t *testing.T) {
 	dir := t.TempDir()
 	script := `#!/bin/sh
-f="$3"
+for f in "$@"; do :; done # the file is the last argument
 printf 'data: SECRETVALUE\nsops:\n    age: []\n' > "$f"
 `
 	if err := os.WriteFile(filepath.Join(dir, "sops"), []byte(script), 0o755); err != nil {

@@ -797,3 +797,80 @@ func TestRun_CancelEscalatesToSIGKILLWhenSIGTERMIsIgnored(t *testing.T) {
 			"supervise never reached cmd.Wait — exactly the deadlock the escalation exists to break")
 	}
 }
+
+// A script that requires KUBECONFIG, run from a shell that sets none: the
+// fallback kubeconfig is what it gets. Anything that names a kubeconfig wins
+// over the fallback, and without a fallback the call is refused as before.
+func TestFallbackKubeconfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "bootstrap"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\nprintf '%s' \"$KUBECONFIG\" > \"$KUBE_DC_TEST_OUTPUT\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap", "flux-install.sh"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func(t *testing.T, r *Runner, env map[string]string) (string, error) {
+		t.Helper()
+		output := filepath.Join(t.TempDir(), "seen")
+		merged := map[string]string{"KUBE_DC_TEST_OUTPUT": output}
+		for k, v := range env {
+			merged[k] = v
+		}
+		lines, err := r.Run(context.Background(), ports.ScriptFluxInstall, merged, "test")
+		if err != nil {
+			return "", err
+		}
+		for range lines {
+		}
+		got, _ := os.ReadFile(output)
+		return string(got), nil
+	}
+	fallback := filepath.Join(dir, "session.yaml")
+
+	t.Run("nothing names a kubeconfig", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "")
+		if _, err := run(t, New(dir, "", nil), nil); !errors.Is(err, ports.ErrMissingRequiredEnv) {
+			t.Fatalf("without a fallback the call must be refused, got %v", err)
+		}
+		got, err := run(t, New(dir, "", nil).WithFallbackKubeconfig(fallback), nil)
+		if err != nil || got != fallback {
+			t.Fatalf("the script got %q (%v), want the fallback", got, err)
+		}
+	})
+	t.Run("the fleet-repo copy keeps it", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "")
+		rebound := New(dir, "", nil).WithFallbackKubeconfig(fallback).WithFleetRepo(dir).(*Runner)
+		if got, err := run(t, rebound, nil); err != nil || got != fallback {
+			t.Fatalf("after WithFleetRepo the script got %q (%v)", got, err)
+		}
+	})
+	t.Run("the shell's KUBECONFIG wins", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "/operator/choice.yaml")
+		if got, err := run(t, New(dir, "", nil).WithFallbackKubeconfig(fallback), nil); err != nil || got != "/operator/choice.yaml" {
+			t.Fatalf("the script got %q (%v), want the operator's KUBECONFIG", got, err)
+		}
+	})
+	t.Run("the caller's KUBECONFIG wins", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "")
+		got, err := run(t, New(dir, "", nil).WithFallbackKubeconfig(fallback), map[string]string{"KUBECONFIG": "/caller/verified.yaml"})
+		if err != nil || got != "/caller/verified.yaml" {
+			t.Fatalf("the script got %q (%v), want the caller's", got, err)
+		}
+	})
+	t.Run("an explicitly empty KUBECONFIG from the caller is still refused", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "")
+		_, err := run(t, New(dir, "", nil).WithFallbackKubeconfig(fallback), map[string]string{"KUBECONFIG": ""})
+		if !errors.Is(err, ports.ErrMissingRequiredEnv) {
+			t.Fatalf("want a refusal, got %v", err)
+		}
+	})
+	t.Run("a pinned runner ignores the fallback", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "")
+		pinned := filepath.Join(dir, "child.yaml")
+		got, err := run(t, New(dir, "", nil).WithPinnedKubeconfig(pinned).WithFallbackKubeconfig(fallback), nil)
+		if err != nil || got != pinned {
+			t.Fatalf("the script got %q (%v), want the pinned kubeconfig", got, err)
+		}
+	})
+}

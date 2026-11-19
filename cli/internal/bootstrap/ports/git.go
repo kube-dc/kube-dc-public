@@ -1,6 +1,153 @@
 package ports
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// TreeFileReader returns the content of a regular file at path in one Git tree
+// object and whether the tree has it. Trees are content-addressed, so the bytes
+// are exactly what any commit recording that tree contains.
+type TreeFileReader func(path string) (data []byte, present bool, err error)
+
+// CommitTrees are the two trees a commit check decides on.
+type CommitTrees struct {
+	// Parent is the tree of the commit's parent.
+	Parent TreeFileReader
+	// Candidate is the tree the new commit records.
+	Candidate TreeFileReader
+}
+
+// Checkout is a checkout's branch and commit, read together.
+type Checkout struct {
+	// Branch is the full ref HEAD names (refs/heads/<name>); "" when detached.
+	Branch string
+	// SHA is the commit HEAD resolves to.
+	SHA string
+}
+
+// RunTempDir is the scratch directory that belongs to the private checkout
+// work: created and removed with it, and outside every checkout. Subprocesses
+// of the run get it as TMPDIR, so what a killed one leaves behind is removed
+// with the run (or by the next run) and never lands in the operator's
+// checkout, wherever the operator's own TMPDIR points.
+func RunTempDir(work string) string { return work + ".tmp" }
+
+// ErrNothingToCommit is returned by CommitIsolated when the private checkout
+// holds no change against the parent commit.
+var ErrNothingToCommit = errors.New("git: nothing to commit")
+
+// ErrNotRegularFile is returned by a TreeFileReader, with present=true, for a
+// path that is in the tree but is not a regular file (a directory, a symlink,
+// a submodule).
+var ErrNotRegularFile = errors.New("git: not a regular file in the tree")
+
+// ErrPartialCheckout is returned by Advance when Git started writing the new
+// commit's files and then failed (a full disk, a directory it may not write
+// to). The branch is back at the old commit, but the checkout is no longer as
+// it was: the error names the files that were written.
+var ErrPartialCheckout = errors.New("git: the checkout failed part-way")
+
+// ErrPublishRefused wraps the error of a PublishCheck: nothing was pushed.
+var ErrPublishRefused = errors.New("git: the publication check refused the push")
+
+// PublishCheck inspects what a push would newly publish, right before it is
+// sent.
+//
+// Check receives every version of every file under Roots whose path Want
+// accepts, in every commit the push would newly publish: the commits
+// reachable from the pushed commit (through every parent of a merge, by the
+// parents the commit objects themselves record) that are not reachable from a
+// branch the push destination advertises at that moment. A stale local
+// picture of the remote is not trusted; when the destination cannot be asked,
+// nothing counts as published. Files are read from each commit's tree, not
+// from a checkout (which may be sparse), and a file is found under each of its
+// paths even when another path has the same content.
+type PublishCheck struct {
+	// Destination, when set, judges the one URL the push will go to (the
+	// URL Git itself resolves for a push to origin) before anything else.
+	Destination func(pushURL string) error
+	Want        func(path string) bool
+	Roots       []string
+	Check       func(files []UnpublishedFile) error
+}
+
+// ErrPushUnconfirmed means a push reported no error but the destination could
+// not be asked afterwards whether it has the commit: it may or may not be
+// published.
+var ErrPushUnconfirmed = errors.New("git: the push could not be confirmed at the destination")
+
+// UnpublishedFile is one version of a file in what a push publishes: in the
+// tip itself (inspected always) or in a commit the destination lacks.
+type UnpublishedFile struct {
+	Path string
+	Blob string // object ID
+	Data []byte
+}
+
+// GitIsolatedClient lets a run generate and commit in a private checkout, so
+// the operator's checkout is never a scratch area: nothing is written, staged
+// or committed there until the finished commit is fast-forwarded in.
+//
+// The run captures the starting checkout (Checkout), works in a private
+// worktree at that commit (Isolate), commits there (CommitIsolated), pushes
+// that exact commit to the starting branch (PushCommit), and only then moves
+// the operator's branch, index and worktree forward (Advance). A failure
+// before Advance leaves the operator's checkout exactly as it was.
+type GitIsolatedClient interface {
+	// Checkout reads HEAD's branch and commit in one step.
+	Checkout(ctx context.Context, dir string) (Checkout, error)
+
+	// Isolate creates a private worktree of dir's repository at commit sha
+	// (detached, in a directory only the current user can enter, on the
+	// repository's own filesystem and outside every checkout) and returns
+	// its path. discard removes it; it is safe to call after any outcome.
+	// No hook of the repository runs. Next to it, RunTempDir(work) is a
+	// scratch directory of the run, with the same lifetime.
+	Isolate(ctx context.Context, dir, sha string) (work string, discard func() error, err error)
+
+	// CommitIsolated records everything in the private worktree work (made
+	// by Isolate for dir) as a commit on parent (work's current commit)
+	// and returns its ID. Ignore rules apply as with `git add -A` in dir:
+	// a path dir's own ignore policy excludes is never recorded. check
+	// (when non-nil) runs against the commit's tree and the parent's before
+	// the commit exists; its error aborts. Nothing changed returns
+	// ErrNothingToCommit. No hook runs and no ref outside work moves.
+	CommitIsolated(ctx context.Context, dir, work, msg, parent string, check func(CommitTrees) error) (string, error)
+
+	// TreeOf reads files of the commit sha in dir's repository.
+	TreeOf(ctx context.Context, dir, sha string) (TreeFileReader, error)
+
+	// PushCommit pushes exactly at.SHA to at.Branch on the remote, whatever
+	// any checkout's HEAD names. When the transport reports an error but
+	// the remote branch is at at.SHA, the commit is published and no error
+	// is returned.
+	//
+	// The push destination (URL and credentials) is resolved once. With a
+	// non-nil check, that same destination is first asked for its branch
+	// tips, check sees what the push would newly publish to it
+	// (PublishCheck), and a check error (wrapped in ErrPublishRefused)
+	// stops before anything is sent. A push destination that changed in the
+	// configuration meanwhile is refused as well.
+	PushCommit(ctx context.Context, dir, token string, at Checkout, check *PublishCheck) error
+
+	// ResumeAdvance finishes an Advance that a killed process left between
+	// moving the branch and updating index and worktree: the branch already
+	// names the new commit while the checkout still holds the old one. It
+	// reports whether there was one. Local changes that overlap are
+	// refused, as in Advance, and nothing is overwritten.
+	ResumeAdvance(ctx context.Context, dir string) (resumed bool, err error)
+
+	// Advance fast-forwards dir from from.SHA to the descendant commit to.
+	// HEAD must name from.Branch at from.SHA. The branch is moved first, by
+	// compare-and-swap, so nothing else can commit onto the old tip; then
+	// index and worktree move with Git's own two-tree merge, which refuses
+	// (changing nothing) when a path the new commit touches has a local
+	// change, a staged change, a local deletion or a file in the way. On a
+	// refusal the branch is put back. Unrelated local work is left as it
+	// is. The index is never rewound: there is no reverse merge.
+	Advance(ctx context.Context, dir string, from Checkout, to string) error
+}
 
 // GitProviderBinder returns a client restricted to one reviewed provider host.
 // Production adapters implement this without changing ambient Git settings.
