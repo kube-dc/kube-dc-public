@@ -93,6 +93,10 @@ You haven't logged in to any of them yet. The probe needs an OIDC bearer token t
 
 The OAuth flow worked but Keycloak says you're not a platform admin. Ask someone with Keycloak access to add you to the master realm's `admin` group (see [Adding a new admin](cluster-cli-admin-login.md#add-an-admin-once-for-each-person)).
 
+### The admin console says "This account has no platform administration role"
+
+Earlier backends word it "Access denied: Required role(s): superadmin or platform-admin". The account signed in but has neither realm role. Cluster access (the Keycloak group `admin`: `kubectl`, Flux Web, Grafana administration) is a separate grant and does not open the admin console. A superadmin assigns the role under **Platform access → Platform administrators** (on a new installation the Keycloak `admin` user is the superadmin), and the person signs out and in again. See [Add an admin](cluster-cli-admin-login.md#add-an-admin-once-for-each-person).
+
 ### Browser shows "we are sorry... client not found" (and the CLI hangs)
 
 The cluster's master realm does not have the `kube-dc-admin` PKCE OIDC client yet. Review and run the setup script from the Fleet version deployed to this cluster:

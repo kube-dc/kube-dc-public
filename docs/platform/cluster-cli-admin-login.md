@@ -27,42 +27,77 @@ The audit log entry on the apiserver shows your email, not a shared service-acco
 
 ## Add an admin (once for each person)
 
-The admin RBAC chain is:
+There are two grants. They are separate decisions: give a person the one they need, and the smaller role where it is enough.
 
-> **one** Keycloak group (`admin` in master realm) → **one** K8s group (`platform:admin`) → **one** `ClusterRoleBinding` (`platform-admin` → `cluster-admin`).
+| Grant | In the Keycloak `master` realm | What it opens |
+|---|---|---|
+| Admin console | realm role `platform-admin` (read-mostly) or `superadmin` (everything, including managing the other administrators) | `https://admin.<cluster-domain>` |
+| Cluster access | membership of the group `admin` | `kube-dc login --admin` and `kubectl` as `cluster-admin` (Kubernetes group `platform:admin` → `ClusterRoleBinding` `platform-admin`), the Flux Web UI, and in the default Grafana configuration `GrafanaAdmin` |
 
-There's no per-person fleet-repo change; granting admin to a new engineer is a Keycloak group-membership edit, nothing more.
+**Cluster access does not open the admin console, and a console role gives no cluster access.** A person with cluster access only who signs in to the console is refused with "This account has no platform administration role" (earlier backends: "Access denied: Required role(s): superadmin or platform-admin").
 
-### Via the Keycloak UI
+Cluster access is unrestricted: it reads every Secret of the installation. Give it to the people who operate the cluster, not to everyone who uses the console.
 
-1. Open `https://login.<cluster-domain>/admin` → **master** realm → **Users** → **Add user**.
-2. Set username + email (the email is what `kubectl auth whoami` displays as `Username`).
-3. **Credentials** tab → set the password (uncheck "Temporary" if they don't need to rotate on first login).
-4. **Groups** tab → **Join** the `admin` group.
-5. Have them run `kube-dc login --domain <cluster-domain> --admin`.
+Neither grant needs a change in the fleet repository.
 
-### Via `kcadm`
+A new installation has one account with a console role: `init` gives the Keycloak `admin` user `superadmin`. Its password is in the `keycloak` Secret ([Installation guide](installation-guide.md#35-post-install-sso-clients-openbao-credentials)). Use it to add the first people, then keep it for recovery.
 
-Run from any host with the Keycloak admin password (or from a pod with `kcadm.sh` available):
+### Admin console access
+
+1. Sign in to `https://admin.<cluster-domain>` as a superadmin.
+2. Open **Platform access → Platform administrators** and choose **Create administrator**: the person's email, the role you decided on, and a password (temporary by default: it must be changed at the first sign-in), or a setup email when the realm has SMTP. For a person who already has a `master` realm account, assign the role to that account instead.
+3. The person signs in to the admin console. Someone who was signed in when the role was assigned signs out and in again: the role is read from the token.
+
+### Cluster access, in the Keycloak UI
+
+1. Open `https://login.<cluster-domain>/admin` → **master** realm → **Users** and open the person's account. Create it if it does not exist: username and email (the email is what `kubectl auth whoami` displays as `Username`), and a password on the **Credentials** tab.
+2. **Details** tab: **Email verified** must be on. The cluster takes the email as the username and refuses the token of an unverified address: `kube-dc login --admin` succeeds and `kubectl` then answers 401. An account created in the console with a password starts unverified; one that completed the setup email is verified.
+3. **Groups** tab → **Join** the `admin` group.
+4. Have them run `kube-dc login --domain <cluster-domain> --admin`.
+
+### With `kcadm`
+
+Run from any host with the Keycloak admin password (or from a pod with `kcadm.sh` available). The three blocks are separate on purpose: the first creates the account, and you then run only the grant you decided on, or both.
+
+**Create the account.** Run it as it is, with `set -euo pipefail`: when the account already exists, `create` fails, and nothing may then set a password on that account.
 
 ```bash
+set -euo pipefail
 kcadm.sh config credentials --server https://login.<cluster-domain> \
   --realm master --user admin --password "<master-admin-pass>"
 
-kcadm.sh create users -r master \
-  -s username=engineer -s email=engineer@example.com -s enabled=true
+EMAIL=engineer@example.com
+# -i prints the ID of the account this command created.
+# emailVerified=true only for an address you know is the person's.
+KC_USER_ID=$(kcadm.sh create users -r master -i \
+  -s username="$EMAIL" -s email="$EMAIL" -s emailVerified=true -s enabled=true)
+kcadm.sh set-password -r master --userid "$KC_USER_ID" --new-password "<temp>" --temporary
+echo "KC_USER_ID=$KC_USER_ID"
+```
 
-kcadm.sh set-password -r master --username engineer --new-password "<temp>"
+For an account that already exists, skip the block above: look the account up by its exact name, check that it is the person you mean, and set `KC_USER_ID` to its ID.
 
-# Look up the admin group's UUID once, then add the user
-GID=$(kcadm.sh get groups -r master -q search=admin --fields id,name | jq -r '.[]|select(.name=="admin").id')
-UID=$(kcadm.sh get users -r master -q username=engineer --fields id | jq -r '.[0].id')
-kcadm.sh update users/$UID/groups/$GID -r master -n
+```bash
+kcadm.sh get users -r master -q username="$EMAIL" -q exact=true --fields id,username,email,emailVerified
+```
+
+**Grant: admin console.** One role: `platform-admin`, or `superadmin`.
+
+```bash
+kcadm.sh add-roles -r master --uid "$KC_USER_ID" --rolename platform-admin
+```
+
+**Grant: cluster access.** Only for a person who operates the cluster.
+
+```bash
+KC_GROUP_ID=$(kcadm.sh get groups -r master -q search=admin -q exact=true --fields id,name \
+  | jq -r '.[] | select(.name=="admin").id')
+kcadm.sh update "users/$KC_USER_ID/groups/$KC_GROUP_ID" -r master -n
 ```
 
 ### Verify that it worked
 
-After the new admin runs `kube-dc login --domain <cluster-domain> --admin`, both of these should succeed:
+The admin console opens on the platform overview after sign-in. For cluster access, after the new admin runs `kube-dc login --domain <cluster-domain> --admin`, both of these should succeed:
 
 ```bash
 # Identity check: Username should be their email, Groups should include platform:admin
@@ -86,13 +121,22 @@ kubectl get kustomization -n flux-system core
 
 ### Remove an admin
 
-Remove the user from the `admin` group:
+Remove every grant the person holds:
+
+- the console role, on the **Platform administrators** page (it lists each administrator with the roles held);
+- Grafana-only administrator access, on the same page, when it was assigned (the group `grafana-admins`);
+- the membership of the `admin` group.
 
 ```bash
-kcadm.sh delete users/$UID/groups/$GID -r master
+kcadm.sh get-roles -r master --uid "$KC_USER_ID"            # the realm roles held
+kcadm.sh get "users/$KC_USER_ID/groups" -r master           # the groups held
+kcadm.sh remove-roles -r master --uid "$KC_USER_ID" --rolename <role-held>   # for each of superadmin, platform-admin
+kcadm.sh delete "users/$KC_USER_ID/groups/<group-id>" -r master              # for each of admin, grafana-admins
 ```
 
-Their next OIDC token refresh (≤5 min, governed by Keycloak's access-token lifespan) will land without the `groups: ["admin"]` claim, and the apiserver will start refusing privileged calls. To revoke immediately, delete the user account entirely with `kcadm.sh delete users/$UID -r master`. That also invalidates the outstanding refresh tokens.
+The admin backend also accepts a Keycloak group named `superadmin` or `platform-admin`, where an installation uses groups instead of roles: remove that membership too.
+
+**When it takes effect.** Tokens already issued stay valid until they expire: the admin console and the cluster both read the grants from the token and do not ask Keycloak again. After the removal, the person's next token (≤5 min, governed by Keycloak's access-token lifespan) no longer carries the grant, and a fresh sign-in to the admin console is refused. Disabling the account (`kcadm.sh update "users/$KC_USER_ID" -r master -s enabled=false`) or deleting it (`kcadm.sh delete "users/$KC_USER_ID" -r master`) stops Keycloak from issuing it any new token, refreshes included; a token issued before that still works until it expires. Existing Grafana sessions end separately, in Grafana.
 
 ---
 

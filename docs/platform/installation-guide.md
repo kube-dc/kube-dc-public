@@ -2085,10 +2085,14 @@ scaffold; its Keycloak-backed pages become active after §3.5 finalization.
 
 The **admin console** authenticates against the Keycloak `master` realm. §3.5
 finalization grants the master-realm `admin` user the **`superadmin`** realm role
-automatically, so the console opens straight to the dashboard, with no more bare
-"Required role: superadmin or platform-admin" 403. Log in as Keycloak `admin`;
-add further platform admins by granting them the `superadmin` (full) or
-`platform-admin` (read-mostly) realm role in Keycloak.
+automatically, so the console opens straight to the dashboard. Log in as
+Keycloak `admin` (its password is in the `keycloak` Secret, see §3.5) and add
+the people who run the platform under **Platform access → Platform
+administrators**, with the `superadmin` (full) or `platform-admin`
+(read-mostly) role. The Keycloak group `admin` is a different grant: it gives
+cluster access (`kube-dc login --admin`, `kubectl` as `cluster-admin`) and does
+not open the admin console. Decide each grant for each person; see
+[Add an admin](cluster-cli-admin-login.md#add-an-admin-once-for-each-person).
 
 Retrieve the admin password of the organization you created in
 [§3.6](#36-verify-the-front-door) (the manager writes a `realm-access`
