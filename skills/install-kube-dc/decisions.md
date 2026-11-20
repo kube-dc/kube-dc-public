@@ -111,11 +111,17 @@ A certificate from a private CA also needs the CA-only bundle as
 
 ## 6. Storage
 
+First ask what storage the site has, then place each kind of data. Fast
+storage (flash) is for random reads and durable writes: databases, the bucket
+index, VM disks. Capacity storage is for large sequential data: bucket data,
+backups, metrics and log blocks, OS images. Reference:
+[Plan the storage layout](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/installation-storage-layout.md).
+
 | `OBJECT_STORAGE_MODE` | Use when |
 |---|---|
 | `rook-ceph-multi-node` | Production: one empty raw disk per OSD node (`CEPH_NODE_<n>`, `CEPH_NODE_<n>_DEVICE`), 1 to 16 nodes |
 | `rook-ceph-local` | One-node lab: a disk or a backing file (`CEPH_LOCAL_OSD_NODE`, `_DEVICE`, `_SIZE_GB`) |
-| `rook-ceph-pvc` | The cluster already has a CSI StorageClass and no raw disks |
+| `rook-ceph-pvc` | The servers get volumes from a storage array (FC or iSCSI LUNs) or a cloud volume service, not raw disks: `CEPH_OSD_STORAGE_CLASS`, `CEPH_OSD_COUNT`, `CEPH_OSD_VOLUME_SIZE_GB` |
 | `disabled` | Never for real use: no metrics or log storage, no platform backups |
 
 - `CEPH_REPLICATION_SIZE`: set `3` explicitly with three or more OSD hosts;
@@ -134,10 +140,73 @@ A certificate from a private CA also needs the CA-only bundle as
   VM disks needs `KUBE_DC_INIT_SERVICES_DATABASE_CLASS`, an expandable block
   StorageClass. `KUBE_DC_INIT_SERVICES_STORAGE_BUDGET` is the total the catalog
   may allocate.
-- Capacity: usable Ceph space is raw capacity divided by the copies. Fit
-  the managed-services budget, VM disks, monitoring volumes, object data and
-  backups inside it with room for recovery after a host loss, and agree the
-  numbers with the operator before choosing the budget.
+- Capacity: usable Ceph space is raw capacity divided by the copies (for an
+  erasure-coded pool K+M: raw × K / (K+M)). Fit the managed-services budget,
+  VM disks, monitoring volumes, object data and backups inside it with room
+  for recovery after a host loss, and agree the numbers with the operator
+  before choosing the budget.
+
+### Volumes from an array (`rook-ceph-pvc`)
+
+Each OSD claims one Block volume from `CEPH_OSD_STORAGE_CLASS` while `init`
+waits for the platform. Something must bind those claims at that time, or
+`init` does not finish:
+
+- a CSI driver for the class that already works before `init`; or
+- static PersistentVolumes, when the nodes see the LUNs directly: one
+  `volumeMode: Block` volume for each LUN (`local.path` = its multipath device
+  under `/dev/disk/by-id/`, node affinity to its node) and a StorageClass with
+  `kubernetes.io/no-provisioner`. Prepare the manifests with the operator and
+  apply them after `fetch-kubeconfig`, before `init` (SKILL.md step 6).
+
+One OSD for each node, each LUN presented to one node, and the LUN empty
+(@host-checks.md). The mode keeps two copies unless `CEPH_REPLICATION_SIZE`
+says otherwise.
+
+### Fast and capacity storage together (`rook-ceph-pvc` only)
+
+Propose this when the site has two kinds of storage. It adds a second OSD set
+and keeps each pool on one set:
+
+| Key | Value |
+|---|---|
+| `CEPH_OSD_DEVICE_CLASS` | Class of the first set, for example `ssd` |
+| `CEPH_CAPACITY_OSD_STORAGE_CLASS`, `_COUNT`, `_VOLUME_SIZE_GB` | The second set; its class is `CEPH_CAPACITY_OSD_DEVICE_CLASS` (default `hdd`) |
+| `CEPH_BLOCK_POOL_DEVICE_CLASS`, `CEPH_RGW_METADATA_DEVICE_CLASS` | The fast class: `ceph-block` volumes and the bucket index |
+| `CEPH_RGW_DATA_DEVICE_CLASS` | The capacity class: bucket data |
+| `CEPH_RGW_DATA_EC` | Optional `K+M` (for example `4+2`): erasure-coded bucket data |
+
+A replicated pool needs as many OSDs in its class as copies, on different
+hosts; an erasure-coded pool needs K+M. **Erasure coding is decided before the
+first install**: Ceph cannot convert the pool later. Both sets must bind when
+`init` runs. Without a budget given, `init` derives the managed-services
+budget from the set that holds `ceph-block` (raw / copies / 4): state it
+explicitly when the capacity worksheet gives another number.
+
+### VM disks on an array class
+
+A StorageClass of the array's own CSI driver can hold VM disks. Kube-DC reads
+a class of an unknown provisioner as RWO Filesystem only; declare its
+capabilities ([Storage classes](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/storage-classes.md)), and declare
+`rwx-block` and `live-migration` only after a live migration of a test VM on
+that class worked. The driver is installed from the fleet repository after
+the installation, not by `init`.
+
+KubeVirt and CDI open a raw block volume as a non-root user (uid 107). Check
+how the driver publishes the device on a node (`ls -lL` under
+`/var/lib/kubelet/pods/*/volumeDevices/`). When only root may read it, every
+node needs containerd's `device_ownership_from_security_context = true`: on
+RKE2, a drop-in file in
+`/var/lib/rancher/rke2/agent/etc/containerd/config-v3.toml.d/`, then a restart
+of the RKE2 service, one node at a time (running pods keep running). Without
+it the image import and the VM fail with `Permission denied` on the device.
+
+### Failure domains
+
+Database backups go to object storage. If the database volumes and the bucket
+data are on the same array, one array failure takes the data and its backups:
+propose different arrays, or an off-array copy of the backup buckets. Tell
+the operator what stops when each array or fabric is lost.
 
 ## 7. Fleet repository
 
@@ -149,4 +218,18 @@ A certificate from a private CA also needs the CA-only bundle as
 
 `KUBE_DC_INIT_STARTER_REF`: the starter of the release, as an immutable
 reference (`oci://ghcr.io/kube-dc/fleet-starter@sha256:...` or a version tag),
-never `latest`. Flux follows the checked-out branch.
+never `latest`. Left out, a released CLI selects the bundle its release notes
+name and the plan prints it with its digest (`starter ref pinned: ...`);
+record that digest. Flux follows the checked-out branch.
+
+GitLab: `KUBE_DC_INIT_PROVIDER=gitlab`, and `KUBE_DC_INIT_PROVIDER_HOST` for a
+self-managed host. The group (nested: `parent/subgroup`) and the project go in
+`KUBE_DC_INIT_GITHUB_OWNER` and `KUBE_DC_INIT_GITHUB_REPO`; the keys have that
+name for both providers. A self-managed GitLab works with `existing-repo` and
+`existing-fleet`: the operator creates the project and clones it first. The token
+comes from `glab auth login --hostname HOST` or from `GITLAB_TOKEN` in the
+environment, never from a file in the checkout. Its scopes, the permissions of
+a fine-grained token and its replacement are in
+[Git provider token](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/installation-guide.md#311-git-provider-token).
+GitLab tokens expire: record the date with the operator, because Flux stops
+reading the repository when the token in the cluster expires.

@@ -105,6 +105,31 @@ ceph-bluestore-tool show-label --dev /dev/DEVICE  # must fail with "unable to re
 
 Only the operator decides to erase a disk (`ceph-volume lvm zap --destroy`).
 
+A LUN from a storage array (for `rook-ceph-pvc` on static volumes):
+
+```bash
+sudo multipath -ll                       # the LUN, with every expected path active
+ls -l /dev/disk/by-id/ | grep dm-uuid-mpath
+```
+
+Pass: one multipath device for each LUN, all planned paths active, and the
+same emptiness checks as for a raw disk, run on the multipath device. Ask the
+operator to confirm that the array presents the LUN to this node only. Name it by its `/dev/disk/by-id/dm-uuid-mpath-...`
+path in the PersistentVolume.
+
+## Leftovers of an earlier installation
+
+```bash
+ls -d /var/lib/rook /etc/origin /var/lib/rancher/rke2 /etc/rancher/rke2 2>/dev/null
+ls /opt/local-path-provisioner 2>/dev/null | head
+ip -br link show ovs-system 2>/dev/null
+```
+
+Pass: nothing is printed (the `lost+found` of a new filesystem mounted at
+`/opt/local-path-provisioner` does not count). Any other output means the server ran Kubernetes with
+Kube-OVN or Rook before; report it and follow the reinstall procedure of the
+installation guide with the operator before `bootstrap install`.
+
 Platform state: with three or more manager nodes, `init` places the Grafana
 and Keycloak PostgreSQL databases (and OpenBao with `OPENBAO_REPLICAS=3`) on
 those nodes with `local-path`. Give each control-plane node a dedicated

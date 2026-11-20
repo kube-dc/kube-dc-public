@@ -68,6 +68,7 @@ Collect these before proposing anything. Ask for what is unknown.
 |---|---|
 | Server list: hostname, role, management/SSH address, internal (node) address | Control-plane count (1 or 3), workers, `KUBE_OVN_MASTER_NODES` |
 | CPU, memory, disks per server | Sizing, Ceph OSD candidates, local-path for platform state |
+| Storage arrays, if any: media (flash or disk), free capacity, FC or iSCSI paths to each server, a CSI driver and what it supports | Ceph on array volumes, fast and capacity sets, the class for VM disks |
 | NICs, bonds, VLANs per server; MTU | Kube-OVN external network and per-node NIC mapping |
 | External (cloud) network: VLAN, CIDR, gateway, addresses reserved by the site | Tenant external IPs, SNAT, exclusions |
 | Optional public network: VLAN, CIDR, gateway | `cloud+public-vlan` preset |
@@ -120,9 +121,10 @@ agreed values into a copy of @install-input.env.example:
 3. Front door: address layer and VIP, and which class the layout is.
 4. DNS records.
 5. Certificates: TLS mode, private CA.
-6. Storage: object storage mode, OSD disks and copies, monitors, VM disks,
-   platform state, managed services class and budget, against a capacity
-   worksheet.
+6. Storage: what storage the site has and which data goes where, object
+   storage mode, OSD disks or volumes and copies, monitors, VM disks,
+   platform state, managed services class and budget, failure domains,
+   against a capacity worksheet.
 7. Fleet repository mode and the pinned starter.
 
 `chmod 600` the input file and keep secret values out of it.
@@ -165,6 +167,14 @@ export KUBECONFIG="$HOME/.kube/NAME.yaml"
 kube-dc bootstrap fetch-kubeconfig NAME --ssh-host user@server-1 --domain DOMAIN \
   --server https://NODE_IP_1:6443 --kubeconfig "$KUBECONFIG" --set-current
 kubectl get nodes -o wide     # every node listed; NotReady until the CNI is installed
+```
+
+With `rook-ceph-pvc` on static volumes (@decisions.md), apply the reviewed
+StorageClass and PersistentVolume manifests now and check them:
+
+```bash
+kubectl apply -f OSD_VOLUMES.yaml
+kubectl get pv     # one Available volume for each OSD
 ```
 
 ### 7. Review the plan
@@ -220,10 +230,20 @@ services. If it stops (timeout, dropped session, "action required for
 reconcile"), wait until `flux get kustomizations -A` is Ready and run the same
 command again: it resumes, it does not re-create.
 
+"installation action required for keycloak-oidc" (or `openbao-init`) with
+every Kustomization Ready means that finalize step was deferred. The Keycloak
+step calls `https://login.DOMAIN` from the workstation: make the front door
+answer there first (the DNS records, and `kube-dc bootstrap anchors apply`
+where the layout uses host anchors), then run the same command again. Before
+CLI v0.9.26, both steps are also deferred when the shell does not export
+`KUBECONFIG`.
+
 Tell the operator to move into their custody: the age key (`age.key` in the
 fleet checkout), the RKE2 token (`/var/lib/rancher/rke2/server/token` on the
 first server) and the admin kubeconfig. OpenBao's unseal shares are committed
-encrypted with the age key.
+encrypted with the age key, so the age key is the one file that must not be
+lost: ask for copies outside the workstation. With GitLab, also record when
+the Git token expires.
 
 Once the platform is up, fetch the kubeconfig again without `--server`, so it
 uses `kube-api.DOMAIN`.
@@ -254,6 +274,8 @@ pass.
 **Failure**:
 
 - `reconciling`: Flux has not settled. `flux get all -A`, wait, ask again.
+  A settled installation also answers this for a short time after a push to
+  the fleet repository and during a periodic reconcile.
 - `converged`: a user-facing check failed; `accept` names it. Common causes:
   wildcard DNS not resolving from the servers, a certificate not trusted
   (private CA not passed to `install` and `init`), the wildcard certificate
@@ -264,7 +286,8 @@ pass.
   @decisions.md and
   [How Project Pods reach the platform](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/internal-platform-endpoints.md#how-project-pods-reach-the-platform).
 - No OSDs: a disk was not empty or belonged to an earlier Ceph cluster; see
-  @host-checks.md.
+  @host-checks.md. With `rook-ceph-pvc`: the OSD claims are Pending because
+  nothing binds them (`kubectl -n rook-ceph get pvc`; see @decisions.md).
 
 ## Safety
 
@@ -272,3 +295,6 @@ pass.
   or a partly finalized OpenBao to "start clean" without the operator.
 - A disk reused from another Ceph cluster needs Ceph's own zap and
   verification (@host-checks.md), never a judgement from `lsblk`.
+- Servers that ran Kube-DC before are not new servers. Follow
+  [Reinstall on servers that ran Kube-DC before](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/installation-guide.md#26-reinstall-on-servers-that-ran-kube-dc-before)
+  with the operator, who approves every step, before step 6.
