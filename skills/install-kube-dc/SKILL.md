@@ -266,6 +266,29 @@ from `https://s3.DOMAIN/`; if VMs are in scope, a VM starts and is reachable ove
 SSH; if managed services are on, a managed PostgreSQL becomes Ready, accepts a
 connection and completes a backup. Record what is out of scope.
 
+### 10. Hand over administrator access
+
+After acceptance, one account can open the admin console: the Keycloak `admin`
+user, which `init` gives the `superadmin` role. Ask the operator who runs the
+platform and what each person needs. There are two separate grants; propose
+the smaller one where it is enough, and let the operator decide each:
+
+- **Admin console** (`https://admin.DOMAIN`): a superadmin signs in and creates
+  the person under **Platform access → Platform administrators**, with the
+  role `platform-admin` (read-mostly) or `superadmin` (everything, including
+  managing the other administrators).
+- **Cluster access**: the person's account joins the Keycloak group `admin` in
+  the `master` realm and runs `kube-dc login --domain DOMAIN --admin`. This is
+  `cluster-admin`, with every Secret of the installation: only for people who
+  operate the cluster. The account's email must be verified in Keycloak, or
+  `kubectl` answers 401.
+
+Cluster access does not open the admin console: the person is refused for a
+missing platform role. Do not create accounts or set passwords in this
+conversation; the operator does it, or the console sends a setup email. Steps
+and checks:
+[Add an admin](https://github.com/kube-dc/kube-dc-public/blob/main/docs/platform/cluster-cli-admin-login.md#add-an-admin-once-for-each-person).
+
 ## Verification
 
 **Success**: `accept` reports `usable` and the in-scope checks of step 9
