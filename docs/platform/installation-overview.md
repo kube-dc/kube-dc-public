@@ -158,6 +158,8 @@ upgrade.
   overlap, but overlapping ranges prevent straightforward future routing between
   them;
 - reserve DNS names and any LoadBalancer or internal endpoint VIPs;
+- decide where each kind of data is stored, with the capacity numbers
+  ([Plan the storage layout](installation-storage-layout.md));
 - verify node time, DNS, kernel, storage, and interface requirements;
 - decide how SOPS/age recovery keys and OpenBao unseal material are held.
 

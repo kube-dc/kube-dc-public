@@ -672,6 +672,43 @@ control-plane/etcd node**.
 > handles it for you. `remove-node` does **not** delete the VM or the host. That is
 > your infrastructure to remove afterwards.
 
+### 2.6 Reinstall on servers that ran Kube-DC before
+
+A new installation on the same servers needs clean hosts and clean Ceph
+disks. The order matters, because the tools that clean the disks run in the
+old cluster:
+
+1. **While the old cluster still runs**, stop what uses Ceph volumes and drain
+   the workers, so that no node keeps an RBD volume mapped. A node that still
+   has a mapped volume when Ceph stops hangs on I/O: its uninstall script
+   blocks, and so does a normal reboot.
+2. **Still in the old cluster**, erase every OSD device with Ceph's own tool
+   and verify it, as the warning about re-used disks in §3.3 describes
+   (`ceph-volume lvm zap --destroy`, then `ceph-volume raw list` and
+   `ceph-bluestore-tool show-label`). Doing it now saves the same work in the
+   new cluster, where it must happen before Rook reconciles.
+3. **On every node**, run `/usr/local/bin/rke2-uninstall.sh` as root, then remove
+   what it can leave behind:
+
+   ```bash
+   rm -rf /var/lib/rook /etc/origin /var/run/openvswitch /var/run/ovn \
+     /var/log/openvswitch /var/log/ovn /var/log/kube-ovn /etc/cni /opt/cni /var/lib/cni \
+     /opt/local-path-provisioner/*
+   ```
+
+   `/var/lib/rook` holds the old Ceph monitors' state and `/etc/origin` the
+   old Kube-OVN databases: a new cluster that finds them does not start
+   cleanly. `/opt/local-path-provisioner` holds the old local volumes (the old
+   platform databases among them), which only take space.
+4. **Reboot every node.** The Open vSwitch datapath and its interfaces stay in
+   the kernel until then.
+5. **On the workstation**, move the old cluster's kubeconfig, age key and
+   OpenBao share file aside. They do not open the new installation, and a new
+   fleet checkout gets a new age key. Start with an empty fleet checkout (§3.3).
+
+Then install from §2.0. `init` checks every selected raw disk again and stops
+when one is not empty.
+
 ---
 
 ## Phase 3: deploy Kube-DC with the `kube-dc` CLI
@@ -944,8 +981,8 @@ kube-dc bootstrap init \
 | `--object-storage-mode` | **REQUIRED.** Working: `rook-ceph-local` (loop-file backed, single node), `rook-ceph-multi-node` (raw devices, 1 to 16 nodes; `CEPH_REPLICATION_SIZE` sets the copies, `CEPH_MON_NODES` optionally pins the monitors), `rook-ceph-pvc`. `disabled` installs a **deliberately degraded** cluster: Mimir and Loki are SUSPENDED (no metrics or logs storage), Grafana's database runs with backups and WAL archiving OFF, and alloy log-delivery errors are expected. Never use it for a customer-facing cluster. `external-ceph` and `external-s3` are **recognised but fail closed** (fleet stubs); do not select them |
 | `--ceph-node=NODE=DEVICE` | One raw block device per OSD node (repeat per node, up to 16; in a `--config` file use `CEPH_NODE_<n>` and `CEPH_NODE_<n>_DEVICE`). Stable `/dev/disk/by-id/...` paths are accepted. Every OSD node except the `--ssh-host` node needs an entry in `KUBE_DC_INIT_NODE_SSH_HOSTS` so `init` can check its disk. The device is the **bare name** as `lsblk` shows it (`nvme1n1`, `sdb`), and a `/dev/` prefix is stripped automatically since v0.5.13. When a raw device is named (not the loop-file default) `init` probes it over SSH and **warns** if it is missing or already carries data. See the zap warning. **Re-used hardware: see the zap warning below** |
 | `--rook-osd-device` | `rook-ceph-local` only: OSD block device (bare name). The default is the fleet template's loop file (`loop0`, sized by `--rook-osd-size-gb`). Pass a real device for anything beyond a lab; when set, `init` probes it over SSH and warns if missing or non-empty |
-| `--ceph-storage-class` / `--ceph-osd-count` / `--ceph-osd-volume-size-gb` | `rook-ceph-pvc` only: the StorageClass backing the OSD PVCs (required), OSD PVC count (0 = fleet default 2) and size in GB (0 = fleet default 200). For clusters that already have a CSI-backed StorageClass and no raw disks |
-| `CEPH_OSD_DEVICE_CLASS`, `CEPH_CAPACITY_OSD_*`, `CEPH_*_DEVICE_CLASS`, `CEPH_RGW_DATA_EC` | `rook-ceph-pvc` only, config-file keys (`--set` or `--config`). Split Ceph across two kinds of storage: `CEPH_OSD_DEVICE_CLASS` names the CRUSH class of the OSDs above (for example `ssd`). `CEPH_CAPACITY_OSD_STORAGE_CLASS`, `_COUNT` and `_VOLUME_SIZE_GB` add a second OSD set (class `CEPH_CAPACITY_OSD_DEVICE_CLASS`, default `hdd`; `CEPH_CAPACITY_OSD_PORTABLE=true` when its StorageClass can attach a volume on any node). `CEPH_BLOCK_POOL_DEVICE_CLASS`, `CEPH_RGW_METADATA_DEVICE_CLASS` and `CEPH_RGW_DATA_DEVICE_CLASS` pin `ceph-block`, the bucket index and the bucket data to a class. `CEPH_RGW_DATA_EC=K+M` (for example `4+2`) makes the bucket data pool erasure-coded; replicated pools need `CEPH_REPLICATION_SIZE` OSDs in their class and EC at least K+M, all on distinct hosts. EC **must be chosen before the first install**, because Ceph cannot convert an existing pool. Without these keys the overlay is unchanged |
+| `--ceph-storage-class` / `--ceph-osd-count` / `--ceph-osd-volume-size-gb` | `rook-ceph-pvc` only: the StorageClass backing the OSD PVCs (required), OSD PVC count (0 = fleet default 2) and size in GB (0 = fleet default 200). For servers that get their volumes from a storage array or a cloud volume service instead of raw disks. The class must be able to bind Block volumes while `init` runs: a CSI driver that already works, or static PersistentVolumes you create before `init`. See [Plan the storage layout](installation-storage-layout.md#ceph-on-volumes-from-an-array-rook-ceph-pvc) |
+| `CEPH_OSD_DEVICE_CLASS`, `CEPH_CAPACITY_OSD_*`, `CEPH_*_DEVICE_CLASS`, `CEPH_RGW_DATA_EC` | `rook-ceph-pvc` only, config-file keys (`--set` or `--config`). Split Ceph across two kinds of storage: `CEPH_OSD_DEVICE_CLASS` names the CRUSH class of the OSDs above (for example `ssd`). `CEPH_CAPACITY_OSD_STORAGE_CLASS`, `_COUNT` and `_VOLUME_SIZE_GB` add a second OSD set (class `CEPH_CAPACITY_OSD_DEVICE_CLASS`, default `hdd`; `CEPH_CAPACITY_OSD_PORTABLE=true` when its StorageClass can attach a volume on any node). `CEPH_BLOCK_POOL_DEVICE_CLASS`, `CEPH_RGW_METADATA_DEVICE_CLASS` and `CEPH_RGW_DATA_DEVICE_CLASS` pin `ceph-block`, the bucket index and the bucket data to a class. `CEPH_RGW_DATA_EC=K+M` (for example `4+2`) makes the bucket data pool erasure-coded; replicated pools need `CEPH_REPLICATION_SIZE` OSDs in their class and EC at least K+M, all on distinct hosts. EC **must be chosen before the first install**, because Ceph cannot convert an existing pool. Without these keys the overlay is unchanged. Which data to put on which set: [Plan the storage layout](installation-storage-layout.md#two-kinds-of-storage-in-one-ceph) |
 | `--no-kubevirt` | VMs are out of scope for this cluster (for example, a cluster that runs only Managed Clusters). It skips the KubeVirt-eligibility (`/dev/kvm`) preflight, so the install does not block on nodes with no nested virtualization. **Leave it off for any cluster that will host tenant VMs.** Distinct from `--allow-no-kubevirt-eligible`, which keeps the VM feature but bypasses the *eligibility gate* on a single non-KVM node |
 | `--site-components` | `LAYER=PATH` entries (comma-separated; `KUBE_DC_INIT_SITE_COMPONENTS` in a config file). Each attaches a Kustomize Component kept in the Fleet repository to the generated Flux Kustomization named `LAYER` (`infra-core`, `platform`, `infra-object-storage`, …), with the path made relative to that layer. Use it for site settings the starter does not express, instead of editing generated files. Entries for one layer are appended in order |
 | `--ssh-host` | Control-plane SSH target. It enables kubeconfig auto-pull **and** NAT-topology detection (§3.2) |
@@ -1073,7 +1110,9 @@ pushes the fleet repo → scaffolds `clusters/dc1/` (cloud/public networks,
 per-node ProviderNetwork NIC mappings, ordered MetalLB operator/config,
 object storage, and encrypted secrets) → `flux bootstrap` → pre-installs the
 CNI/CRD-bearing charts so a bare cluster can reconcile → hands off to Flux.
-It is idempotent and rolls back its own commit if the push fails.
+It is idempotent. It generates and commits in a private checkout and pushes
+exactly that commit; a run that fails before the push leaves your checkout as
+it was, so a retry needs no cleanup.
 You do **not** need to clone or download anything besides the CLI.
 point `--repo` at an empty directory.
 
@@ -1314,8 +1353,12 @@ then set it back to `false`.
 
 `bootstrap init` attempts both finalizers automatically once Keycloak and OpenBao
 are Ready. If either component was still reconciling, the CLI marks that step
-deferred without undoing the install; resume only the named step from the fleet
-clone with `KUBECONFIG` at the new cluster:
+deferred without undoing the install. The Keycloak step calls
+`https://login.<domain>` from the workstation, so it is also deferred while the
+front door does not answer there yet: finish that first (the DNS record, and
+the anchors of §4.4 where your layout needs them). Then run the same `init`
+command again, or resume only the named step from the fleet clone with
+`KUBECONFIG` at the new cluster:
 
 ```bash
 # 1. OIDC clients (Flux Web, Grafana, admin console). Materializes the
@@ -1961,7 +2004,7 @@ It reports one of three states:
 
 | State | Meaning | Exit |
 |---|---|---|
-| `reconciling` | Flux has not settled. Wait and re-run | 2 |
+| `reconciling` | Flux has not settled. Wait and re-run. A settled installation also answers this for a short time after a push to the fleet repository, and while a Kustomization runs its periodic reconcile | 2 |
 | `converged` | Components are up, but something a user would hit is broken | 1 |
 | `usable` | Identity works, the front door is trusted, tenancy is installed | 0 |
 
@@ -2183,8 +2226,9 @@ kube-dc bootstrap doctor --no-tty
 kube-dc bootstrap status <cluster> --repo <fleet-repo>
 ```
 
-`init` is idempotent, and it rolls back its own commit if the push fails.
-Fix the reported cause and re-run.
+`init` is idempotent. A run that fails before the push (scaffold error,
+validation, rejected push) leaves your fleet checkout exactly as it was: there
+is nothing to reset or clean. Fix the reported cause and re-run.
 
 A first run that stopped before it wrote `clusters/<name>` (in the starter
 import or the age-key step) also resumes in the same checkout. If the starter

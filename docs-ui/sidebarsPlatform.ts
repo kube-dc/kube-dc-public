@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         'installation-overview',
         'installation-guide',
         'installer-network-layouts',
+        'installation-storage-layout',
         'restricted-egress-operation',
       ],
     },
