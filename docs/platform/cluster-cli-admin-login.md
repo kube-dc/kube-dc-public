@@ -48,10 +48,20 @@ A new installation has one account with a console role: `init` gives the Keycloa
 2. Open **Platform access → Platform administrators** and choose **Create administrator**: the person's email, the role you decided on, and a password (temporary by default: it must be changed at the first sign-in), or a setup email when the realm has SMTP. For a person who already has a `master` realm account, assign the role to that account instead.
 3. The person signs in to the admin console. Someone who was signed in when the role was assigned signs out and in again: the role is read from the token.
 
+### Cluster access, in the admin console
+
+Consoles that have the **Cluster access** option grant it on the same page; with an earlier console, use the Keycloak UI below.
+
+- **Create administrator** → tick **Cluster access (kubectl as cluster-admin)**. It is off by default. With a password set in the dialog you must also confirm that the email address belongs to the person: the cluster identifies them by it and refuses an unverified address. With the setup email the person verifies the address themselves, and cluster access works once they have.
+- For an existing account, choose **Cluster access** in the assign list. The account's email must already be verified; **Set password** with "mark email verified" is the way to vouch for it.
+- The list shows who holds cluster access, and removing it there removes the membership of the `admin` group.
+
+Where the installation's audit log is on, each grant and removal is sent to it as `cluster-access.grant` or `cluster-access.revoke`, with the account and the superadmin who did it. An event with result `error` means the operation as a whole did not complete after the membership change had been sent (the change itself, or a later step such as enabling a new account, failed or was not confirmed). The membership may or may not be in effect: check the account and its `admin` group membership. The console never creates the `admin` group: where an installation has none, the option is unavailable.
+
 ### Cluster access, in the Keycloak UI
 
 1. Open `https://login.<cluster-domain>/admin` → **master** realm → **Users** and open the person's account. Create it if it does not exist: username and email (the email is what `kubectl auth whoami` displays as `Username`), and a password on the **Credentials** tab.
-2. **Details** tab: **Email verified** must be on. The cluster takes the email as the username and refuses the token of an unverified address: `kube-dc login --admin` succeeds and `kubectl` then answers 401. An account created in the console with a password starts unverified; one that completed the setup email is verified.
+2. **Details** tab: **Email verified** must be on. The cluster takes the email as the username and refuses the token of an unverified address: `kube-dc login --admin` succeeds and `kubectl` then answers 401. An account created in the console with a password starts unverified, unless its email was confirmed in the dialog together with cluster access; one that completed the setup email is verified.
 3. **Groups** tab → **Join** the `admin` group.
 4. Have them run `kube-dc login --domain <cluster-domain> --admin`.
 
