@@ -25,11 +25,16 @@ The console gives you the setup commands for each Project. To get them:
 2. On the **Command-line access** card, click **Get kubeconfig**. The **Set up
    CLI access** dialog opens.
 3. In **Operating system**, select the computer where you run the CLI.
-4. Run the commands of step 1, **Install kube-dc**. If the CLI is already
+4. If that computer has no browser, for example an SSH session or a server,
+   select **No browser on that computer**. Sign-in then uses a code that you
+   approve in a browser on another device.
+5. Run the commands of step 1, **Install kube-dc**. If the CLI is already
    installed, skip this step.
-5. Run the commands of step 2, **Sign in and select this project**. Your
-   browser opens the sign-in page.
-6. Optional: run the command of step 3, **Verify with kubectl**. It lists the
+6. Run the commands of step 2, **Sign in and select this project**. Your
+   browser opens the sign-in page. With **No browser on that computer**, the
+   command prints a URL and a code instead: open the URL on any device, enter
+   the code, and approve the sign-in.
+7. Optional: run the command of step 3, **Verify with kubectl**. It lists the
    pods in the Project.
 
 ![Set up CLI access dialog with the Operating system selector, the Install kube-dc and Sign in and select this project steps, and the Download setup and Copy all commands buttons](images/get-kubeconfig.png)
