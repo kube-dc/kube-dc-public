@@ -63,9 +63,9 @@ kubectl rollout status deployment/my-app
 helm upgrade --install my-app ./chart --wait
 ```
 
-For the first HTTP deployment, see
-[Deploy your first application](deploy-first-app.md). To add HTTPS, see
-[Service exposure](service-exposure.md).
+To run an app with an HTTPS address and a release history, see
+[Deploy your first application](deploy-first-app.md). To publish Services of
+your own manifests, see [Service exposure](service-exposure.md).
 
 ## What "compatible" means
 

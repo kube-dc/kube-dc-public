@@ -1,163 +1,125 @@
-# Deploy your first Kubernetes application
+# Deploy your first application
 
-This guide deploys a small web service to a Kube-DC Project and publishes it
-through the shared HTTP gateway. It uses only the namespaced resources that
-Projects support.
+An application in Kube-DC is one resource, an `Application`, that says what
+to run: a container image, or a GitHub repository the platform builds. The
+platform starts the pods, gives the app an HTTPS address and keeps every
+version that ran, so you can roll back.
+
+This guide deploys a container image with `kubectl` or an AI app. The
+console's **New application** starts from a GitHub repository instead: to
+build and deploy a repository on every push, see
+[Deploy from GitHub](deploy-from-github.md).
 
 ## Before you begin
 
 You need:
 
-- A [Project](first-project.md) with free CPU, memory, pod, and IP quota
-- [CLI access](cli-kubeconfig.md), with `kubectl` connected to that Project
-- The `developer` or `admin` role
+- a [Project](first-project.md) with free CPU, memory and pod quota;
+- [CLI access](cli-kubeconfig.md), with `kubectl` connected to that Project;
+- the `developer` or `admin` role in the Project.
 
-To confirm the current context and backing namespace, run:
+Your provider must offer Applications. If `kubectl get app` says the server
+has no resource type `app`, or a new app still shows no status after a
+minute, ask your provider.
 
-```bash
-kubectl config current-context
-kubectl config view --minify -o jsonpath='{..namespace}'
-```
+## 1. Create the application
 
-The backing namespace normally follows `{organization}-{project}`, for example
-`acme-demo`.
-
-## 1. Deploy the workload
-
-Create a web Deployment with two replicas. The image listens on port 8080 and
-does not need root privileges. Use the following manifest:
+Save this as `hello.yaml`:
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: apps.kube-dc.com/v1alpha1
+kind: Application
 metadata:
   name: hello
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: hello
-  template:
-    metadata:
-      labels:
-        app: hello
-    spec:
-      containers:
-        - name: web
-          image: nginxinc/nginx-unprivileged:stable-alpine
-          ports:
-            - name: http
-              containerPort: 8080
-          readinessProbe:
-            httpGet:
-              path: /
-              port: http
-            periodSeconds: 5
-            timeoutSeconds: 2
-            failureThreshold: 6
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 250m
-              memory: 128Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hello
-  annotations:
-    service.nlb.kube-dc.com/expose-route: "http"
-spec:
-  type: ClusterIP   # the shared Gateway publishes it; no external IP is allocated
-  selector:
-    app: hello
-  ports:
-    - name: http
-      port: 80
-      targetPort: 8080
+  source:
+    image:
+      reference: nginxinc/nginx-unprivileged:1.27-alpine
+  run:
+    port: 8080    # the port the container listens on (8080 is the default)
 ```
 
-Save the manifest as `hello.yaml`, then apply it:
+Apply it and wait until it is ready:
 
 ```bash
 kubectl apply -f hello.yaml
-kubectl rollout status deployment/hello
+kubectl wait --for=condition=Ready app/hello --timeout=5m
+kubectl get app hello
 ```
 
-## 2. Check the application
+```console
+NAME    REPOSITORY   COMMIT   STATUS   URL                                         AGE
+hello                         Ready    https://hello-acme-demo.<platform-domain>   2m
+```
 
-To verify the pods and the Service, run:
+The certificate for the address takes 1 to 3 minutes. Until it is issued,
+the `URL` column is empty and `kubectl get app` shows **Degraded**;
+`kubectl wait` returns once the address is live.
+
+Behind the scenes the platform has created a Deployment and a Service named
+`hello` and published the address on the platform's shared HTTPS entry
+point, with its own certificate. No public IP is used.
+
+## 2. Open it
+
+Open the address from the `URL` column, or:
 
 ```bash
-kubectl get pods -l app=hello
-kubectl get service hello
+curl -sI "$(kubectl get app hello -o jsonpath='{.status.url}')" | head -1
 ```
 
-A pod in the `Running` state is not proof that the application is healthy. The
-rollout command waits for the Deployment readiness condition.
+In the console, open your Project, then **Applications**, and click **hello**.
+The **Overview** tab's **Progress** shows each step (an image app needs no
+build, so those steps say **Not needed**), and **Open the app** opens the
+address.
 
-## 3. Open the endpoint
+If the app does not become ready, `kubectl describe app hello` shows which
+step waits and why, for example an image that cannot be pulled.
 
-The Service annotation asks the platform to create a Gateway Route and a DNS
-name. To read the assigned hostname from the Service, run:
+## 3. Ship a new version
 
-```bash
-kubectl get service hello \
-  -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-```
+Change the image tag in `hello.yaml` (for example to `1.28-alpine`) and apply
+it again. Every change to what the pods run, such as the image, a variable or
+the resources, makes a new numbered **release**. The **Builds & releases** tab
+lists them.
 
-After the route is ready, open `http://HOSTNAME`. Replace `HOSTNAME` with the
-value the preceding command printed. DNS propagation can finish after the pods
-become ready.
+To go back, choose **Roll back to this release** on an earlier release. The
+app stays on that release until you click **Resume deploys**. See
+[Roll back an application](rollback.md).
 
-If no hostname appears, inspect the Service status and its events:
+## Deploy it with an AI app
 
-```bash
-kubectl describe service hello
-kubectl get events --sort-by=.lastTimestamp
-```
+Connect an AI app to the Project's [hosted MCP server](mcp-for-administrators.md)
+and ask, for example:
 
-To add HTTPS, or to use custom hostnames, TCP and UDP
-services, EIPs, and FIPs, see [Service exposure](service-exposure.md).
+> Deploy the image nginxinc/nginx-unprivileged:1.27-alpine as an app named
+> hello, listening on port 8080, and tell me its address.
 
-## Update the application
-
-Change the image or the configuration in `hello.yaml`, then apply it again:
-
-```bash
-kubectl apply -f hello.yaml
-kubectl rollout status deployment/hello
-kubectl rollout history deployment/hello
-```
-
-Kubernetes rolls out the new ReplicaSet according to the Deployment strategy.
-Availability depends on readiness checks, capacity, and application behavior.
-
-## Roll back
-
-`kubectl rollout undo deployment/hello` returns to the previous revision by
-starting new pods. To roll back in about a second instead, keep the previous
-version running: see [Roll back an application](rollback.md), which also
-covers database migrations (expand, then contract) and what the running
-previous version costs.
+The AI app calls `deploy_app`, which creates the same Application (where
+your provider has [turned that on](applications.md#apps-created-before-applications)),
+and `rollout_status` to report the address. You can switch between the console, `kubectl` and an AI app at any
+time: they all change the same resource.
 
 ## Clean up
 
-To remove the Deployment and the Service, run:
-
 ```bash
-kubectl delete -f hello.yaml
+kubectl delete app hello
 ```
 
-Before you reuse any dedicated address the Service held, confirm that the
-Service and its route have finished cleanup.
+This removes the app, its Deployment, Service and address.
+
+## When an Application does not fit
+
+An Application runs one container per pod and publishes one HTTP port on one
+hostname. For anything else, such as a TCP or UDP service, sidecar
+containers, several hostnames or a StatefulSet, apply your own Kubernetes
+manifests: Projects accept Deployments, StatefulSets, Services and Jobs (see
+[Project compatibility](security-restrictions.md)), and
+[Service exposure](service-exposure.md) publishes them.
 
 ## Next steps
 
-- [Roll back an application](rollback.md)
-- [Deploy a WordPress stack](deploy-wordpress-stack.md)
-- [Choose a service exposure method](service-exposure.md)
-- [Use block storage](block-storage.md)
-- [Connect CI or an external GitOps controller](gitops.md)
+- [Manage applications](applications.md): variables, Secrets, your own domain, the CLI and deleting an app
+- [Release commands, workers and cron jobs](app-jobs-and-workers.md), autoscaling and a data volume
+- [Deploy a full WordPress stack](deploy-wordpress-stack.md): an Application with a managed database and a volume
+- [Deploy from GitHub](deploy-from-github.md): builds on push and pull request previews

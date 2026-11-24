@@ -44,66 +44,15 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Applications & Automation',
+      label: 'Applications',
       collapsed: true,
       items: [
-        {
-          type: 'doc',
-          id: 'deploy-first-app',
-          label: 'Deploy Your First Application',
-        },
-        {
-          type: 'doc',
-          id: 'deploy-from-github',
-          label: 'Deploy from GitHub',
-        },
-        {
-          type: 'doc',
-          id: 'applications',
-          label: 'Manage Applications',
-        },
-        {
-          type: 'doc',
-          id: 'rollback',
-          label: 'Roll Back an Application',
-        },
-        {
-          type: 'doc',
-          id: 'app-jobs-and-workers',
-          label: 'Migrations, Workers and Cron Jobs',
-        },
-        {
-          type: 'doc',
-          id: 'deploy-wordpress-stack',
-          label: 'Deploy a Full WordPress Stack',
-        },
-        {
-          type: 'doc',
-          id: 'gpu-shared-workloads',
-          label: 'Run Shared GPU Workloads',
-        },
-        'gitops',
-        'ai-ide-integration',
-        {
-          type: 'doc',
-          id: 'mcp-for-administrators',
-          label: 'Hosted MCP for Administrators',
-        },
-        {
-          type: 'doc',
-          id: 'machine-identities',
-          label: 'Machine Identities (Terraform, MCP, CI)',
-        },
-        {
-          type: 'doc',
-          id: 'event-webhooks',
-          label: 'Event Webhooks',
-        },
-        {
-          type: 'doc',
-          id: 'api-reference',
-          label: 'Automate with the API',
-        },
+        {type: 'doc', id: 'deploy-first-app', label: 'Deploy Your First Application'},
+        {type: 'doc', id: 'deploy-from-github', label: 'Deploy from GitHub'},
+        {type: 'doc', id: 'applications', label: 'Manage Applications'},
+        {type: 'doc', id: 'rollback', label: 'Roll Back an Application'},
+        {type: 'doc', id: 'app-jobs-and-workers', label: 'Release Commands, Workers and Cron Jobs'},
+        {type: 'doc', id: 'deploy-wordpress-stack', label: 'Deploy a Full WordPress Stack'},
       ],
     },
     {
@@ -175,7 +124,15 @@ const sidebars: SidebarsConfig = {
         'creating-vm',
         'connecting-vm',
         'vm-lifecycle',
-        'gpu-vm-guests',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'GPU',
+      collapsed: true,
+      items: [
+        {type: 'doc', id: 'gpu-shared-workloads', label: 'Shared GPU for Containers'},
+        {type: 'doc', id: 'gpu-vm-guests', label: 'Dedicated GPU VMs'},
       ],
     },
     {
@@ -209,6 +166,19 @@ const sidebars: SidebarsConfig = {
         'secrets-manager',
         'kms',
         'certificate-manager',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Automation & AI',
+      collapsed: true,
+      items: [
+        {type: 'doc', id: 'ai-ide-integration', label: 'AI IDE Integration'},
+        {type: 'doc', id: 'mcp-for-administrators', label: 'Hosted MCP for Administrators'},
+        {type: 'doc', id: 'machine-identities', label: 'Machine Identities (Terraform, MCP, CI)'},
+        {type: 'doc', id: 'api-reference', label: 'Automate with the API'},
+        {type: 'doc', id: 'event-webhooks', label: 'Event Webhooks'},
+        {type: 'doc', id: 'gitops', label: 'GitOps and CI'},
       ],
     },
     {

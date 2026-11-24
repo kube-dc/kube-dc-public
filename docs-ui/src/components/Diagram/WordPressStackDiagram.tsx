@@ -13,8 +13,8 @@ import {
 export default function WordPressStackDiagram(): React.JSX.Element {
   return (
     <ExplainerDiagram
-      caption="Gateway traffic fans out through the WordPress Service, while both Pods share persistent storage and database credentials; database and file backups land in separate Project buckets."
-      description="A browser sends HTTPS traffic with a certificate to the platform Gateway, which forwards to the wordpress Service in the Project. The Service targets two WordPress Pods. Both Pods use a shared rbd-vm volume and managed MariaDB credentials. The database writes daily backups to the Project S3 bucket, while a backup Job reads the shared volume and archives wp-content to a separate wordpress-files bucket."
+      caption="Gateway traffic reaches the WordPress pod through the Service the Application created; the pod mounts the app's data volume and reads managed database credentials. Database and file backups land in separate Project buckets."
+      description="A browser sends HTTPS traffic with a certificate to the platform Gateway, which forwards to the wordpress Service in the Project. The Service, created by the wordpress Application, targets one WordPress pod. The pod mounts the app's data volume wordpress-data and reads managed MariaDB credentials. The database writes daily backups to the Project S3 bucket, while a backup Job reads the data volume and archives wp-content to a separate wordpress-files bucket."
       diagramId="wordpress-stack-explainer"
       minWidth={840}
       title="WordPress services in a Kube-DC Project"
@@ -22,12 +22,9 @@ export default function WordPressStackDiagram(): React.JSX.Element {
     >
       <DiagramEdge d="M190 96 H350" label="HTTPS + certificate" labelWidth={142} labelX={270} labelY={101} />
       <DiagramEdge d="M580 96 H610" />
-      <DiagramEdge d="M710 132 C710 164 320 164 320 192 V204" />
-      <DiagramEdge d="M710 132 C710 164 570 164 570 192 V204" />
-      <DiagramEdge d="M320 286 C320 320 420 320 420 348 V360" directed={false} kind="data" />
-      <DiagramEdge d="M570 286 C570 320 420 320 420 348 V360" directed={false} kind="data" />
-      <DiagramEdge d="M320 286 C320 344 680 344 680 378 V390" label="credentials" labelWidth={92} labelX={570} labelY={341} />
-      <DiagramEdge d="M570 286 C570 344 680 344 680 378 V390" />
+      <DiagramEdge d="M710 132 C710 164 420 164 420 192 V204" />
+      <DiagramEdge d="M420 286 V360" directed={false} kind="data" />
+      <DiagramEdge d="M480 286 C480 344 680 344 680 378 V390" label="credentials" labelWidth={92} labelX={600} labelY={341} />
       <DiagramEdge d="M170 432 H310" directed={false} kind="data" label="reads volume" labelWidth={98} labelX={240} labelY={410} />
       <DiagramEdge d="M680 472 C680 514 565 514 565 538 V550" kind="data" label="daily backups" labelWidth={108} labelX={635} labelY={520} />
       <DiagramEdge d="M170 474 C170 514 285 514 285 538 V550" kind="data" label="wp-content archive" labelWidth={134} labelX={235} labelY={520} />
@@ -38,9 +35,8 @@ export default function WordPressStackDiagram(): React.JSX.Element {
       <DiagramNode detail="wordpress" height={72} title="Service" width={200} x={610} y={60} />
 
       <DiagramBoundary height={350} label="YOUR PROJECT · APPLICATION AND DATA" labelWidth={340} width={800} x={20} y={170} />
-      <DiagramNode detail="replica 1" height={82} icon={ApplicationIcon} title="WordPress Pod" width={220} x={210} y={204} />
-      <DiagramNode detail="replica 2" height={82} icon={ApplicationIcon} title="WordPress Pod" width={220} x={460} y={204} />
-      <DiagramNode detail="rbd-vm" height={82} icon={DataIcon} title="Shared volume" tone="storage" width={220} x={310} y={360} />
+      <DiagramNode detail="Application wordpress" height={82} icon={ApplicationIcon} title="WordPress pod" width={220} x={310} y={204} />
+      <DiagramNode detail="wordpress-data" height={82} icon={DataIcon} title="Data volume" tone="storage" width={220} x={310} y={360} />
       <DiagramNode detail={['wp-content', 'backup']} height={82} title="Backup Job" width={140} x={30} y={390} />
       <DiagramNode detail="managed credentials" height={82} icon={DataIcon} title="Managed MariaDB" width={230} x={565} y={390} />
       <DiagramNode detail="wordpress-files" height={60} icon={DataIcon} title="File bucket" tone="storage" width={230} x={170} y={550} />

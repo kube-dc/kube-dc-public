@@ -1,112 +1,115 @@
 # Roll back an application
 
-A rollback returns a Deployment to the revision before the current one. By
-default Kubernetes starts new pods from that revision, which takes from
-seconds to minutes (image pull, readiness, free capacity). With **instant
-rollback** the previous version keeps running next to the current one, and a
-rollback moves traffic to it in about a second.
+Every version of an application that ran is a numbered release. A new image,
+a new build, or a change to what its pods run (variables, resources, port,
+health path, pull Secrets, adding or removing the volume) makes the next one.
+A volume's size and the release command are not part of a release: a changed
+command runs before the next release.
 
-## How instant rollback works
-
-When a Deployment `<app>` has instant rollback turned on and a rollout
-completes, the platform starts a copy of the previous revision as the
-Deployment `<app>-previous`:
-
-- one replica, with that revision's image, settings and Secret references
-  (the Secrets themselves are read as they are now: a removed or rotated
-  Secret can break the old version);
-- its pods have their own labels (for example
-  `app.kubernetes.io/name: <app>-previous`), so the Service `<app>` sends no
-  traffic to it until a rollback;
-- it has the environment variable `KUBE_DC_WARM=1` (init containers too);
-- it belongs to `<app>`: deleting the app deletes it.
-
-On a rollback the platform:
-
-1. switches the Service `<app>` to the warm copy (traffic moves in a few
-   seconds; requests in flight finish);
-2. rolls `<app>` back to the previous revision behind it, and, once the
-   Service sends traffic to the warm copy only, stops the pods of the version
-   you rolled back from, so no open connection keeps reaching it (their logs
-   end there);
-3. switches the Service back to `<app>` when it is ready.
-
-If `<app>` cannot start its pods (project quota, a full cluster), the single
-warm pod carries all traffic until it can.
-
-If the warm copy is not ready, the rollback starts new pods from the previous
-revision as without instant rollback. The result says which happened
-(`instant: true` or `false`).
-
-After the window you choose (at most 24 hours) the warm copy is scaled to 0
-and kept, so its node usually still has the image. The next completed rollout
-replaces it with the new previous version.
-
-## Turn it on
-
-Instant rollback is off by default and set per application.
-
-- **Console**: in **Kubernetes resources > Deployments**, open the
-  application's actions and choose **Instant rollback**, then a window.
-- **AI app (hosted MCP)**: ask to deploy with `warmPrevious`, for example
-  "deploy notes with warmPrevious 1h". `warmPrevious: off` turns it off.
-- **kubectl**: label the Deployment with the window:
-
-  ```bash
-  kubectl label deployment hello apps.kube-dc.com/warm-previous=1h
-  kubectl label deployment hello apps.kube-dc.com/warm-previous-   # off
-  ```
-
-The application needs a Service with the same name as the Deployment that
-selects its pods by labels (as `deploy_app` and the console create it). The
-platform refuses, and says why in the Deployment's
-`apps.kube-dc.com/warm-error` annotation, when another Service or Deployment
-in the project would select the warm copy's pods, or when the Service selects
-on a label the pods do not have. It also refuses two shapes where a second
-running version would cause harm:
-
-- a pod volume from a PersistentVolumeClaim: both versions would write to it
-  at once;
-- a NetworkPolicy in the project that selects the app's pods, or lets traffic
-  in or out, by a label the warm copy renames: the copy would get different
-  network rules than the app.
-
-A copy that already runs is removed when such a policy is added later (not
-while it is serving a rollback).
-
-Pull request previews (`<app>-pr-<n>`) do not get a warm copy unless you turn
-it on for them.
+A rollback pins the app to an earlier release until you resume. By default
+the platform starts new pods of that release, which takes from seconds to
+minutes (image pull, readiness, free capacity). With **instant rollback** the
+previous release keeps running next to the current one, and a rollback moves
+traffic to it in about a second.
 
 ## Roll back
 
-- **Console**: **Roll back** in the Deployment's actions. The dialog says
-  whether the previous version is running before you confirm.
-- **AI app**: ask to roll back the application (`rollback`).
-- **kubectl**: `kubectl rollout undo deployment/hello` always starts new pods.
-  To request an instant rollback, annotate the Deployment; the result appears
-  in `apps.kube-dc.com/rollback-status`:
+- **Console**: on **Builds & releases**, choose **Roll back to this release**
+  on a release in the **Releases** table. The page then shows a banner with
+  **Resume deploys**.
+- **AI app (hosted MCP)**: ask to roll back the application (`rollback`, with
+  `release` for a specific one); `rollback` with `resume: true` ends it.
+- **Command line** (a [kube-dc CLI with `kube-dc app`](applications.md#from-the-command-line)):
+  `kube-dc app rollback <app>` (the release before the running one, or
+  `--to <release>`), then `kube-dc app resume <app>`.
+- **kubectl**: set the pin, and remove it to resume:
 
   ```bash
-  kubectl annotate deployment hello apps.kube-dc.com/rollback="$(date +%s)"
-  kubectl get deployment hello -o jsonpath='{.metadata.annotations.apps\.kube-dc\.com/rollback-status}'
+  kubectl patch app hello --type merge -p '{"spec":{"release":{"pin":{"release":5}}}}'
+  kubectl patch app hello --type json -p '[{"op":"remove","path":"/spec/release/pin"}]'
   ```
 
-The status also names the stopped ReplicaSet (`drained`, `drainedAt`): once
-traffic is on the previous version, the platform stops the version you rolled
-back from, so the connections it still holds close. That takes as long as
-your application's own graceful shutdown after `SIGTERM`; an application that
-closes idle keep-alive connections promptly gets the cleanest switch.
+While a release is pinned, a banner with **Resume deploys** shows. Once the
+pinned release is live, the app shows as **Rolled back** (its `Ready`
+condition says `Pinned`, and the release is marked **Pinned**).
 
-`rollout_status` (AI app) shows the warm copy (`warmPrevious`) and where
-traffic is while a rollback is switched.
+- **While pinned**, pushes are still built and recorded, but new builds and
+  changes to what the pods run wait. Replicas, the autoscaler, hostnames and
+  `public` still apply.
+- **Resume deploys** removes the pin. The newest release then rolls out once
+  the build of the app's current settings has succeeded; after a failed build
+  the pinned release keeps running.
+- **Which releases you can pin**: the newest ten are kept, and a pinned one.
+  A pin of a release that is no longer kept is refused with `PinInvalid`. A
+  pin of a release that mounts the data volume, while the app now has
+  autoscaling or more than one replica, is refused with `PinIncompatible`.
+  Choose another release, or resume.
 
-### Builds on push
+A rollback does not run the release command, and it restores the release's
+image and settings, not your data (see
+[Database migrations](#database-migrations-expand-then-contract)).
 
-A build that is deployed during a rollback wins: a rollback that was not yet
-answered is cancelled, and a switched rollback returns traffic to the
-application as soon as the new build is ready. When the platform's GitHub App
-reports deployments, an instant rollback marks the rolled-back commit as the
-active deployment at once.
+## Instant rollback
+
+Set how long the previous release stays running after each rollout, from 1
+minute to 24 hours:
+
+```yaml
+spec:
+  run:
+    keepPreviousWarm: 1h
+```
+
+or ask an AI app to deploy with `warmPrevious: 1h` (`off` turns it off). The
+**Processes** tab shows it as **Instant rollback**.
+
+After each completed rollout, the platform runs the release before the
+current one as the Deployment `<app>-previous`:
+
+- one replica, with that release's image, settings and Secret references (the
+  Secrets themselves are read as they are now: a removed or rotated Secret can
+  break the old version);
+- its pods have their own name label (`app.kubernetes.io/name:
+  <app>-previous`), so the app's Service sends it no traffic until a
+  rollback;
+- it has the environment variable `KUBE_DC_WARM=1` (init containers too);
+- it belongs to the app: deleting the app deletes it.
+
+A rollback to the release it runs is a switch, not a rollout. The platform:
+
+1. moves the app's traffic to the warm copy;
+2. rolls the app out to that release behind it and, once only the warm
+   copy's pods get traffic, stops the pods of the release you rolled back
+   from, so no open connection keeps reaching it;
+3. moves traffic back to the app when its pods are ready, or at once if the
+   warm copy stops serving while the app has a ready pod.
+
+Some limits apply:
+
+- If the app cannot start its pods after a switch (project quota, a full
+  cluster), the warm copy carries the traffic until it can. It stops growing
+  when the quota is tight, so the app gets those pods back.
+- A copy that is not ready 5 minutes after it started, or that keeps a
+  rollout from creating its pods, is scaled to 0 until the next release; the
+  `WarmPrevious` condition says so.
+- After the window the warm copy is scaled to 0.
+- After a rollback, the warm copy becomes the release you rolled back from.
+
+The `WarmPrevious` condition says whether the copy runs and, if not, why. It
+does not affect the app's **Ready** state. The platform keeps no warm copy,
+and says why there, when a second running version would cause harm:
+
+- a NetworkPolicy in the Project selects the app's pods, or lets traffic in
+  or out, by the name label the copy renames;
+- another Service or Deployment of the Project would select the copy's pods;
+- a Deployment named `<app>-previous` exists that the app did not make;
+- the previous release mounts a volume claim.
+
+A worker, or an app with a data volume, cannot keep a warm copy: the
+Application refuses `keepPreviousWarm` for them.
+
+`rollout_status` (AI app) shows the warm copy and where traffic is while a
+rollback is switched.
 
 ## Database migrations: expand, then contract
 
@@ -126,21 +129,16 @@ Change the schema in two releases:
 
 The warm copy is ordinary pods, billed and counted against the project quota
 like the application's own: one replica during the window, then none. After a
-switch it grows to the application's replica count until the switch back.
+switch it grows toward the application's replica count until the switch back.
 Database connections from both versions count against the database's
 connection limit.
-
-The warm copy never blocks a deploy: if the application's rollout cannot
-create pods (for example because of the project quota), or the warm copy is
-not ready 5 minutes after it started, it is scaled to 0 until the next
-rollout.
 
 ## Background work in the old version
 
 The warm copy runs the old code, including anything it starts on its own:
 cron loops, queue consumers, migrations at start. Skip that work while
-`KUBE_DC_WARM` is `1`, or run it in a separate Deployment.
+`KUBE_DC_WARM` is `1`, or run it in a [worker](app-jobs-and-workers.md#workers).
 
-On an instant rollback, connections to the version you rolled back from close
+On an instant rollback, connections to the release you rolled back from close
 when its pods stop: clients holding a WebSocket or another long connection
 reconnect, to the previous version.

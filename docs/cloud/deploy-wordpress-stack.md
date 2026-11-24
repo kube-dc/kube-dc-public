@@ -2,15 +2,15 @@ import WordPressStackDiagram from '@site/src/components/Diagram/WordPressStackDi
 
 # Deploy a full WordPress stack
 
-This guide deploys a complete WordPress stack directly in a Kube-DC Project, using platform-managed data, storage, security, and exposure services:
+This guide runs WordPress in a Kube-DC Project as an
+[Application](applications.md), with the platform's managed services:
 
-- **Managed MariaDB** provisioned by the platform with **daily backups**
-- **Database credentials** generated and stored in a Project Secret
-- A **shared Ceph-backed volume** that two WordPress replicas and admin Jobs read and write together
-- **S3 object storage** for content archives, with per-bucket access keys
-- **HTTPS exposure with a certificate issued by the platform**
-- **Autoscaling** with a HorizontalPodAutoscaler
-- Headless WordPress installation with **WP-CLI running as a Job**
+- a **managed MariaDB** database with daily backups;
+- **database credentials** delivered to a Secret, which the app reads;
+- a **data volume** for `/var/www/html` (themes, plugins and uploads);
+- an **HTTPS address** with a certificate the platform issues;
+- a headless install with **WP-CLI in a Job**;
+- optionally, **S3 object storage** for archives of the files.
 
 <details data-github-only>
 <summary>Diagram source for GitHub</summary>
@@ -18,14 +18,13 @@ This guide deploys a complete WordPress stack directly in a Kube-DC Project, usi
 ```mermaid
 flowchart LR
     accTitle: WordPress services in a Kube-DC Project
-    accDescr: Browser traffic enters through the platform Gateway and reaches two WordPress Pods that share storage, managed MariaDB credentials, and Project object storage.
+    accDescr: Browser traffic enters through the platform Gateway and reaches the WordPress pod, which mounts the app's data volume and reads managed MariaDB credentials.
     U([Browser]) -->|"HTTPS + certificate"| GW["Platform Gateway"]
     GW --> S["Service wordpress"]
     subgraph P["Your Project"]
-        S --> W1["wordpress pod"]
-        S --> W2["wordpress pod"]
-        W1 & W2 --- V[("shared volume<br/>rbd-vm")]
-        W1 & W2 -->|"database credentials"| DB[("Managed MariaDB")]
+        S --> W["wordpress pod<br/>(Application wordpress)"]
+        W --- V[("data volume<br/>wordpress-data")]
+        W -->|"database credentials"| DB[("Managed MariaDB")]
         J["backup Job"] --- V
     end
     DB -->|"daily backups"| S3[("Project S3 bucket")]
@@ -38,39 +37,28 @@ flowchart LR
 
 ## Before you begin
 
-- A Kube-DC [Project](first-project.md) with enough CPU, memory, storage, and object-storage quota
-- [CLI access](cli-kubeconfig.md) with `kubectl` connected to the Project
-- The Project `admin` role, because the example creates workload Secrets and managed-service resources
-- Examples use `acme-production`, the backing namespace for Organization `acme` and Project `production`
+- A [Project](first-project.md) with enough CPU, memory, storage and
+  object-storage quota.
+- [CLI access](cli-kubeconfig.md), with `kubectl` connected to the Project.
+  The manifests below have no namespace: `kubectl` applies them to the
+  Project's namespace.
+- The Project `admin` role: the guide creates Secrets and managed services.
 
-## Step 1: platform services
+## Step 1: the database
 
-One manifest creates the data layer: an S3 bucket and a managed database with daily backups.
+Create a managed MariaDB and deliver its owner credential as a Secret with a
+`ServiceBinding`:
 
-```yaml title="01-platform-services.yaml"
-# S3 bucket for content archives. The platform creates the bucket plus a
-# Secret and ConfigMap of the same name holding access keys and endpoint.
-apiVersion: objectbucket.io/v1alpha1
-kind: ObjectBucketClaim
-metadata:
-  name: wordpress-files
-  namespace: acme-production
-spec:
-  generateBucketName: wordpress-files
-  storageClassName: ceph-bucket
----
-# Managed MariaDB. The platform provisions, operates and backs it up daily
-# into the Project's backup bucket.
+```yaml title="01-database.yaml"
 apiVersion: services.kube-dc.com/v1alpha1
 kind: ManagedService
 metadata:
-  name: wordpress-db          # NOT "wordpress"; see the following note
-  namespace: acme-production
+  name: wordpress-db              # not "wordpress": see the note below
 spec:
   classRef:
     name: mariadb
   planRef:
-    name: mariadb-development   # one server; mariadb-production for a Galera cluster
+    name: mariadb-development     # one server; mariadb-production for a Galera cluster
   placement:
     mode: ProviderShared
   connectivity:
@@ -84,296 +72,229 @@ spec:
   parameters:
     database: wordpress
   deletionPolicy: Retain
-```
-
-:::caution Name the database differently from your app Service
-The platform creates Services named after the `ManagedService` (here `wordpress-db…` in `acme-production`). If you name the database `wordpress` and later create an app Service called `wordpress`, they collide. Keep them distinct.
-:::
-
-```bash
-kubectl apply -f 01-platform-services.yaml
-kubectl get managedservice wordpress-db -w     # PHASE: Ready
-kubectl get managedservice wordpress-db -o jsonpath='{.metadata.uid}{"\n"}'
-```
-
-Then deliver the owner credential as a Secret with a `ServiceBinding`. Bindings
-pin the service UID you just printed. If you would rather apply the whole stack
-as one set, omit the `serviceUID` line: the platform records the instance the
-name resolves to and pins the binding to it.
-
-```yaml title="01b-database-binding.yaml"
+---
 apiVersion: services.kube-dc.com/v1alpha1
 kind: ServiceBinding
 metadata:
   name: wordpress-db-password
-  namespace: acme-production
 spec:
   serviceRef:
     name: wordpress-db
-  serviceUID: REPLACE_WITH_SERVICE_UID
   role: owner
   consumer:
     kind: ServiceAccount
     name: default
-    namespace: acme-production
   delivery:
     secretName: wordpress-db-password
 ```
 
 ```bash
-kubectl apply -f 01b-database-binding.yaml
-kubectl get servicebinding wordpress-db-password -w   # READY: True
+kubectl apply -f 01-database.yaml
+kubectl get managedservice wordpress-db -w            # PHASE: Ready
+kubectl get servicebinding wordpress-db-password      # READY: True
 ```
 
-The Secret carries `host`, `port`, `database`, `username`, `password`, `uri`,
-`jdbcUrl`, `tls` and `ca.crt`. In the console, choosing **Kubernetes Secret**
-on the last step of the creation sheet creates the same binding for you. The
-WordPress container below reads `host`, `username`, `password` and `database`
-from it, so nothing is copied into the manifest.
+The binding pins the service it found by name; add `serviceUID` to pin a
+specific instance. The Secret `wordpress-db-password` holds `host`, `port`,
+`database`, `username`, `password`, `uri`, `jdbcUrl`, `tls` and `ca.crt`. In
+the console, choosing **Kubernetes Secret** on the last step of the
+database's creation sheet makes the same binding.
+
+:::caution Name the database differently from the app
+The platform creates Services named after the `ManagedService` (here
+`wordpress-db…`), and the Application creates a Service named after the app
+(`wordpress`). Give them different names so they don't collide.
+:::
 
 ## Step 2: WordPress
 
-The application layer adds a Ceph-backed content volume, two co-located replicas that share it, HTTPS through a Service annotation, and an autoscaler.
-
 ```yaml title="02-wordpress.yaml"
-# Content volume on Ceph (rbd-vm). ReadWriteOnce attaches to one node;
-# the Deployment co-locates all replicas on that node with podAffinity,
-# so every pod reads and writes the same /var/www/html.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: wordpress-content
-  namespace: acme-production
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: rbd-vm
-  resources:
-    requests:
-      storage: 10Gi
----
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: apps.kube-dc.com/v1alpha1
+kind: Application
 metadata:
   name: wordpress
-  namespace: acme-production
-  labels:
-    app: wordpress
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: wordpress
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        app: wordpress
-    spec:
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: wordpress
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - name: wordpress
-        image: wordpress:6.8-apache
-        ports:
-        - containerPort: 80
-          name: http
-        env:
-        - name: WORDPRESS_DB_HOST
-          valueFrom:
-            secretKeyRef: {name: wordpress-db-password, key: host}
-        - name: WORDPRESS_DB_USER
-          valueFrom:
-            secretKeyRef: {name: wordpress-db-password, key: username}
-        - name: WORDPRESS_DB_PASSWORD
-          valueFrom:
-            secretKeyRef: {name: wordpress-db-password, key: password}
-        - name: WORDPRESS_DB_NAME
-          valueFrom:
-            secretKeyRef: {name: wordpress-db-password, key: database}
-        - name: WORDPRESS_CONFIG_EXTRA
-          value: |
-            /* Behind the platform HTTPS gateway */
-            if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-              $_SERVER['HTTPS'] = 'on';
-            }
-        volumeMounts:
-        - name: content
-          mountPath: /var/www/html
-        resources:
-          requests: {cpu: 250m, memory: 384Mi}
-          limits: {cpu: "1", memory: 768Mi}
-        readinessProbe:
-          httpGet: {path: /wp-includes/images/blank.gif, port: 80}
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        livenessProbe:
-          tcpSocket: {port: 80}
-          initialDelaySeconds: 30
-          periodSeconds: 20
-      volumes:
-      - name: content
-        persistentVolumeClaim:
-          claimName: wordpress-content
----
-# These annotations ask the platform to create the HTTPS listener, certificate,
-# route and an HTTP-to-HTTPS redirect. A ClusterIP Service allocates no
-# external IP; the shared Gateway serves the hostname.
-apiVersion: v1
-kind: Service
-metadata:
-  name: wordpress
-  namespace: acme-production
-  annotations:
-    service.nlb.kube-dc.com/expose-route: https
-    service.nlb.kube-dc.com/https-redirect: "true"
-spec:
-  type: ClusterIP
-  selector:
-    app: wordpress
-  ports:
-  - port: 80
-    targetPort: 80
-    name: http
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: wordpress
-  namespace: acme-production
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: wordpress
-  minReplicas: 2
-  maxReplicas: 4
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
+  source:
+    image:
+      reference: wordpress:6.8-apache
+  run:
+    port: 80
+    healthPath: /wp-includes/images/blank.gif
+    resources:
+      cpu: "1"
+      memory: 768Mi
+    volume:
+      path: /var/www/html
+      size: 10Gi
+      storageClass: rbd-vm               # a replicated class: see kubectl get storageclass
+    env:
+      - name: WORDPRESS_DB_HOST
+        secretKeyRef: { name: wordpress-db-password, key: host }
+      - name: WORDPRESS_DB_USER
+        secretKeyRef: { name: wordpress-db-password, key: username }
+      - name: WORDPRESS_DB_PASSWORD
+        secretKeyRef: { name: wordpress-db-password, key: password }
+      - name: WORDPRESS_DB_NAME
+        secretKeyRef: { name: wordpress-db-password, key: database }
+      - name: WORDPRESS_CONFIG_EXTRA     # the managed database accepts TLS connections only
+        value: |
+          define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL | MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT);
+    restartOnSecretChange: true          # new database credentials restart the pod
+  deletionPolicy:
+    volume: Retain                       # keep the files if the app is deleted
 ```
 
 ```bash
 kubectl apply -f 02-wordpress.yaml
-
-# Watch the assigned hostname and certificate readiness:
-kubectl get svc wordpress -o jsonpath='{.metadata.annotations.service\.nlb\.kube-dc\.com/route-hostname-status}'
-kubectl get certificate            # wordpress-tls  READY: True
-kubectl get httproute              # wordpress-route
+kubectl wait --for=condition=Ready app/wordpress --timeout=10m
+kubectl get app wordpress                # STATUS: Ready, and the URL
 ```
 
-:::tip About the shared volume
-`ReadWriteOnce` on Ceph RBD attaches the volume to one node; every pod on that node can mount it simultaneously. The `podAffinity` rule keeps all replicas (and the Jobs below) on that node, so they share `/var/www/html`. Writes from one pod are immediately visible to the others. The trade-off is that all replicas live on one node at a time; the volume and database remain safe across node failure, and the pods reschedule together.
-:::
+The platform creates the volume `wordpress-data`, a Deployment and a Service
+named `wordpress`, and an HTTPS address on the shared gateway with its own
+certificate (1 to 3 minutes). No public IP is used. To serve the site on your
+own domain, see [Use your own domain](applications.md#use-your-own-domain).
 
-## Step 3: install WordPress headlessly
+The managed MariaDB accepts only TLS connections. WordPress asks for TLS
+through `MYSQL_CLIENT_FLAGS`, set here in `WORDPRESS_CONFIG_EXTRA`. The
+connection is encrypted, but WordPress cannot check the server's certificate
+against `ca.crt`, so the flag also turns that check off. HTTPS itself ends
+at the platform's gateway, which the WordPress image already recognizes from
+the `X-Forwarded-Proto` header.
 
-Instead of the browser wizard, run WP-CLI as a Job. Administrative tasks in Projects run as Jobs; direct `kubectl exec` into Pods is restricted in Project backing namespaces.
+Use a replicated storage class for the volume, such as Ceph block storage
+(`rbd-vm` here); the class is set when the volume is created. An app with a
+data volume runs one pod: the volume attaches to one node, and a new release
+stops the old pod before it starts the new one, so each update has a short
+gap. It cannot autoscale or keep a warm previous version for
+instant rollback (see [A volume](app-jobs-and-workers.md#a-volume)).
+
+## Step 3: install WordPress
+
+Until it is installed, anyone who opens the address can run the WordPress
+setup. Install it at once with WP-CLI in a Job. `kubectl exec` into pods is
+restricted in Projects, so administrative tasks run as Jobs.
+
+Create the admin password as a Secret (or store it in the
+[Secrets Manager](secrets-manager.md)):
 
 ```bash
-# Admin password, kept in a Secret (you can also store it in the
-# Secrets Manager in the console):
 kubectl create secret generic wordpress-admin \
   --from-literal=password="$(openssl rand -base64 18)"
 ```
+
+The Job mounts the app's volume. It must run on the node that holds the
+volume, so it asks to be scheduled next to the app's pod
+(`app.kubernetes.io/name: wordpress`). WP-CLI reads `wp-config.php`, which
+takes the database settings from the environment, so the Job gets the same
+variables, `WORDPRESS_CONFIG_EXTRA` included:
 
 ```yaml title="03-install-job.yaml"
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: wordpress-install
-  namespace: acme-production
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 3600
   template:
     spec:
       restartPolicy: Never
-      # run on the node that holds the content volume
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: wordpress
-            topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: wordpress
+              topologyKey: kubernetes.io/hostname
       containers:
-      - name: wp-cli
-        image: wordpress:cli
-        command: ["sh", "-c"]
-        args:
-        - |
-          set -e
-          until wp core is-installed --path=/var/www/html 2>/dev/null; do
-            if wp core install --path=/var/www/html \
-                 --url="https://REPLACE-WITH-YOUR-HOSTNAME" \
-                 --title="My Site" \
-                 --admin_user=admin \
-                 --admin_password="$ADMIN_PASSWORD" \
-                 --admin_email=admin@example.com \
-                 --skip-email; then break; fi
-            echo "waiting for wp-config/database..."; sleep 10
-          done
-          echo "WordPress installed."
-        env:
-        - name: WORDPRESS_DB_HOST
-          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: host}}
-        - name: WORDPRESS_DB_USER
-          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: username}}
-        - name: WORDPRESS_DB_PASSWORD
-          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: password}}
-        - name: WORDPRESS_DB_NAME
-          valueFrom: {secretKeyRef: {name: wordpress-db-password, key: database}}
-        - name: ADMIN_PASSWORD
-          valueFrom: {secretKeyRef: {name: wordpress-admin, key: password}}
-        volumeMounts:
-        - name: content
-          mountPath: /var/www/html
+        - name: wp-cli
+          image: wordpress:cli
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              until wp core is-installed --path=/var/www/html 2>/dev/null; do
+                if wp core install --path=/var/www/html \
+                     --url="https://$SITE_HOSTNAME" \
+                     --title="My Site" \
+                     --admin_user=admin \
+                     --admin_password="$ADMIN_PASSWORD" \
+                     --admin_email=admin@example.com \
+                     --skip-email; then break; fi
+                echo "waiting for wp-config.php and the database..."; sleep 10
+              done
+              echo "WordPress installed."
+          env:
+            - name: SITE_HOSTNAME
+              value: REPLACE-WITH-YOUR-HOSTNAME   # the app's address, without https://
+            - name: WORDPRESS_DB_HOST
+              valueFrom: { secretKeyRef: { name: wordpress-db-password, key: host } }
+            - name: WORDPRESS_DB_USER
+              valueFrom: { secretKeyRef: { name: wordpress-db-password, key: username } }
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: wordpress-db-password, key: password } }
+            - name: WORDPRESS_DB_NAME
+              valueFrom: { secretKeyRef: { name: wordpress-db-password, key: database } }
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL | MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT);
+            - name: ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: wordpress-admin, key: password } }
+          volumeMounts:
+            - name: content
+              mountPath: /var/www/html
       volumes:
-      - name: content
-        persistentVolumeClaim:
-          claimName: wordpress-content
+        - name: content
+          persistentVolumeClaim:
+            claimName: wordpress-data
 ```
 
-Set `--url` to the hostname from Step 2, then:
+Set `SITE_HOSTNAME` to the host in the app's URL, which this prints:
+
+```bash
+kubectl get app wordpress -o jsonpath='{.status.url}{"\n"}' | sed 's|https://||'
+```
+
+Then:
 
 ```bash
 kubectl apply -f 03-install-job.yaml
 kubectl wait --for=condition=complete job/wordpress-install --timeout=240s
-kubectl logs job/wordpress-install
-# WordPress installed.
-
-curl -s -o /dev/null -w "%{http_code}\n" https://<your-hostname>/   # 200
+kubectl logs job/wordpress-install        # WordPress installed.
 ```
 
-Log in at `https://<your-hostname>/wp-admin/` with `admin` and the password from the `wordpress-admin` Secret:
+Log in at `https://<your-hostname>/wp-admin/` as `admin`, with the password
+from the Secret:
 
 ```bash
 kubectl get secret wordpress-admin -o jsonpath='{.data.password}' | base64 -d
 ```
 
-## Step 4: back up wp-content to your S3 bucket
+## Step 4 (optional): archive wp-content to S3
 
-The database is already backed up daily by the platform; verify the `BackupReady` condition with `kubectl get managedservice wordpress-db -o yaml` or the **Backups** tab of the service. The files are yours to archive. A Job with your bucket's access keys does it:
+The platform backs up the database daily (the service's **Backups** tab, or
+the `BackupReady` condition in `kubectl get managedservice wordpress-db -o yaml`).
+The files on the volume are yours to archive. Create a bucket, then run a Job
+with its access keys:
 
 ```yaml title="04-content-backup.yaml"
+# The platform creates the bucket, and a Secret and a ConfigMap of the same
+# name with its access keys and endpoint.
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: wordpress-files
+  labels:
+    kube-dc.com/organization: acme   # your organization, for usage attribution
+spec:
+  generateBucketName: wordpress-files
+  storageClassName: ceph-bucket
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: wp-content-backup
-  namespace: acme-production
 spec:
   ttlSecondsAfterFinished: 1800
   backoffLimit: 2
@@ -383,79 +304,90 @@ spec:
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: wordpress
-            topologyKey: kubernetes.io/hostname
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: wordpress
+              topologyKey: kubernetes.io/hostname
       initContainers:
-      - name: archive
-        image: busybox:1.36
-        command: ["sh","-c","tar czf /out/wp-content.tgz -C /data wp-content"]
-        volumeMounts:
-        - {name: content, mountPath: /data, readOnly: true}
-        - {name: out, mountPath: /out}
+        - name: archive
+          image: busybox:1.36
+          command: ["sh", "-c", "tar czf /out/wp-content.tgz -C /data wp-content"]
+          volumeMounts:
+            - { name: content, mountPath: /data, readOnly: true }
+            - { name: out, mountPath: /out }
       containers:
-      - name: upload
-        image: amazon/aws-cli:2.17.16
-        command: ["sh","-c"]
-        args:
-        - |
-          set -e
-          STAMP=$(date -u +%Y%m%d-%H%M%S)
-          aws s3 cp /out/wp-content.tgz \
-            "s3://$BUCKET_NAME/backups/wp-content-$STAMP.tgz" \
-            --endpoint-url "https://s3.<domain>"
-          aws s3 ls "s3://$BUCKET_NAME/backups/" --endpoint-url "https://s3.<domain>"
-        envFrom:
-        - configMapRef: {name: wordpress-files}   # BUCKET_NAME, BUCKET_HOST
-        - secretRef: {name: wordpress-files}      # AWS_ACCESS_KEY_ID / SECRET
-        volumeMounts:
-        - {name: out, mountPath: /out}
+        - name: upload
+          image: amazon/aws-cli:2.17.16
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              STAMP=$(date -u +%Y%m%d-%H%M%S)
+              aws s3 cp /out/wp-content.tgz \
+                "s3://$BUCKET_NAME/backups/wp-content-$STAMP.tgz" \
+                --endpoint-url "https://s3.<domain>"
+              aws s3 ls "s3://$BUCKET_NAME/backups/" --endpoint-url "https://s3.<domain>"
+          envFrom:
+            - configMapRef: { name: wordpress-files }   # BUCKET_NAME
+            - secretRef: { name: wordpress-files }      # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+          volumeMounts:
+            - { name: out, mountPath: /out }
       volumes:
-      - {name: content, persistentVolumeClaim: {claimName: wordpress-content}}
-      - {name: out, emptyDir: {}}
+        - name: content
+          persistentVolumeClaim:
+            claimName: wordpress-data
+        - name: out
+          emptyDir: {}
 ```
 
 ```bash
 kubectl apply -f 04-content-backup.yaml
 kubectl wait --for=condition=complete job/wp-content-backup --timeout=240s
 kubectl logs job/wp-content-backup -c upload | tail -2
-# upload: ../out/wp-content.tgz to s3://wordpress-files-.../backups/wp-content-....tgz
 ```
 
 :::info Use the public S3 endpoint from workloads
-Use your provider's public S3 endpoint from pods. It is usually `https://s3.<domain>`, where `<domain>` is your Kube-DC domain. The in-cluster RGW service address in the ConfigMap is not reachable from project networks. The `amazon/aws-cli` image has no `tar`, which is why the manifest adds a busybox init container.
+From pods, use your provider's public S3 endpoint, usually
+`https://s3.<domain>` where `<domain>` is your Kube-DC domain. The in-cluster
+address in the ConfigMap (`BUCKET_HOST`) is not reachable from Project
+networks. The `amazon/aws-cli` image has no `tar`, so a busybox init
+container makes the archive.
 :::
 
 ## What you built
 
-| Concern | Handled by |
+| Part | Handled by |
 |---|---|
-| Database provisioning and lifecycle | `ManagedService` (platform-operated MariaDB) |
-| Database credentials | `ServiceBinding` Secret with host, database, user, password and CA |
-| Database backups | Set by the plan: daily, with 7-day retention on the Development plan |
-| Content storage | Ceph-backed PVC shared by all replicas |
-| File backups + access keys | `ObjectBucketClaim` bucket + Job |
-| HTTPS, certificate, DNS name | Service annotation; the platform issues the certificate |
-| Scaling | HorizontalPodAutoscaler 2→4 |
-| Admin operations | WP-CLI Jobs on the shared volume |
+| Database and its backups | `ManagedService` (MariaDB run by the platform; daily backups, kept 7 days on the Development plan) |
+| Database credentials | `ServiceBinding`, delivered to the Secret `wordpress-db-password` |
+| WordPress, its releases and rollback | `Application` `wordpress` |
+| Files | The app's data volume `wordpress-data` |
+| HTTPS, certificate and address | The Application, through the shared gateway |
+| Installation and file archives | WP-CLI and backup Jobs on the app's volume |
 
 ## Clean up
 
 ```bash
-kubectl delete hpa/wordpress svc/wordpress deploy/wordpress \
-  job/wordpress-install job/wp-content-backup \
-  pvc/wordpress-content secret/wordpress-admin
-kubectl delete servicebinding/wordpress-db-password managedservice/wordpress-db
-kubectl delete obc/wordpress-files
+kubectl delete job wordpress-install wp-content-backup --ignore-not-found
+kubectl delete app wordpress
+kubectl delete pvc wordpress-data          # the files: kept by deletionPolicy Retain
+kubectl delete secret wordpress-admin
+kubectl delete servicebinding wordpress-db-password
+kubectl delete managedservice wordpress-db
+kubectl delete objectbucketclaim wordpress-files --ignore-not-found
 ```
+
+Deleting the app keeps `wordpress-data` because of `deletionPolicy.volume:
+Retain`. A new Application named `wordpress` does not take over a kept
+volume: copy the files out and delete the claim before you create the app
+again.
 
 ## Troubleshooting
 
-| Symptom | Cause |
+| Symptom | What to check |
 |---|---|
-| No hostname/certificate appears | Check `kubectl get certificate,challenge -n acme-production` and the Service events (`GatewayHostnameConflict`, listener capacity). A `ClusterIP` Service is enough; `LoadBalancer` only adds a dedicated EIP |
-| Second replica `Pending` | podAffinity needs capacity on the volume's node. Free capacity, or lower the requests |
-| `wordpress-db-password` missing | The service or its binding is not Ready yet. Run `kubectl get managedservice,servicebinding -n acme-production` |
-| S3 upload times out | Use the public S3 endpoint, not the in-cluster `BUCKET_HOST` |
-| DB Service name collides | Name the `ManagedService` differently from your app Service |
+| The app does not become ready | `kubectl describe app wordpress`: the step that waits says why, for example a missing `wordpress-db-password` Secret while the binding is not ready yet |
+| No address or certificate | The app's **Address** step (`RoutePublished`), and `kubectl get certificate` |
+| The install Job stays `Pending` | It must run on the volume's node: check that the WordPress pod is running and that the node has capacity |
+| The S3 upload times out | Use the public S3 endpoint, not `BUCKET_HOST` |
+| A database Service name collides | Name the `ManagedService` differently from the app |

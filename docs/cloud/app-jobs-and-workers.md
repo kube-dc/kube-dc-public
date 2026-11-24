@@ -1,50 +1,65 @@
-# Migrations, workers, cron jobs, autoscaling and volumes
+# Release commands, workers and cron jobs
 
-An application on Kube-DC is a Deployment. Beyond a web server, most
-applications also need a database migration on each release, background
-workers, scheduled jobs, more pods under load or a place to keep files. Each
-of these is an option of the hosted MCP's `deploy_app` or a job tool, and
-each is an ordinary Kubernetes object you can also write yourself.
+Beyond a web server, most applications also need a database migration on
+each release, background workers, scheduled jobs, more pods under load or a
+place to keep files. This page covers each of them.
+
+Most are fields of the [Application](applications.md) (`spec.run`), which an
+AI app sets with the matching `deploy_app` option. One-off and cron jobs are
+hosted MCP tools instead (`run_job`, `schedule_job`); without an AI app,
+apply a Kubernetes Job or CronJob manifest.
 
 ## Release command (migrations)
 
-A release command runs once with each new image **before** that image takes
+A release command runs once with each new release **before** it takes
 traffic, for example `npm run migrate` or `rails db:migrate`:
 
-```json
-{ "name": "shop", "image": "registry.example.com/shop/web:1.4.0", "port": 8080,
-  "releaseCommand": ["npm", "run", "migrate"], "releaseTimeoutMinutes": 10 }
+```yaml
+spec:
+  run:
+    releaseCommand: ["npm", "run", "migrate"]
+    releaseTimeoutMinutes: 10
 ```
 
-- The command runs in a Job with the new image and the application's
-  variables, secrets, pull secret and service account. The Job is called
-  `<app>-release-<hash of the image>`.
-- When it succeeds, the new image rolls out as usual.
-- When it fails or passes the timeout (default 15 minutes), the running
-  version **keeps serving**. `rollout_status` reports `failed` with reason
-  `ReleaseFailed` and the command's last log lines. Deploying the same image
-  again retries it.
-- A newer image stops a release that is still running; one release runs at a
-  time per application.
-- It also runs for builds on push and for pull request previews (each preview
-  has its own database copy). It does not run on a rollback: a rollback does
-  not undo a migration, so write migrations that the previous version can
-  live with (add a column first, remove the old one a release later).
-- A new application waits with no pods until its first release succeeds.
+(`deploy_app` with `releaseCommand` and `releaseTimeoutMinutes`.)
 
-The state is in the Deployment's annotations:
-`apps.kube-dc.com/release-command` (the command, JSON),
-`apps.kube-dc.com/release-image` (the image waiting for it) and
-`apps.kube-dc.com/release-status` (`running`, `succeeded`, `failed` or
-`superseded`, with the Job and the reason). Events `ReleaseStarted`,
-`ReleaseSucceeded` and `ReleaseFailed` are recorded on the Deployment.
+- The command runs in a Job with the release's image, variables and Secrets,
+  without its ports, health check or data volume. The Job belongs to the
+  application and is named `<app>-release-<hash>`, from the release, the
+  command, its timeout, the variables and `spec.release.attempt`.
+- When it succeeds, the release rolls out as usual.
+- When it fails or passes the timeout (default 15 minutes), the running
+  version **keeps serving**: the **Release** step says the release command
+  failed, and `kubectl describe app <app>` gives the reason (`ReleaseFailed`
+  with the Job's message). **Retry release** (on **Builds & releases**),
+  `kube-dc app release retry <app>` (with a [kube-dc CLI that has it](applications.md#from-the-command-line)),
+  raising `spec.release.attempt`, or `deploy_app` again (the same image for
+  an image app; for an app built from GitHub, `buildFrom` again with `image`
+  or `buildFrom.registry` and without `buildNow`) runs it again.
+- A newer release stops a command that is still running for an older one.
+- It does not run on a rollback: a rollback does not undo a migration, so
+  write migrations that the previous version can live with (add a column
+  first, remove the old one a release later).
+- A command added to an app that is already running runs before its next
+  release, not for the running one.
+- A new application starts no pods until its first release command
+  succeeds.
 
 ## Workers
 
-Leave out `port` and `deploy_app` runs a worker, such as a queue consumer: no
-Service, no hostname and no readiness check. A worker cannot keep a warm
-previous version (`warmPrevious`): a second running copy would take the same
-work twice.
+A worker, such as a queue consumer, has no port, address or readiness check:
+
+```yaml
+spec:
+  run:
+    type: Worker
+    replicas: 2
+```
+
+`deploy_app` without `port` makes one when it creates the app; an existing
+app keeps its type. A worker cannot keep a warm previous
+version (`keepPreviousWarm`): a second running copy would take the same work
+twice.
 
 ## One-off jobs
 
@@ -58,42 +73,80 @@ pod, and `get_logs` reads the pod. The Job is removed a day after it finishes.
 `schedule_job` runs a command on a schedule:
 
 ```json
-{ "name": "nightly-report", "app": "shop", "command": ["node", "report.js"],
-  "schedule": "0 2 * * *", "timeZone": "Europe/Berlin" }
+{ "project": "web", "name": "nightly-report", "app": "shop",
+  "command": ["node", "report.js"], "schedule": "0 2 * * *",
+  "timeZone": "Europe/Berlin" }
 ```
 
 - With `app`, the cron job belongs to the application: it is deleted with it,
-  and it runs the application's new image after each deploy or build.
+  and it runs the application's new image after each release. The
+  **Processes** tab lists it with **Run now** and **Suspend**.
 - `concurrency` decides what happens when a run is still going at the next
   time: `Forbid` (default) skips, `Replace` stops the running one, `Allow`
   runs both. `suspend: true` pauses it.
-- Pull request previews run no schedules.
+- A cron job of a preview is deleted with the preview.
 - `delete` with kind `CronJob` and apiVersion `batch/v1` removes it.
 
 ## Autoscaling
 
-```json
-{ "name": "shop", "image": "…", "port": 8080, "cpu": "1", "autoscale": { "min": 2, "max": 6, "cpuPercent": 70 } }
+```yaml
+spec:
+  run:
+    resources: { cpu: "1" }
+    autoscale: { min: 2, max: 6, cpuPercent: 70 }
 ```
 
-Kube-DC adds pods when the pods' average CPU use passes `cpuPercent` of the
-**CPU limit** (here 700m) and removes them as it drops, between `min` and
-`max`. The application then has no fixed replica count; `autoscale: "off"`
-removes it. Autoscaling needs the cluster's CPU metrics; where they are
-missing the call says so.
+Kube-DC adds pods when the pods' average CPU use passes `cpuPercent` (default
+70) of the **CPU limit** (here 700m) and removes them as it drops, between
+`min` and `max`. The CPU limit is 500m unless `resources.cpu` sets it.
+`autoscale` cannot be combined with `replicas` or a volume. With
+`deploy_app`, `autoscale: { "min": 2, "max": 6, "cpuPercent": 70 }` turns it
+on and `autoscale: "off"` removes it. Autoscaling needs the cluster's CPU
+metrics. The **Processes** tab shows it, for example "2 to 6 (autoscaled at
+70% CPU)".
 
 ## A volume
 
-```json
-{ "name": "files", "image": "…", "port": 8080, "volume": { "size": "5Gi", "path": "/data" } }
+```yaml
+spec:
+  run:
+    volume: { path: /data, size: 5Gi, storageClass: rbd-vm }
+  deletionPolicy:
+    volume: Retain
 ```
 
-A persistent volume `<app>-data` (ReadWriteOnce) is mounted at `path`. The
-application runs one pod, and a new version stops the old pod before it
-starts (two pods cannot mount the volume). Deleting the application keeps the
-volume and its data; delete the PersistentVolumeClaim to remove them.
-Previews get an empty directory at the same path. A volume cannot be combined
-with `autoscale`, `warmPrevious` or more than one replica.
+A persistent volume `<app>-data` (ReadWriteOnce) is mounted at `path`.
+
+- **Storage class**: `storageClass` picks it (`kubectl get storageclass`
+  lists them). Without it the cluster's default class is used, which can be
+  node-local, so its data is lost with the node. The class applies when the
+  volume is created.
+- **One pod**: the application runs one pod, and a new release stops the old
+  pod before it starts the new one (two pods cannot mount the volume). A
+  volume cannot be combined with `autoscale`, `keepPreviousWarm` or more than
+  one replica.
+- **Size**: it can grow; a smaller size is ignored.
+- **Deleting the app**: `kubectl delete app` keeps the volume and its data
+  unless `deletionPolicy.volume` is `Delete`. `kube-dc app delete` (with a
+  [kube-dc CLI that has it](applications.md#from-the-command-line)) and the
+  AI tool `delete` keep it unless you pass `--delete-volume` or `deleteData`,
+  whatever the policy says. A kept volume is not used by a new Application
+  of the same name: copy the data out and delete the claim before you create
+  the app again.
+- **Previews** get empty scratch storage at the same path.
+
+## Restarts when a Secret changes
+
+```yaml
+spec:
+  run:
+    envFromSecrets:
+      - name: shop-config
+    restartOnSecretChange: true
+```
+
+When a Secret the app reads gets new values, its pods are replaced and read
+the new values. That is a restart, not a new release.
 
 ## Cost
 

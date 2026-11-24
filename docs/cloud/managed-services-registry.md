@@ -7,12 +7,12 @@ each listed project fresh. Use it with [Deploy from GitHub](deploy-from-github.m
 or any CI that can sign in to Kube-DC.
 
 Not every provider offers this class. The registry plans appear in your
-project's catalog (**Managed services → Create**) where it is available.
+project's catalog (**Managed services → New service**) where it is available.
 
 | Plan | Shape | Storage | Operations |
 |---|---|---|---|
-| `registry-development` | One replica, no failover | A volume (10Gi default, up to the plan maximum) | Resize, Expand storage |
-| `registry-production` | Two members on different nodes | A bucket in your project's object storage | Resize, Expand storage (a bucket the registry created) |
+| `registry-development` | One replica, no failover | A volume (10Gi default, up to the plan maximum) | Resize compute, Expand storage |
+| `registry-production` | Two members on different nodes | A bucket in your project's object storage | Resize compute, Expand storage (a bucket the registry created) |
 
 There are no backups: images are build artifacts, so rebuild them from source.
 There is no management fee: you pay for what the registry uses (see
@@ -23,7 +23,7 @@ data stays in the bucket.
 
 ## Create a registry
 
-In the console: **Managed services → Create → Container registry**, or with
+In the console: **Managed services → New service → Container registry**, or with
 an AI app: *"Create a development container registry named images"*. YAML:
 
 ```yaml
@@ -31,7 +31,7 @@ apiVersion: services.kube-dc.com/v1alpha1
 kind: ManagedService
 metadata:
   name: images
-  namespace: my-project
+  namespace: acme-dev                     # organization acme, project dev
 spec:
   classRef: {name: registry}
   planRef: {name: registry-development}   # or registry-production
@@ -41,7 +41,7 @@ spec:
   topology: {instances: 1}                # 2 for registry-production
   deletionPolicy: Delete
   parameters:
-    projects: [my-previews]               # optional, see below
+    projects: [previews]                  # optional, project names; see below
 ```
 
 When it is Ready, its address is `https://<name>-<project namespace>.<domain>`,
@@ -50,7 +50,9 @@ service's `https` endpoint.
 
 ### Projects and rights
 
-Each project gets the path `<project>/` in the registry. The registry's own
+Each project gets the path `<project>/` in the registry, named by the project
+alone, without the organization: in the example above, images go under
+`images-acme-dev.example.com/dev/`, not `.../acme-dev/`. The registry's own
 project is always included; list more projects of the same organization in
 `parameters.projects` (for example the project that runs pull request
 previews).
@@ -92,7 +94,7 @@ generate this for you (`deploy/registry-login.sh`):
 ```bash
 deploy/registry-login.sh          # needs KUBE_DC_REGISTRY, KUBE_DC_TOKEN_URL,
                                   # KUBE_DC_CLIENT_ID, KUBE_DC_AUDIENCE
-docker push images-my-project.<domain>/my-project/app:$GITHUB_SHA
+docker push images-acme-dev.<domain>/dev/app:$GITHUB_SHA
 ```
 
 Registry tokens live 15 minutes: sign in right before pushing. A token for
@@ -104,12 +106,13 @@ login** in its *Push and pull* card (or the AI tool `registry_login`). It
 shows a command valid for 15 minutes:
 
 ```bash
-echo '<token>' | docker login images-my-project.<domain> --username kube-dc --password-stdin
+echo '<token>' | docker login images-acme-dev.<domain> --username kube-dc --password-stdin
 ```
 
-**Builds on push.** Set `build.kube-dc.com/image` to
-`<registry host>/<project>/<app>` and no push Secret is needed; see
-[Deploy from GitHub](deploy-from-github.md).
+**Builds on push.** Name the registry in the app's
+[Application](applications.md) (`image.registry.managedService`, with
+`project` when the registry is in another Project that lists yours) and no
+push Secret is needed; see [Deploy from GitHub](deploy-from-github.md).
 
 ## Pull
 
@@ -124,20 +127,20 @@ own `imagePullSecrets` replaces the ServiceAccount's, so add
 
 | Operation | Development | Production |
 |---|---|---|
-| **Resize** (CPU and memory within the plan bounds, 100m–2 CPU and 256Mi–4Gi) | The single replica restarts: a short outage | Per member. The members restart one at a time; while a member restarts (about 20 seconds) the repositories it serves are unavailable, the other member keeps serving its own |
+| **Resize compute** (CPU and memory within the plan bounds, 100m–2 CPU and 256Mi–4Gi) | The single replica restarts: a short outage | Per member. The members restart one at a time; while a member restarts (about 20 seconds) the repositories it serves are unavailable, the other member keeps serving its own |
 | **Expand storage** (never shrinks) | Grows the volume online, up to 50Gi | Raises the maximum size of the bucket the registry created, up to 500Gi; nothing restarts. A bucket you named keeps the size you give it: change `spec.additionalConfig.maxSize` on your own claim |
 
-Both are in the console (the service's operations) and as `ManagedServiceOperation`
+Both are in the console (the service's operations) and as `ServiceOperation`
 objects. A registry created before these operations existed gets them once the
 platform operator adopts the current catalog for it.
 
 ## Metrics
 
-The console's health tiles show CPU, memory, the volume (Development), and
-from the registry itself: requests per second, server errors (5xx), image
-pushes and pulls per second, repositories and image storage. Production
-stores images in a bucket, which zot does not measure: its *Repositories* and
-*Image storage* tiles show no data; the bucket's size is in your object
+The console's health tiles show storage, CPU and memory. The **Metrics** tab
+has charts from the registry itself: requests per second, server errors
+(5xx), image pushes and pulls per second, repositories and image storage.
+Production stores images in a bucket, which zot does not measure: its
+*Repositories* and *Image storage* charts show no data; the bucket's size is in your object
 storage usage. A registry created before metrics existed shows only CPU,
 memory and volume until the platform operator adopts the current catalog for
 it (the members restart once).

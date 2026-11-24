@@ -23,29 +23,28 @@ Every read, write, sync change, import, and destroy emits a structured audit eve
 
 ## Secrets Manager view
 
-In your project's sidebar, click the **key icon** to open the Secrets Manager. You'll see one row per secret with the name, type, sync state, target Kubernetes `Secret` name, and a **Reveal** action.
+In your project's sidebar, the **key icon** opens **Security**; your secrets are under **Managed Secrets**. Each row shows the name, type, sync state and target Kubernetes `Secret` name. The sync state is one of:
 
-The sidebar tree under **Secrets** lists every secret in the project. The status dot next to each name tells you at a glance:
+- **Synced**: sync is enabled and the Kubernetes `Secret` has been projected
+- **Pending**: sync is enabled but the projection is not ready yet
+- **Sync disabled**: values remain in the platform store only
+- **Error**: the projection failed; the detail view says why
 
-- **Ready** (green): sync is enabled and the Kubernetes `Secret` has been projected
-- **Pending** (amber): sync is enabled but the projection is not ready yet
-- **Sync disabled** (gray): values remain in the platform store only
-
-Click a secret in the tree (or click its name in the table) to open the detail view with full metadata, a **Reveal values** button, and a **Used by** panel listing every Deployment, StatefulSet, DaemonSet, Job, CronJob, and Pod in the project that references the synced `Secret`.
+Click a secret's name to open its detail view, with its metadata and the **Values** and **Used by** tabs. **Used by** lists every Deployment, StatefulSet, DaemonSet, Job, CronJob, and Pod in the project that references the synced `Secret`.
 
 ## Create a secret
 
 ### Create in the dashboard
 
-1. Open the **Secrets Manager** view in your project.
-2. Click **Create secret**.
+1. Open **Security → Managed Secrets** in your project.
+2. Click **Create managed secret**.
 3. Fill in the form:
    - **Name**: a valid Kubernetes name (lowercase letters, digits, hyphens, dots; up to 253 chars).
    - **Type**: pick `opaque` unless you're storing one of the higher-shape types.
    - **Description**: optional, surfaced in the UI for context.
-   - **Sync to Kubernetes Secret**: leave on (default) to project the values into a regular `Secret`; turn off to keep values platform-only.
+   - **Sync to Kubernetes**: leave on (default) to project the values into a regular `Secret`; turn off to keep values platform-only.
    - **Target Secret name** and **Refresh interval**: optional overrides. They default to the secret name and to 1 hour.
-   - **Seed initial values**: toggle on and add `KEY=value` rows to write the first version atomically with the create.
+   - **Write initial values** (on by default): add `KEY=value` rows to write the first version atomically with the create.
 4. Click **Create**.
 
 If you provided initial values, the secret is created and its first version is written in one round trip. Otherwise the secret starts empty and you can populate it later with the CLI (`kube-dc secrets put …`).
@@ -74,14 +73,14 @@ Already have a raw `Secret` in your Project's backing namespace? Import it so th
 
 ### Import in the dashboard
 
-1. Open the **Secrets Manager** view.
-2. Click **Import existing Secret**.
+1. Open **Security → Managed Secrets**.
+2. Click **Import**.
 3. Enter the **source Kubernetes Secret name**. The source defaults to the current Project's backing namespace.
 4. Optionally rename the managed secret (defaults to the source name) and pick a type.
-5. Click **Import**.
+5. Click **Import secret**.
 
-The cross-namespace option appears only when your identity can list eligible
-namespaces. It still requires permission to read the source `Secret`, and the
+A cross-project option lets you import from another Project's namespace. It
+requires permission to read the source `Secret`, and the
 request is recorded in the audit stream.
 
 The import reads every key from the source `Secret`, writes them to the platform store, creates the matching `ManagedSecret` CR, and turns on sync so the original `Secret` keeps existing (now owned by the platform). Failures roll back cleanly, with no orphan KV paths are left behind.
@@ -96,7 +95,7 @@ kube-dc secrets import app-config --from legacy-app-credentials
 
 Values are hidden by default everywhere. To see them:
 
-- **Dashboard**: click **Reveal** on a row, or **Reveal values** in the detail view. Each value renders with a one-click copy button. Values are re-hidden automatically if the page reloads or the data refreshes.
+- **Dashboard**: open the secret and its **Values** tab. Each value renders with a one-click copy button. Values stay hidden until you click **Reveal values**, and hide again after 60 seconds, when you leave the tab, or with **Hide values**.
 - **CLI**: `kube-dc secrets get <name> --value` prints the values as a key/value list. Without `--value` you get the metadata only.
 - **API**: `GET /api/secrets/:project/:name?includeValue=true` returns `value.data` as a `{key: value}` map.
 
@@ -132,7 +131,7 @@ The **Used by** panel on the secret's detail view lists every workload in the pr
 
 ### Set an app's environment in the console
 
-Open **Kubernetes → Workloads → Deployments**, choose the app's actions menu and **Environment**. There you can:
+For an [Application](applications.md), use its **Environment** tab and **Edit YAML** (`spec.run.env`, `envFromSecrets`): the platform undoes changes made directly to the Deployment it generates. For a plain Deployment, open **Kubernetes → Workloads → Deployments**, choose the app's actions menu and **Environment**. There you can:
 
 - change plain variables (for example `LOG_LEVEL`);
 - add a variable from one key of a secret (**From a secret**: the secret and its key);
@@ -143,7 +142,7 @@ Saving starts a rolling update. Keep credentials in a secret, never in a plain v
 
 ### Restart apps when a secret changes
 
-A Deployment annotated `kube-dc.com/restart-on-secret-change: "true"` is rolled automatically when a synced secret it reads (through `env`, `envFrom` or a volume) gets new values. Apps deployed by an AI agent (`deploy_app`) have it on from the start; for others turn it on in **Environment** or add the annotation yourself. A value changed in the console reaches the app within a minute; a scheduled rotation arrives at the next sync refresh (`spec.sync.refreshInterval`, one hour by default).
+An [Application](applications.md) with `run.restartOnSecretChange: true` is restarted when a Secret it reads gets new values; a plain Deployment does the same with the annotation `kube-dc.com/restart-on-secret-change: "true"` (through `env`, `envFrom` or a volume). Apps deployed by an AI agent (`deploy_app`) or with the console's **New application**, Applications included, have it on from the start; for an Application applied from YAML, set the field. A value changed in the console reaches the app within a minute; a scheduled rotation arrives at the next sync refresh (`spec.sync.refreshInterval`, one hour by default).
 
 ### With an AI agent
 

@@ -32,7 +32,7 @@ Two MCP extensions are offered to apps that support them; other apps work as
 before:
 
 - **Tasks** (`io.modelcontextprotocol/tasks`, MCP 2026-07-28): `create_vm`,
-  `create_project` and `create_managed_service` return a task that the app
+  `create_project`, `create_managed_service` and `create_cluster` return a task that the app
   follows until the object is ready, instead of polling the list. The task is
   read again from Kubernetes with the person's own permissions on every check,
   and only the person who started it can follow it. Cancelling a task does not
@@ -106,7 +106,8 @@ true` refuses new sign-ins; deleting the `MCPApp` removes the app and every
 consent given to it.
 
 **Revoking an app:** the project's **Connect an AI app** dialog lists the apps
-people allowed, and **Revoke** stops one from signing in again at once.
+you allowed (organization admins see every member's apps under **Organization
+→ Machine identities**, with **Everyone in the organization** ticked), and **Revoke** stops one from signing in again at once.
 Access it already holds ends within 15 minutes, when its token expires.
 
 ## What the tools can do
@@ -120,10 +121,10 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | Tool | Kind | What it does |
 |---|---|---|
 | `whoami` | read | The signed-in person, Organization and groups. |
-| `list` | read | Lists by kind: projects, VMs, disks, snapshots, services, floating IPs, external IPs, buckets, managed services and their plans, Kubernetes clusters, OS images, storage classes, events. |
+| `list` | read | Lists by kind: projects, VMs, disks, snapshots, services, floating IPs, external IPs, buckets, managed services and their plans, Kubernetes clusters, OS images, storage classes, events, jobs, backups, event webhooks, apps and builds. |
 | `get_vm` | read | One VM's status, size, addresses, disks and conditions. |
 | `get_quota` | read | A project's quota and usage; for Organization administrators also the Organization's usage. |
-| `get_logs` | read | The last lines of a pod's log. |
+| `get_logs` | read | The last lines of a pod's log, or of an app's build (`build`). |
 | `get_resources` | read | Any Kubernetes object the person may read. Secret values are masked. |
 | `rollout_status` | read | Whether an app is live: ready, progressing or failed with the reason, its pods, recent log lines of a failing pod and its HTTPS URL. |
 | `list_secrets` | read | The project's managed secrets: type, key names (never values), which apps use each one, and its console page. |
@@ -140,13 +141,13 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `create_bucket` | write | Creates an object storage bucket. |
 | `create_managed_service` | write | Orders a managed database, cache or queue: the first call returns the price, the second (after the person saw it) creates it. |
 | `create_secret` | write | Creates a managed secret for an app: either a generated value nobody sees, or an empty secret whose values the person types on its console page. Values never pass through the agent. |
-| `deploy_app` | write | Runs a container image as an app (Deployment and Service), with an HTTPS hostname when public. Called again with a new image, it ships a new version. Without a port it runs a worker (no Service); it can also autoscale on CPU and mount a persistent volume. |
+| `deploy_app` | write | Creates or changes an app (an [Application](applications.md), which generates the Deployment and Service, where the installation creates them for new apps; else the Deployment and Service directly), from an image or built from GitHub, with an HTTPS hostname when public. Called again with a new image it ships a new version; an app built from GitHub builds again when its build settings change or with `buildNow`. Without a port it runs a worker (no Service); it can also autoscale on CPU, mount a persistent volume, and pause or resume builds and rollouts of an Application (`suspend`). |
 | `run_job` | write | Runs a command once (a seed, a backfill) with an app's image, variables and secrets, or with an image. |
 | `schedule_job` | write | Runs a command on a schedule (a cron job), with an app's image and secrets; it follows the app's new image and is deleted with the app. |
 | `restart` | destructive | Restarts every pod of an app, one by one. Apps that support it ask the person to type the name first. |
-| `rollback` | destructive | Returns an app to an earlier revision; with a warm previous version (`deploy_app warmPrevious`) traffic switches to it in seconds (`instant: true`). Apps that support it ask the person to type the name first. |
+| `rollback` | destructive | Returns an app to an earlier version: an Application to a release (`release`, pinned until `resume: true`), a plain Deployment to a `revision`; with a warm previous version (`deploy_app warmPrevious`) traffic switches to it in seconds (`instant: true`). Apps that support it ask the person to type the name first. |
 | `apply_manifest` | write | Creates or updates one Kubernetes object. |
-| `delete` | destructive | Deletes a project, VM, disk, floating IP, external IP, event webhook or any Kubernetes object. Apps that support it ask the person to type the name first. |
+| `delete` | destructive | Deletes a project, app, VM, disk, floating IP, external IP, event webhook or any Kubernetes object, and cancels an app's build (kind `build`). Apps that support it ask the person to type the name first. |
 | `extend_preview` | write | Keeps a preview app longer before the platform removes it. |
 | `create_webhook` | write | Sends the organization's platform events (deploys, live hostnames, previews, alerts) to an HTTPS URL, signed. Organization admins only. |
 | `connect_repository` | write | Sets up keyless deploys from GitHub Actions for a repository: machine identities for its production (and preview) environment, plus the workflow files and repository variables to add. Organization admins only. |
@@ -159,7 +160,10 @@ Tools carry MCP annotations, so apps ask the person before a destructive one.
 | `backup_service` | write | Takes a backup of a managed service now, besides its scheduled backups. |
 | `restore_backup` | write | Restores a completed managed-service backup into a new service. The original is not changed. |
 
-Read-only URLs offer only the ten read tools.
+Read-only sessions offer only the read tools above, plus `query`, which runs
+a short read-only script over the read tools to combine several reads in one
+call. `search_docs` and `get_doc` are there unless your provider turned the
+documentation tools off.
 
 ## Data handling
 

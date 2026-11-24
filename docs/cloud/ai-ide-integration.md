@@ -82,7 +82,9 @@ Le Chat) need nothing extra: the MCP server itself serves the guides (see
 **Tools.** The server offers 39 tools. The ten read tools are `whoami`,
 `list`, `get_vm`, `get_quota`, `get_logs`, `get_resources`, `rollout_status`,
 `list_secrets`, `search_docs`, and `get_doc` (the last two search and read
-this documentation). The change tools manage projects, VMs, disks and their
+this documentation). A read-only URL also has `query`: the assistant writes a
+short script that calls the read tools and returns only the answer, which
+saves tokens on questions that span many projects or pods. The change tools manage projects, VMs, disks and their
 snapshots, IPs, buckets, managed services and their backups, managed
 Kubernetes clusters, secrets, apps, jobs, previews, webhooks, GitHub
 repository connections, and, where your provider offers a container
@@ -618,7 +620,7 @@ Deploy WordPress with a managed HA MariaDB database in Project production in Org
 Expose it over HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded or the hosted MCP endpoint, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress with the delivered credentials on a Ceph-backed volume, expose it with a `ClusterIP` Service carrying `service.nlb.kube-dc.com/expose-route: https` (no public IP), and report the auto-generated hostname. The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
+With Agent Skills loaded or the hosted MCP endpoint, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress as an Application that reads the delivered credentials and keeps its files on a data volume, and report its HTTPS address (no public IP is used). The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
 
 ### Create a VM with SSH access
 
