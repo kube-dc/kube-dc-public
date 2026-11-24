@@ -5,10 +5,22 @@ to run: a container image, or a GitHub repository the platform builds. The
 platform starts the pods, gives the app an HTTPS address and keeps every
 version that ran, so you can roll back.
 
-This guide deploys a container image with `kubectl` or an AI app. The
-console's **New application** starts from a GitHub repository instead: to
-build and deploy a repository on every push, see
-[Deploy from GitHub](deploy-from-github.md).
+This guide deploys a container image with `kubectl` or an AI app.
+
+## Other ways to deploy
+
+This guide covers one of three options, an Application from a container
+image. [Ways to deploy](deploy-options.md) compares all three. The other
+two:
+
+- **An Application from a GitHub repository**: where your provider offers
+  builds, the platform builds the repository on every push and can make a
+  preview for every pull request.
+  The console's **New application** starts here. See
+  [Deploy from GitHub](deploy-from-github.md).
+- **Your own Kubernetes manifests or a Helm chart**: Deployments, Services
+  and Jobs applied directly, without an Application. See
+  [Projects](kubernetes-projects.md#deploy-into-a-project).
 
 ## Before you begin
 
@@ -116,6 +128,8 @@ containers, several hostnames or a StatefulSet, apply your own Kubernetes
 manifests: Projects accept Deployments, StatefulSets, Services and Jobs (see
 [Project compatibility](security-restrictions.md)), and
 [Service exposure](service-exposure.md) publishes them.
+[Ways to deploy](deploy-options.md#deploy-kubernetes-manifests-directly) has
+an example.
 
 ## Next steps
 

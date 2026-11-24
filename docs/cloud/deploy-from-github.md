@@ -5,6 +5,10 @@ every push to a branch and deploys it as an [Application](applications.md).
 Every pull request can get its own preview, with its own database if you
 want one. Nothing is added to your repository.
 
+This is one of three ways to deploy. To run an image you build yourself, or
+to apply your own Kubernetes manifests, see
+[Ways to deploy](deploy-options.md).
+
 You need:
 
 - the developer role in the Project;

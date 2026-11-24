@@ -5,7 +5,9 @@ in your Project. It says where the app comes from (a GitHub repository or a
 container image) and how it runs. The platform builds it, deploys it,
 publishes its address and keeps it in that state. It creates a Deployment and
 a Service named after the app and owns them: change the Application, not
-those objects.
+those objects. An Application is not the only way to run containers: you
+can also apply your own Kubernetes manifests. [Ways to deploy](deploy-options.md)
+compares the options.
 
 You create one with **New application** in the console (from a GitHub
 repository, where your provider offers builds; see

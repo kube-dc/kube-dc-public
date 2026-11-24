@@ -63,9 +63,22 @@ kubectl rollout status deployment/my-app
 helm upgrade --install my-app ./chart --wait
 ```
 
-To run an app with an HTTPS address and a release history, see
-[Deploy your first application](deploy-first-app.md). To publish Services of
-your own manifests, see [Service exposure](service-exposure.md).
+To publish Services of your own manifests, see
+[Service exposure](service-exposure.md).
+
+### Or let the platform run the app
+
+Manifests are one of three options. Instead of writing a Deployment and a
+Service, you can describe the app in one `Application` resource, and the
+platform runs it with an HTTPS address and a release history:
+
+- from a container image: see
+  [Deploy your first application](deploy-first-app.md);
+- from a GitHub repository, where your provider offers builds: built inside
+  the platform on every push, with a preview for every pull request. See
+  [Deploy from GitHub](deploy-from-github.md).
+
+[Ways to deploy](deploy-options.md) compares the three.
 
 ## What "compatible" means
 

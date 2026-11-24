@@ -47,6 +47,7 @@ const sidebars: SidebarsConfig = {
       label: 'Applications',
       collapsed: true,
       items: [
+        {type: 'doc', id: 'deploy-options', label: 'Ways to Deploy'},
         {type: 'doc', id: 'deploy-first-app', label: 'Deploy Your First Application'},
         {type: 'doc', id: 'deploy-from-github', label: 'Deploy from GitHub'},
         {type: 'doc', id: 'applications', label: 'Manage Applications'},

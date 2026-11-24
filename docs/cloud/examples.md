@@ -12,7 +12,9 @@ RBAC.
 
 | Goal | Guide |
 |------|-------|
+| Choose between manifests, an image app and builds from GitHub | [Ways to deploy](deploy-options.md) |
 | Deploy a small web application | [Deploy your first application](deploy-first-app.md) |
+| Build and deploy a GitHub repository on every push, with previews | [Deploy from GitHub](deploy-from-github.md) |
 | Build a fuller application stack | [Deploy a WordPress stack](deploy-wordpress-stack.md) |
 | Create and connect to a VM | [Create a virtual machine](creating-vm.md) |
 | Provision a database, cache, or broker | [Managed services](managed-services.md) |

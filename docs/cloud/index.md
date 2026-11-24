@@ -13,6 +13,11 @@ Kube-DC organization. For the operator documentation, see the
 - Deploy applications, compatible Helm charts, and VMs straight into a
   [Project](kubernetes-projects.md) with its kubeconfig. There is no cluster to
   provision first.
+- Choose how to deploy an app: apply your own Kubernetes manifests, run a
+  container image as an Application, or, where your provider offers builds,
+  let the platform build a GitHub repository on every push, with a preview
+  for every pull request. See
+  [Ways to deploy](deploy-options.md).
 - Run Linux and Windows [virtual machines](creating-vm.md) from the console or
   with `kubectl`.
 - Provision a [Managed Cluster](provisioning-cluster.md) of your own for

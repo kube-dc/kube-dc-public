@@ -76,7 +76,21 @@ the Project boundary. When a container omits requests or limits, Kube-DC
 applies resource defaults. The Project network keeps private workload traffic
 isolated.
 
+You choose how to deploy:
+
+- **Kubernetes manifests and Helm charts**, applied directly with `kubectl`
+  or from your own pipeline.
+- **An Application from a container image**: one resource, and the platform
+  runs the app with an HTTPS address and a release history you can roll back.
+- **An Application from a GitHub repository**: where your provider offers
+  builds, the platform builds the repository inside your Project on every
+  push, deploys it, and can make a preview for every pull request.
+
+Guides:
+
+- [Ways to deploy](deploy-options.md)
 - [Deploy your first application](deploy-first-app.md)
+- [Deploy from GitHub](deploy-from-github.md)
 - [Service exposure](service-exposure.md)
 - [GitOps](gitops.md)
 
