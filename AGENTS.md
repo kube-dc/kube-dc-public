@@ -27,6 +27,8 @@ StorageClasses, NetworkPolicies, or privileged/host access.
 | `Project` | `kube-dc.com/v1` | Organization namespace; creates a governed workload boundary |
 | `EIp`, `FIp` | `kube-dc.com/v1` | Project backing namespace; external/floating addresses |
 | `KdcCluster` | `k8s.kube-dc.com/v1alpha1` | Project backing namespace; Managed Cluster |
+| `Application` | `apps.kube-dc.com/v1alpha1` | Project backing namespace; an app from an image or a GitHub repository; generates and owns its Deployment and Service |
+| `ApplicationBuild` | `apps.kube-dc.com/v1alpha1` | Project backing namespace; one build of an Application (create one to rebuild) |
 | `ManagedService` | `services.kube-dc.com/v1alpha1` | Project backing namespace; a service from the provider's catalog, with a class and plan |
 | `ServiceBinding` | `services.kube-dc.com/v1alpha1` | Project backing namespace; delivers one credential role of a service as a Secret |
 | `ServiceOperation` | `services.kube-dc.com/v1alpha1` | Project backing namespace; one immutable day-2 action (backup, scale, rotate, upgrade) |
@@ -80,10 +82,12 @@ shared quota, and Organization Groups.
 11. Run databases, caches and queues as managed services (`create-database`),
     not in pods. Use the `{family}-development` plan unless the user asks for
     production or high availability.
-12. Publish web traffic through the shared Gateway (a `ClusterIP` Service with
-    `expose-route`), never a `LoadBalancer` with its own EIP. Use a public
-    IPv4 (EIP, FIP, `LoadBalancer`) only for non-HTTP ports or when the user
-    asks for a dedicated address, after checking quota.
+12. Publish web traffic through the shared Gateway, never a `LoadBalancer`
+    with its own EIP. An Application publishes itself (`run.public`,
+    `run.hostnames`); for Services of your own manifests, use a `ClusterIP`
+    Service with `expose-route`. Use a public IPv4 (EIP, FIP,
+    `LoadBalancer`) only for non-HTTP ports or when the user asks for a
+    dedicated address, after checking quota.
 
 ## Service Exposure
 

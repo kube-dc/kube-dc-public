@@ -4,8 +4,11 @@ description: Expose a Service from a Kube-DC Project with a hostname-based HTTP/
 ---
 
 To run an image and publish it in one step, the hosted MCP tool `deploy_app`
-creates the Deployment and this kind of Service; `rollout_status` reports
-the URL.
+creates the app (an Application, which generates the Deployment and this kind
+of Service, where the installation creates Applications for new apps; else the
+Deployment and Service directly); `rollout_status` reports the URL (see `deploy-app`). Do not add these
+annotations to a Service an Application generated: set `run.public` and
+`run.hostnames` on the Application instead.
 
 ## Prerequisites
 

@@ -1,12 +1,26 @@
 ---
 name: deploy-app
-description: Deploy a containerized application to a Kube-DC Project with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys, builds on push and pull request previews from a GitHub repository, with a managed container registry or the user's own.
+description: Deploy a containerized application to a Kube-DC Project as an Application (apps.kube-dc.com) or a plain workload, with optional persistent storage, a managed database, external exposure, or gated Shared GPU acceleration; set up keyless deploys, builds on push and pull request previews from a GitHub repository, with a managed container registry or the user's own; roll back, pause and inspect builds.
 ---
 
 # Deploy an Application
 
-Deploy ordinary Kubernetes workloads into a Project's backing namespace. Keep
-the Project context, quota, storage, database, and exposure decisions explicit.
+An app on Kube-DC is an **Application** (`apps.kube-dc.com/v1alpha1`) in the
+Project's backing namespace: it names the source (a container image or a
+GitHub repository) and how the app runs, and the platform builds it, deploys
+it, publishes its address and keeps it that way. It generates and owns a
+Deployment and a Service named after the app; change the Application, never
+those objects. Plain Deployments remain for what an Application does not
+cover (below). Keep the Project context, quota, storage, database, and
+exposure decisions explicit.
+
+Check that the installation runs Applications before writing one. The API can be
+served while the provider has not turned the controller on, so listing the
+resource type (`kubectl api-resources --api-group=apps.kube-dc.com`) is not
+enough: apply the Application and check that it gets a status within a minute
+(`kubectl get app <name>` shows a STATUS, `.status.conditions` is set). If it stays empty, delete it and use the
+plain manifests below. With the hosted MCP server, `deploy_app` decides for you:
+its output has an `application` field when it made an Application.
 
 ## With the hosted MCP server
 
@@ -15,9 +29,20 @@ writing the manifests below:
 
 - `deploy_app` (project, name, image, port; optional `healthPath`, `env`,
   `envFromSecrets` for a database binding Secret, `pullSecret` for a private
-  registry, `public: false` for in-Project only) creates or updates the
-  Deployment and a ClusterIP Service with `expose-route: https`. Call it again
-  with a new image tag to ship a new version.
+  registry, `public: false` for in-Project only) creates or updates the app.
+  An existing Application is always changed through its spec; a new app is
+  an Application where the installation creates them (the result has
+  `application: Application/<name>`). It merges the arguments into the
+  Application: an omitted argument keeps its value, except variables: `env`
+  or `secretEnv` replaces the whole list, so pass every variable the app
+  needs (a call with only `env` drops `DATABASE_URL` from a Secret). Elsewhere it writes
+  the Deployment and a ClusterIP Service with `expose-route: https`. Call it
+  again with a new image tag to ship a new version. Every call needs the
+  app's `image` (or, for an app built from GitHub, `buildFrom` again with
+  `image` or `buildFrom.registry`), also a call that only sets `suspend`.
+  `suspend: true` pauses an Application's builds and rollouts (the running
+  version keeps serving), `suspend: false` resumes them; a plain Deployment
+  refuses `suspend`.
 - Secrets (API keys, session keys): never ask the user for a value or put
   one in `env`. `list_secrets` (project) shows the project's managed
   secrets with key names only, never values, and which apps use each.
@@ -32,28 +57,36 @@ writing the manifests below:
   secret it uses gets a new value (a rotation, within an hour, or a console
   edit); `restartOnSecretChange: false` turns that off, and an existing app
   keeps its setting. The user can also edit variables, secret keys and the switch
-  in the console (**Environment** on the Deployment). After such an edit, a
-  `deploy_app` that sets a different value for the same variable reports a
-  field-ownership conflict: confirm with the user, then retry with
-  `force: true`.
+  in the console (an Application's **Environment** tab and **Edit YAML**; a
+  plain Deployment's **Edit environment**). For an app
+  that is still a plain Deployment, a `deploy_app` after such an edit that sets
+  a different value for the same variable reports a field-ownership conflict:
+  confirm with the user, then retry with `force: true`.
 - Release command (migrations): `deploy_app releaseCommand` (for example
   `["npm", "run", "migrate"]`, optional `releaseTimeoutMinutes`, default 15)
   runs once with each new image, with the app's variables and secrets,
   before that image takes traffic. If it fails, the running version keeps
-  serving and `rollout_status` reports `failed` (`ReleaseFailed`) with the
-  command's log; deploying the same image again retries. It runs for builds
-  on push and previews too, never on a rollback: write migrations the
-  previous version can live with (expand/contract).
+  serving and `rollout_status` reports `failed` (`ReleaseFailed`): for a
+  plain Deployment with the command's log, for an Application with the Job's
+  failure message only (read the release Job's pod with `get_logs`);
+  deploying again retries (the console's
+  **Retry release** does the same). It runs for builds on push and previews
+  too, never on a rollback: write migrations the previous version can live
+  with (expand/contract). A command added to a running app runs before its
+  next release, not for the running one.
 - Workers: leave out `port` for a queue consumer (no Service, no hostname,
   no `warmPrevious`).
 - Jobs: `run_job` runs a command once (`app` for the app's image and
   secrets, or `image`); `schedule_job` runs one on a cron `schedule`
   (`timeZone`, `concurrency`, `suspend`). A cron job made from an app follows
-  its new image and is deleted with it; previews run no schedules.
+  its new image and is deleted with it. A preview of a plain Deployment
+  refuses schedules; give previews none.
   `list kind=jobs` shows runs and pods; `get_logs` reads them.
 - `autoscale: { min, max, cpuPercent }` scales on CPU as a share of the CPU
   limit (not with `replicas`); `volume: { size, path }` mounts a persistent
-  volume `<app>-data` (one replica; kept when the app is deleted). Tell the
+  volume `<app>-data` (one replica; kept when the app is deleted, and not
+  used by a new Application of the same name: copy the data and delete the
+  claim before recreating). Tell the
   user that job pods and extra replicas are billed like the app's pods.
 - Own domain: `deploy_app domain: "app.example.com"` (public apps). Its DNS
   must point at the platform first: a CNAME to the app's current hostname,
@@ -66,35 +99,57 @@ writing the manifests below:
   the user its platform hostname stops working. `domain: ""` brings the
   platform hostname back. The certificate takes 1 to 3 minutes.
 - Organization domains: an organization admin connects a domain once in the
-  console (**Organization → Domains → Connect a domain**; `apps.<domain>` is
-  suggested so the website and mail stay untouched): a TXT record proves it,
+  console (**Organization → Domains → Connect a domain**; for many apps an
+  `apps.<domain>` option keeps them under that subdomain, so the website and
+  mail stay untouched): a TXT record proves it,
   a wildcard `*.<domain>` points every name under it at the platform, and the
-  first domain becomes the default for new apps. Suggest this to users who
+  domain becomes the default for new apps when **New apps get…** is ticked
+  (new apps get the address once `*.<domain>` points at the platform).
+  Suggest this to users who
   want many apps on their own domain, instead of one record per app.
 - Organization default domain: when it is set and `*.<domain>` points at the
   platform, a new public app without `domain` gets `<app>.<domain>` (or
-  `<app>-<project>.<domain>` when taken); the result says so. Pass
+  `<app>-<project>.<domain>` when taken); for a plain Deployment the result
+  says so, for an Application only its `domain` field shows it. Pass
   `domain: ""` for the platform address. Existing apps and previews never
   change.
 - The main domain itself (`domain: "example.com"`, a verified domain of the
-  organization): one app may take it; `www.example.com` then redirects to it.
+  organization): one app may take it; for a plain Deployment
+  `www.example.com` then redirects to it (an Application gets no `www`
+  redirect).
   It needs A records for `@` (or an ALIAS/ANAME/flattened CNAME to
   `gateway.<baseDomain>`) and a `www` CNAME to the domain; tell the user a
   website already there moves to this app.
 - `rollout_status` reports `ready` with the HTTPS URL, `progressing`, or
-  `failed` with the reason (image pull, crash loop, scheduling) and the
-  failing pod's last log lines. Check about 30 seconds after a deploy; a new
-  hostname gets its certificate within 1 to 3 minutes.
-- `restart` and `rollback` (to the previous revision by default) change a
-  running app: ask the user first.
+  `failed` with the reason (image pull, crash loop, scheduling, a failed
+  build) and the failing pod's last log lines; for an Application also
+  `application` (phase, deployed release, commit, `pinned`, `suspended`,
+  latest build). Check about 30 seconds after a deploy; a new hostname gets
+  its certificate within 1 to 3 minutes.
+- `list` kind `apps` lists the Project's apps (Applications, and plain
+  Deployments made by `deploy_app` or built on push, marked `notMigrated`);
+  kind `builds` lists the Project's builds, or one app's with `app`.
+  `get_logs` with `build` (and `attempt`) reads a build's log; `delete` with
+  kind `build` cancels a running build.
+- `restart` and `rollback` change a running app: ask the user first.
+  `rollback` returns to the previous revision by default. For an
+  Application it always pins: to the previous release, or to `release: <n>`. While pinned, pushes are still
+  built but nothing new deploys until `rollback` with `resume: true`: tell the
+  user that.
 - Delete an app: `delete` with `kind: app` removes the Deployment, Service,
   autoscaler, cron jobs, the warm previous version and its previews (with
   their database copies). The data volume `<app>-data` stays unless
   `deleteData: true`; registry images and the repository are kept. Ask the
-  user first and say what goes. A preview (`{app}-pr-<n>`) is refused: it
-  goes when its pull request closes or it expires (`extend_preview` with
-  `hours: 1` ends it within the hour; the console's **Previews → Remove**
-  ends it now).
+  user first and say what goes. A preview (`{app}-pr-<n>`) is refused by
+  kind `app`: it
+  goes when its pull request closes or it expires (for a Deployment-based
+  app, `extend_preview` with `hours: 1` ends it within the hour; the console's
+  **Previews → Remove**
+  ends it now). An Application preview: `extend_preview` only extends it;
+  end it now with the preview's **Settings → Remove preview** or by deleting
+  the preview Application (`delete` with kind `Application` and apiVersion
+  `apps.kube-dc.com/v1alpha1`), and it comes back with the pull request's next
+  commit.
 - Instant rollback: `deploy_app` with `warmPrevious` (for example `1h`, at
   most `24h`; `off` removes it) keeps the previous version running as
   `{app}-previous` after each rollout. `rollback` then switches traffic to it
@@ -108,21 +163,34 @@ writing the manifests below:
   queue consumers) while it is set. Not for previews.
 - Previews: `deploy_app` with `previewHours` (for example a pull request's
   copy, named `{app}-pr-{number}`) is removed that long after its last
-  deploy. The platform warns two hours before; `extend_preview` adds hours.
+  deploy. For a plain Deployment preview the platform warns two hours
+  before; `extend_preview` sets the removal to now plus `hours` (it never
+  shortens an Application preview, and an Application preview gets no
+  warning). `buildFrom.previewHours`, `buildFrom.previewBuildArgs` and
+  `buildFrom.previewDatabaseSecret` take effect only together with
+  `buildFrom.previewProject` in the same call.
 - GitHub: pass `githubRepository` (`owner/repo`), `githubSha` (the full
   commit) and optionally `githubEnvironment` to `deploy_app`. Where the
-  installation's GitHub App is installed on the repository, the commit and
-  pull request then show the deployment with its live URL or the failure.
-  Otherwise `rollout_status` says how to record the result with `gh api`.
+  installation's GitHub App is installed on the repository, a plain
+  Deployment's commit and pull request then show the deployment with its live
+  URL or the failure. For an Application these arguments are kept only as the
+  image's provenance: an image Application gets nothing on GitHub, and one
+  built from GitHub gets the `kube-dc` check run of its builds.
+  Otherwise, for a plain Deployment, `rollout_status` says how to record the
+  result with `gh api`.
 - `create_webhook` (organization admins) sends the organization's platform
   events, such as `DeploymentRolledOut`, `DeploymentFailed` and
   `RouteReady`, to an HTTPS URL, signed. Use it when the user wants to hear
   about deploys elsewhere (chat, a script) instead of polling.
 
-An app first deployed with `kubectl apply` keeps its selector; `deploy_app`
-reports a field-ownership conflict and needs `force: true` to take over.
-Use the manifests below for volumes, several containers, Helm charts or
-anything the tool does not cover.
+An app first deployed as a plain Deployment with `kubectl apply` keeps its
+selector; `deploy_app` reports a field-ownership conflict and needs
+`force: true` to take over. Apps created before the installation offered
+Applications stay plain Deployments; there is no migration: to make one an
+Application, delete it and create it again with the same name (ask the user
+first). Its platform address stays; a custom domain is set again in
+`run.hostnames`; a data volume is not taken over (the new Application refuses
+the old `{app}-data` claim), so the data must be copied out and back.
 
 ## Deploy from GitHub on every push
 
@@ -156,6 +224,9 @@ installation has a registry or builds on push:
   tenants. A 404 with "Deploy from GitHub is not offered on this installation"
   (or "AI assistants are not offered") means exactly that: say so and use a
   GitHub Actions workflow with the user's own registry instead; do not retry.
+  Through the MCP server, where the installation's GitHub-connect worker is
+  set up, `connect_repository` reports it inside a successful result, after it has already created the machine identities and groups:
+  read the result, tell the user, and do not call it again.
 
 Before either, the repository needs the installation's GitHub App and the
 organization's consent. Installing the App is a GitHub organization admin's
@@ -170,24 +241,31 @@ by a repository admin). The hosted MCP guide
 Then choose how builds run (one per app; both would deploy every push twice):
 
 - **Builds on push by the platform** (no CI in the repository): `deploy_app`
-  with `buildFrom` and an `image` path without a tag. Managed registry:
-  `<registry host>/<project>/<app>`, no push Secret. Own registry: also
-  `pushSecret`, a `kubernetes.io/dockerconfigjson` Secret the user created.
+  with `buildFrom`. Managed registry of the app's own project:
+  `buildFrom.registry: <name>`, no `image` and no push Secret (for an
+  Application not already on a managed registry, any `image` outside
+  `ghcr.io` without `pushSecret` is refused; GHCR needs `pushSecret` too, as
+  GHCR refuses the GitHub App's token).
+  Own registry: an `image` path without a tag and `pushSecret`, a
+  `kubernetes.io/dockerconfigjson` Secret the user created.
   Pushes build and deploy; pull requests build a preview when a previews
   project is given; the commit shows a `kube-dc` check run.
   - New project registry: `buildFrom.registry: <name>` names a managed
     registry of the project (family `registry`) instead of `image`, also one
     still being created; the platform sets the image path when it is Ready
-    and the first build waits for it (up to 30 minutes).
+    and the first build waits for it (the Application reports
+    `RegistryNotReady` until it is ready).
   - A registry in another project: one registry serves several projects of
     the organization. Add the app's project to that registry's
     `parameters.projects` (`apply_manifest` on the ManagedService, by someone
-    with write access to the registry's project), wait until it is Ready again,
-    then pass `image: <registry host>/<app's project>/<app>`. The host is
-    the registry's `https` endpoint, `<registry>-<org>-<registry's
-    project>.<baseDomain>`. The list is replaced, not merged: read it first
-    and send every project, the existing ones too. Removing a project
-    later is a separate edit; deleting the project does not do it.
+    with write access to the registry's project; the list is replaced, not
+    merged: read it first and send every project, the existing ones too;
+    removing a project later is a separate edit, and deleting the project
+    does not do it), wait until it is Ready again.
+    `deploy_app` cannot name a registry of another project: write the
+    Application with `apply_manifest` (below), with
+    `image.registry.managedService: { name: <registry>, project: <its
+    project> }`.
   - What is built: the pushed commit, not the working tree. Files that git
     ignores (large media, licensed assets, local `.env` files) are not in
     the build; the app must not depend on them, or a derived file that may
@@ -198,8 +276,8 @@ Then choose how builds run (one per app; both would deploy every push twice):
     `healthPath`, and fall back to `index.html` for client-side routes.
     An app that lives under a path (`/app/`) must be built with that base
     path.
-  - First build: a new app is built from the default branch at once
-    (`buildFrom.buildNow`, default true for a new app); pass `buildNow: true`
+  - First build: a new app is built from the default branch at once (for a
+    new Application even with `buildFrom.buildNow: false`); pass `buildFrom.buildNow: true`
     again to rebuild an existing app without a push.
   - No Dockerfile: `buildFrom.builder: railpack` detects the language (Node.js,
     Python, Go, Rust, Ruby, PHP, Java, .NET, Elixir, Deno, static sites). The
@@ -209,13 +287,14 @@ Then choose how builds run (one per app; both would deploy every push twice):
   - Another branch: `buildFrom.branch: <branch>` builds pushes to that branch
     instead of the default branch; pull request previews are unchanged.
   - The console's **Applications → New application** does all of this for
-    the user in a few clicks (repository picker, registry, port, branch):
+    the user in a few clicks (repository picker, port, branch; it uses the
+    project's registry, with no choice):
     suggest it to users who prefer the console. Each app then has a page
     under **Applications** with its versions, processes and autoscaling, own
     domain, previews, logs and **Settings → Delete application**.
   - Build arguments: `buildFrom.buildArgs` sets Dockerfile `ARG` values for
     every build (for example `{ "VITE_API_URL": "https://api.example.com" }`)
-    and `previewBuildArgs` overrides them key by key for previews. They stay
+    and `buildFrom.previewBuildArgs` overrides them key by key for previews. They stay
     in the image history: never put a secret in them.
   - Build secrets: `buildFrom.buildSecrets` lists project secrets the
     Dockerfile reads with `RUN --mount=type=secret,id=<key>` (a private
@@ -228,21 +307,22 @@ Then choose how builds run (one per app; both would deploy every push twice):
     the app (and its namespace) and `modes` (`Branch`, `Restore`); only a
     Project admin there can create it (`apply_manifest`), so ask the user.
     Without it previews get an empty database and the preview's
-    `build.kube-dc.com/preview-database-error` says why.
+    `DatabaseReady` condition says why.
     Copies carry production data: suggest masking. The grant's
     `spec.masking: {configMap, key, sha256}` names a plain-SQL script (no
     psql commands, idempotent, run as the database owner before anyone can
     connect); the sha256 is of the ConfigMap value's exact bytes. A failed
-    script deletes the copy and the error annotation gives the SQL error. The app must read its database from one Secret
+    script deletes the copy and `DatabaseReady` gives the SQL error. The app must read its database from one Secret
     (`envFromSecrets`/`secretEnv`), default `<name>-db-owner`, else name it
     in `previewDatabaseSecret`; a preview reads `<name>-pr-<n>-db-owner` there.
   - Previews never read the app's own secrets: a preview reads
     `<secret>-preview` in its project instead (in a separate previews
     project, a secret of the same name there also counts), for runtime
     variables and build secrets. Variables from other secrets are left out,
-    and a preview build missing a build secret is not started (reason in
-    `build.kube-dc.com/last-error`). Create the copies, with test keys,
-    using `create_secret` in the preview's project.
+    and a build secret with no preview copy is left out of the preview's
+    build, which then usually fails at its `RUN --mount` step (the preview's
+    `Built` condition shows it). Create the copies,
+    with test keys, using `create_secret` in the preview's project.
 - **A GitHub Actions workflow:** `connect_repository` (organization admins)
   sets up keyless deploys: GitHub Actions signs in with its own short-lived
   OIDC token through a machine identity that accepts only that repository's
@@ -278,8 +358,11 @@ Then choose how builds run (one per app; both would deploy every push twice):
      A branch locks every login it copied except its own owner. While
      branches exist, the source can't be deleted, restored in place or
      upgraded to a new major version; tell the user that before they try.
-  3. Write every returned file into the repository unchanged, run the
-     returned `gh variable set` commands, commit and push.
+  3. Where the installation's GitHub-connect worker is set up,
+     `connect_repository` opens a pull request with the files and sets the
+     variables itself (the returned file and command lists are then empty): tell the user to
+     merge it. Otherwise write every returned file into the repository
+     unchanged, run the returned `gh variable set` commands, commit and push.
 
   A push to `main` then builds the image, deploys it, and succeeds only when
   the live URL answers.
@@ -287,6 +370,118 @@ Then choose how builds run (one per app; both would deploy every push twice):
 To push to a managed registry by hand, `registry_login` (project, registry
 name) returns a `docker login` command valid for 15 minutes with the user's
 own rights: project admins and developers push to `<project>/`, members pull.
+
+## With a manifest: an Application
+
+Use an Application for a web app or a worker from one image or one
+repository. An image app:
+
+```yaml
+apiVersion: apps.kube-dc.com/v1alpha1
+kind: Application
+metadata:
+  name: "{app}"
+  namespace: "{project-backing-namespace}"
+spec:
+  source:
+    image:
+      reference: "{registry}/{image}@sha256:{digest}"
+  run:
+    port: 8080
+    healthPath: /health        # only a path the image serves
+    resources: { cpu: 500m, memory: 512Mi }
+    env:
+      - name: DB_PASSWORD
+        secretKeyRef: { name: "{binding-secret}", key: password }
+    restartOnSecretChange: true
+```
+
+Built from GitHub on every push, into a managed registry, with previews (the
+repository needs the GitHub App and the organization's consent, see "Deploy
+from GitHub on every push" above):
+
+```yaml
+apiVersion: apps.kube-dc.com/v1alpha1
+kind: Application
+metadata:
+  name: "{app}"
+  namespace: "{project-backing-namespace}"
+spec:
+  source:
+    github: { repository: "{owner}/{repo}", branch: main }
+  image:
+    registry:
+      managedService: { name: "{registry}" }   # add project: when it is another Project
+  run:
+    port: 8080
+  previews:
+    enabled: true
+```
+
+Field rules the API enforces (`kubectl apply --dry-run=server` reports them
+before anything is stored):
+
+- `source` is exactly one of `image.reference` and `github`; the kind of
+  source and the repository cannot change later (create another
+  Application), while `image.reference`, `branch` and `contextDir` can. `image` and
+  `build` go with a `github` source only: `image.registry.managedService` or
+  `image.repository` with `image.pushSecretRef` for the user's own registry.
+- `build`: `strategy` `Auto` (default; Dockerfile, else Railpack, then the app
+  listens on `$PORT`), `Dockerfile` or `Railpack`; `args` (never secrets),
+  `secretRefs` (Dockerfile `RUN --mount=type=secret`), `automatic: false` to
+  build only when asked.
+- `run.type: Worker` has no `port`, `public`, `hostnames`, `healthPath` or
+  `keepPreviousWarm`. `public` defaults to `true` (HTTPS on the shared
+  gateway, no EIP); `public: false` keeps it in the Project.
+- `run.hostnames`: one custom hostname (DNS must point at the platform
+  first, as for `deploy_app domain`); omitted, the platform address. A list
+  of two passes the dry run but stops the platform managing the app
+  (`UnsupportedField`; what runs keeps serving) until one is removed. Only
+  `deploy_app` and the console fill in the organization's default domain for a
+  new app; a manifest gets it only by naming it here.
+- `run.autoscale` (`min`, `max`, `cpuPercent` of the CPU limit, default 70)
+  excludes `replicas` and `volume`. `run.resources.cpu` is the CPU limit
+  (default 500m, request 50m); `memory` is request and limit (default 256Mi).
+- `run.volume` (`path`, `size`, `storageClass`) is one claim `{app}-data`,
+  one replica, no `keepPreviousWarm`; it is kept on delete unless
+  `deletionPolicy.volume: Delete`, and a kept claim is not used by a new
+  Application of the same name. Name a replicated `storageClass` the
+  Project offers (`manage-storage`).
+- `run.releaseCommand`, `run.keepPreviousWarm` (1m to 24h), `previews`
+  (`hours`, `project`, `buildArgs`, `database` with `plan` or `from` and
+  `mode`) work as their `deploy_app` counterparts above.
+
+Operate it:
+
+```bash
+kubectl get app                          # repository (GitHub apps), commit, state, URL
+kubectl describe app {app}               # conditions and Events: what waits and why
+kubectl get appbuild                     # every build; spec.applicationRef names the app (the label misses builds made by hand)
+kubectl logs build-{build}               # a build's first attempt (retries: build-{build}-2; long names are shortened)
+kubectl patch app {app} --type merge -p '{"spec":{"release":{"pin":{"release":5}}}}'   # roll back
+kubectl patch app {app} --type json -p '[{"op":"remove","path":"/spec/release/pin"}]'  # resume
+kubectl patch app {app} --type merge -p '{"spec":{"suspend":true}}'                    # pause
+```
+
+A rebuild is `kubectl create -f` of an `ApplicationBuild` with
+`generateName: {app}-` and `spec.applicationRef.name: {app}`; cancel one with
+`kubectl patch appbuild {build} --type merge -p '{"spec":{"cancelled":true}}'`.
+Raise `spec.release.attempt` to run a failed release command again.
+
+Conditions: `SourceResolved`, `ImageRepositoryReady`, `Built`, `Released`,
+`RoutePublished` and `Available`; `Ready` looks at them in this order and sums
+them up
+(`Pinned` while a rollback holds). The first one that is not True says what
+the app waits for: report its message to the user rather than guessing. All
+six can be True while `Ready` is False during a rollout; its own message
+says so.
+
+## Plain workloads
+
+Use a plain Deployment (sections 1 to 4) only for what an Application does
+not cover: several containers or sidecars, init containers, custom probes or
+security settings, a TCP/UDP port behind a `LoadBalancer`, Helm charts, and
+Shared GPU workloads.
 
 ## Prerequisites
 
@@ -301,6 +496,7 @@ Confirm the active backing namespace:
 ```bash
 kubectl config current-context
 kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}{"\n"}'
+kubectl auth can-i create applications.apps.kube-dc.com
 kubectl auth can-i create deployments.apps
 kubectl auth can-i create services
 ```
@@ -487,6 +683,16 @@ add native GPU resources to the generic Deployment.
 
 ## Verify
 
+For an Application:
+
+```bash
+kubectl wait --for=condition=Ready app/{app} --timeout=15m
+kubectl get app {app} -o jsonpath='{.status.url}{"\n"}'   # empty for public: false apps and workers
+curl --fail --show-error --silent -o /dev/null "$(kubectl get app {app} -o jsonpath='{.status.url}')"
+```
+
+For a plain Deployment:
+
 ```bash
 kubectl rollout status deployment/{app} --timeout=10m
 kubectl get deployment,pod,service
@@ -514,6 +720,8 @@ an active check is required.
 - Keep credentials in Secrets and never print them.
 - Keep resource requests below quota with rollout headroom (a warm previous
   version takes one more replica of quota during its window).
+- Never edit the Deployment or Service an Application generated; change the
+  Application.
 - Ship schema changes expand/contract so the previous version can still run
   after a rollback.
 - Default to internal access, then add only the exposure the caller needs.

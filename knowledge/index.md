@@ -12,6 +12,8 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 | `EIp` | `kube-dc.com` | `v1` | — | External IP allocation (cloud or public) |
 | `FIp` | `kube-dc.com` | `v1` | — | Floating IP — 1:1 NAT to VM/pod |
 | `KdcCluster` | `k8s.kube-dc.com` | `v1alpha1` | `kdc-cl` | Managed Kubernetes cluster (Kamaji + CAPI) |
+| `Application` | `apps.kube-dc.com` | `v1alpha1` | `app` | An app from an image or a GitHub repository; generates and owns its Deployment and Service |
+| `ApplicationBuild` | `apps.kube-dc.com` | `v1alpha1` | `appbuild` | One build of an Application; create one to rebuild |
 | `ManagedService` | `services.kube-dc.com` | `v1alpha1` | `msvc` | Service from the provider's catalog, with a class and plan |
 | `ServiceBinding` | `services.kube-dc.com` | `v1alpha1` | | Credential role delivered as a Secret |
 | `ServiceOperation` | `services.kube-dc.com` | `v1alpha1` | | One day-2 action on a service |
@@ -30,7 +32,7 @@ Master catalog for AI agents. Read this first, then dive into specific files as 
 |-------|-------------|-----------|
 | `check-quota` | Check org/project quota usage before deploying; troubleshoot exceeded-quota errors | SKILL.md |
 | `create-project` | Create project with VPC networking | SKILL.md, project-template.yaml, network-types.md |
-| `deploy-app` | Deploy containerized app with optional DB + HTTPS; keyless deploys, builds on push and PR previews from GitHub, with a managed container registry or the user's own | SKILL.md |
+| `deploy-app` | Deploy an app as an Application (image or GitHub source) or a plain workload, with optional DB + HTTPS; keyless deploys, builds on push and PR previews from GitHub, with a managed container registry or the user's own; rollback, pause, builds | SKILL.md, references/shared-gpu.md |
 | `deploy-web-stack` | Web app + managed database + volume + HTTPS hostname through the Gateway (no EIP), one procedure | SKILL.md, web-stack-template.yaml |
 | `create-vm` | Provision VM with SSH access and cloud-init | SKILL.md, vm-template.yaml |
 | `create-database` | Create a managed PostgreSQL, MySQL, MariaDB, ClickHouse or Valkey service, bind its credential to a workload, back up and restore | SKILL.md, postgresql-template.yaml, mysql-mariadb-template.yaml, clickhouse-template.yaml, valkey-template.yaml, binding-template.yaml, db-connection-patterns.md, backup-restore-patterns.md |
@@ -69,12 +71,16 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `team-management.md` | Users, groups, RBAC, OrganizationGroup | ~320 lines |
 | `core-concepts.md` | Org → Project → Resources hierarchy | ~100 lines |
 | `cli-kubeconfig.md` | CLI install, kubeconfig setup, IDE integration | ~200 lines |
-| `ai-ide-integration.md` | MCP server setup for Claude/Cursor/Windsurf | ~330 lines |
-| `deploy-first-app.md` | First app: Deployment + ClusterIP Service with an HTTP route | ~150 lines |
-| `deploy-from-github.md` | GitHub App install and organization consent, managed vs own registry, builds on push vs workflow, AI prompt | ~110 lines |
-| `managed-services-registry.md` | Container registry (family `registry`): plans, keyless push, pull Secrets, operations, deletion | ~150 lines |
-| `deploy-wordpress-stack.md` | WordPress with managed MariaDB, replicated volume, S3, HTTPS route (ClusterIP, no EIP), WP-CLI Job | ~460 lines |
-| `secrets-manager.md` | ManagedSecret CRD, sync to K8s Secret, KMS comparison | ~200 lines |
+| `ai-ide-integration.md` | MCP server setup for Claude/Cursor/Windsurf | ~690 lines |
+| `deploy-first-app.md` | First app: an image Application with kubectl or an AI app, new release, rollback, clean up; when to use plain manifests | ~125 lines |
+| `applications.md` | The Application resource: console, YAML fields, conditions, `kube-dc app` CLI, AI tools, domains, deletion, apps created before Applications | ~360 lines |
+| `rollback.md` | Releases, rollback by pin, instant rollback with a warm previous version | ~145 lines |
+| `app-jobs-and-workers.md` | Release commands (migrations), workers, one-off and cron jobs, autoscaling, data volumes, restarts on Secret change | ~155 lines |
+| `deploy-from-github.md` | New application from GitHub, the Application manifest, organization consent, managed vs own registry, builds, pull request previews, preview databases, copy grants and masking, own GitHub Actions workflow | ~365 lines |
+| `mcp-for-administrators.md` | The hosted MCP server: app registration, consent and revocation, every tool, data handling | ~180 lines |
+| `managed-services-registry.md` | Container registry (family `registry`): plans, keyless push, pull Secrets, operations, deletion | ~170 lines |
+| `deploy-wordpress-stack.md` | WordPress as an Application: managed MariaDB with a ServiceBinding, data volume, HTTPS address (no EIP), WP-CLI install Job, optional S3 archive | ~395 lines |
+| `secrets-manager.md` | ManagedSecret CRD, sync to K8s Secret, KMS comparison | ~270 lines |
 | `kms.md` | KMSKey CRD, direct encrypt/decrypt, envelope encryption with Go + Python helpers, rotation, min_decryption_version | ~350 lines |
 | `certificate-manager.md` | ManagedCertificate CRD, private CA vs ACME public, mTLS / code-signing | ~250 lines |
 | `postgresql-credentials.md` | ServiceBinding delivery, RotateCredentials, ServiceCredentialPolicy for declared roles and existing logins, break-glass | ~450 lines |
@@ -109,15 +115,15 @@ Skills location: `skills/{skill-name}/SKILL.md`
 
 | Entity | Pattern | Example |
 |--------|---------|---------|
-| Org namespace | `{org}` | `shalb` |
-| Project namespace | `{org}-{project}` | `shalb-docs` |
-| Auto hostname | `{svc}-{ns}.{installation-domain}`; read it from the Service's `route-hostname-status` annotation | `nginx-shalb-docs.kube-dc.cloud` |
+| Org namespace | `{org}` | `acme` |
+| Project namespace | `{org}-{project}` | `acme-docs` |
+| Auto hostname | `{svc}-{ns}.{installation-domain}`; read it from the Service's `route-hostname-status` annotation | `nginx-acme-docs.<installation-domain>` |
 | Managed service endpoint | Read `host` and `port` from the binding Secret | Do not infer an engine Service name |
 | Managed service Secret | `ServiceBinding.spec.delivery.secretName` | Keys depend on the family; see `create-database` |
 | SSH keypair | `ssh-keypair-default` | per project |
 | Cluster kubeconfig | `{cluster}-cp-admin-kubeconfig-external` | data key: `admin.conf` (external URL) |
-| VM network | `{ns}/default` | `shalb-docs/default` |
-| S3 bucket | `{ns}-{name}` | `shalb-docs-my-bucket` |
+| VM network | `{ns}/default` | `acme-docs/default` |
+| S3 bucket | `{ns}-{name}` | `acme-docs-my-bucket` |
 
 ## Full Documentation Dump
 
