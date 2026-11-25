@@ -190,8 +190,8 @@ platform then stops managing the app (`UnsupportedField`) until you remove
 one; what runs keeps serving.
 
 `kubectl explain application.spec --recursive` lists every field with its
-description; where it differs from this table on `run.port` or
-`run.hostnames`, this table is current.
+description. An installation on an older release can still show older
+descriptions of `run.port` and `run.hostnames`; this table is current.
 
 ## From the command line
 

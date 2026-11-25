@@ -150,25 +150,49 @@ Tell the user the URL, the database plan and why, where the credentials are
 ```bash
 kubectl delete app {app}
 kubectl delete pvc {app}-data        # the files: kept unless deletionPolicy.volume is Delete
-kubectl delete servicebinding/{app}-db-owner managedservice/{app}-db
+kubectl delete servicebinding/{app}-db-owner
+# Remove the ManagedService only as described below.
 ```
 
 The template sets `deletionPolicy: Retain`: deleting the `ManagedService`
 keeps the database running in the Project, still charged, and only an
 operator can remove it. Ask the user before applying whether they want that,
-`Delete` (data and capacity freed on deletion) or `SnapshotAndDelete` (a
-final backup first), and set it.
+`Delete` (data and capacity freed on deletion, no final backup) or
+`SnapshotAndDelete` (a final backup first, where the family and plan support
+it), and set it. Keep the user's choice: do not replace `SnapshotAndDelete`
+with `Delete`.
 
-A service is removed with its data only under `Delete`, and only once its
-name is confirmed. To remove one created with `Retain`:
+`Delete` needs the service's exact name in the
+`services.kube-dc.com/confirm-delete` annotation. To remove a database
+without a final backup, including one created with `Retain`, while the
+`ManagedService` still exists:
 
 ```bash
+db_uid=$(kubectl get managedservice {app}-db -o jsonpath='{.metadata.uid}') || exit 1
 kubectl annotate managedservice {app}-db services.kube-dc.com/confirm-delete={app}-db
-kubectl patch managedservice {app}-db --type merge -p '{"spec":{"deletionPolicy":"Delete"}}'
-# wait a minute or two for the change to apply, then:
+kubectl patch managedservice {app}-db --type merge \
+  -p '{"spec":{"deletionPolicy":"Delete","deletionProtection":false}}'
+kubectl get managedservice {app}-db -o yaml
+# Repeat until Accepted=True and Ready=True both have observedGeneration
+# equal to metadata.generation, acceptedRevision equals appliedRevision,
+# acceptedGeneration equals appliedGeneration, and Stale is not True; and
+# lastObservedAt advances and is under four minutes old. Stop and tell the
+# user if these checks do not pass.
 kubectl delete managedservice {app}-db
-kubectl get pods -l services.kube-dc.com/service={app}-db    # No resources found
+kubectl get pods -l "services.kube-dc.com/instance-uid=${db_uid}"   # No resources found
 ```
+
+If pods remain, look at the service and its events:
+
+```bash
+kubectl get managedservice {app}-db -o yaml
+kubectl get events --field-selector "involvedObject.uid=${db_uid}"
+```
+
+While the `ManagedService` still exists, its `Ready` condition says whether
+the deletion is progressing or blocked. A `DeletionPolicyDowngraded` event
+names the cause and the policy that was used. If the `ManagedService` is gone
+but pods remain, tell the user to ask their provider to remove them.
 
 ## 6. Without Applications
 

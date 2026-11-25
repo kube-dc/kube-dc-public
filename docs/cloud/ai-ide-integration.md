@@ -23,8 +23,9 @@ Organization's normal login page, and the assistant works with exactly your
 permissions. Nothing is installed and no kubeconfig or secret is stored on your
 machine.
 
-Find the URL on your project's **Overview** page (**AI apps → Connect an AI
-app**, with one-click installs for Cursor and VS Code) or, for organization
+Find the URL on your project's **Overview** page (**Manage with an AI agent →
+Connect your agent**, which opens the **Connect an AI app** dialog with
+one-click installs for Cursor and VS Code) or, for organization
 administrators, under **Organization → Access → Machine identities → Connect an
 AI app**. It looks like `https://backend.<domain>/mcp/<organization>`.
 
@@ -57,9 +58,10 @@ links filled in for your project:
 | Cursor | **Add to Cursor** in the console, or Settings → MCP: `{ "mcpServers": { "kube-dc": { "url": "<url>" } } }` |
 | VS Code (Copilot) | **Install in VS Code** in the console, or `code --add-mcp '{"name":"kube-dc","type":"http","url":"<url>"}'`; use Agent mode |
 | Claude (web, desktop) | Settings → Connectors → **Add custom connector** |
-| ChatGPT | Add a custom MCP server (developer mode) with the URL and OAuth sign-in; on Business/Enterprise plans an admin may need to allow it |
+| ChatGPT | Add a custom MCP server (developer mode, under Apps or Plugins) with the URL and OAuth sign-in; on Business and Enterprise plans an admin may need to allow it |
 | Google Antigravity | MCP Servers → Manage → View raw config: `{ "mcpServers": { "kube-dc": { "serverUrl": "<url>" } } }` |
 | Mistral Le Chat | Connectors → Add connector → Custom MCP connector (Work mode) |
+| Other MCP apps | Add a remote MCP server (Streamable HTTP) with the URL; sign-in is OAuth |
 
 The app opens your Organization's sign-in page the first time and asks you to
 allow it.
@@ -67,7 +69,7 @@ allow it.
 **Add the Kube-DC skills too (recommended).** The MCP server gives the app
 tools; the [agent skills](#agent-skills-setup) give it Kube-DC's step-by-step
 procedures and manifests (managed databases, HTTPS routes, VMs…). Apps with a
-skills folder (Claude Code, Cursor, Codex, VS Code Copilot, Windsurf) load
+skills folder (Claude Code, Cursor, Codex, VS Code Copilot, Devin Desktop) load
 them after one command:
 
 ```bash
@@ -94,7 +96,9 @@ see
 [Hosted MCP for administrators](mcp-for-administrators.md#what-the-tools-can-do).
 `create_managed_service` goes through the console's own path: its first call
 returns the price, and the service is created only when the app calls it
-again to confirm. `create_cluster` creates a managed Kubernetes cluster with
+again to confirm, with your choice of what deleting the service later does
+with its data (delete it, keep a final backup, or retain it). The credentials
+are delivered to a Secret in the Project. `create_cluster` creates a managed Kubernetes cluster with
 the console's defaults, and `get_kubeconfig` returns its admin kubeconfig
 after you confirm. VMs get the project key pair, as in the console. Tools that delete or stop something are marked so your app
 asks you first. Everything runs as you: what you may not do in the console,
@@ -110,8 +114,10 @@ URL). Logs and events come from workloads; the server tells the app to treat
 them as data. A project URL sets a default project; it is not a boundary, as
 the tools can still name any project you may access.
 
-Every tool call is recorded in the project's audit log with you and the app
-that made it. The project Overview shows the apps used there this week and
+Every tool call that ran on an Organization or project URL is recorded in
+the audit log with you and the app that made it, and the project when the
+call names one. A `query` is one event for the whole script. Calls to the
+documentation-only URL are not audited. The project Overview shows the apps used there this week and
 the changes they made (**Changes via AI apps**); the **Connect an AI app**
 dialog lists the apps you allowed. **Revoke** stops the app from signing in
 again at once; access it already holds ends within 15 minutes, when its token
@@ -120,11 +126,20 @@ expires.
 **Preferred paths.** The server tells apps the platform's defaults, in its
 instructions and in the tool descriptions:
 
+- Apps are deployed with `deploy_app`, from an image or built from a GitHub
+  repository on every push, with pull request previews, a release command
+  before each new version, a custom domain, autoscaling or a data volume.
+  Where your provider turned it on, a new app is an
+  [Application](applications.md#ai-apps); elsewhere it is a Deployment and a
+  Service. `rollout_status` reports whether it is live and its address, and
+  `rollback` returns it to an earlier release. See
+  [Deploy from GitHub](deploy-from-github.md#with-an-ai-app) and
+  [Roll back an application](rollback.md).
 - Databases, caches and queues run as managed services
   (`create_managed_service`), not as pods. The development plan (one
   instance) is the default; the production plan (three instances, HA) is used
   when you ask for production or HA.
-- Web apps are published through the shared Gateway: a `ClusterIP` Service
+- Other web workloads are published through the shared Gateway: a `ClusterIP` Service
   with `service.nlb.kube-dc.com/expose-route: https` gets a hostname and a
   certificate and uses no public IP. `list` with kind `services` shows the hostname once
   it is ready; `whoami` shows the domain hostnames are created under.
@@ -136,9 +151,11 @@ instructions and in the tool descriptions:
 prompts, so apps get them with no install:
 
 - Resources `kube-dc://guide/web-stack` (app + managed database + HTTPS),
-  `wordpress`, `publish-http`, `public-ip` and `managed-database`, written in
+  `wordpress`, `publish-http`, `public-ip`, `managed-database` and
+  `deploy-from-repository` (deploys from a GitHub repository), written in
   terms of the tools above, and every agent skill as
-  `kube-dc://skill/<name>` (for example `kube-dc://skill/deploy-web-stack`).
+  `kube-dc://skill/<name>` (for example `kube-dc://skill/deploy-web-stack`;
+  a skill's templates are `kube-dc://skill/<name>/<file>`).
   Claude Code lets the assistant read them itself; in VS Code and Cursor you
   attach one to the chat.
 - Prompts (slash commands in apps that support them): `deploy-web-app`,
@@ -197,14 +214,14 @@ A generic Kubernetes MCP server lets an AI assistant run `kubectl`, but it does 
 | Skill | What It Does |
 |-------|-------------|
 | `create-project` | Create a project with VPC networking and correct network type |
-| `deploy-app` | Deploy a containerized app with optional database and HTTPS; keyless deploys and PR previews from GitHub |
+| `deploy-app` | Deploy an app as an Application (from an image or a GitHub repository) or as a plain workload, with optional storage, managed database and HTTPS; keyless deploys, builds on push and pull request previews from GitHub, with a managed container registry or your own |
 | `deploy-web-stack` | Web app + managed database + volume + HTTPS hostname (no public IP) in one procedure; WordPress, CMSs, APIs |
 | `create-vm` | Provision a VM with SSH access, cloud-init, and guest agent |
-| `create-database` | Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or cache with a binding Secret and connection patterns |
+| `create-database` | Create a managed database (PostgreSQL, MySQL, MariaDB, ClickHouse) or Valkey cache as a ManagedService, deliver its credentials with a ServiceBinding Secret, back up and restore |
 | `manage-database-credentials` | Deliver credential roles to workloads as Secrets and rotate them on demand or on a schedule |
 | `expose-service` | Expose through Gateway Route (HTTPS) or Direct EIP (TCP/UDP) |
 | `manage-cluster` | Scale workers, upgrade K8s version, access kubeconfig |
-| `manage-networking` | Create EIPs, FIPs, understand VPC networking |
+| `manage-networking` | Create EIPs and FIPs, expose selected ports, attach a Project to an Organization-authorized routed network |
 | `manage-storage` | S3 buckets (OBC), DataVolumes, PVCs |
 | `manage-access` | OrganizationGroup RBAC and role management |
 | `manage-secrets` | Project secrets backed by OpenBao, synced to Kubernetes Secrets |
@@ -244,17 +261,17 @@ Use `npx skills add kube-dc/kube-dc-public --list` to see all available skills b
 
 #### Option B: System prompt / IDE settings (lightweight)
 
-If you can't install skills globally, you can paste the Kube-DC context into your IDE's system prompt settings. Copy the content of `_agent-instructions.md` (or `AGENTS.md`):
+If you can't install skills globally, you can paste the Kube-DC context into your IDE's system prompt settings. Copy the content of `AGENTS.md`:
 
 | IDE | Where to Paste |
 |-----|---------------|
-| **Claude Code** | Settings → Custom Instructions (or use `CLAUDE.md` in any project) |
+| **Claude Code** | `~/.claude/CLAUDE.md` (every project) or `CLAUDE.md` in one project |
 | **Cursor** | Settings → Rules for AI → User Rules |
-| **Devin Desktop** | Workspace `AGENTS.md` (Devin Local and Cascade) |
+| **Devin Desktop** | Workspace `AGENTS.md` |
 | **VS Code + Copilot** | Settings → GitHub Copilot → Instructions |
 | **Codex** | Workspace `AGENTS.md` (no global setting) |
 
-The `_agent-instructions.md` file contains CRD tables, naming conventions, safety rules, and service exposure patterns.
+`AGENTS.md` contains the product model, the resource table (API groups and scope), the standard Project roles, safety and naming rules, and the service exposure patterns.
 
 :::note Limitations
 The system prompt provides **awareness** (correct namespaces, annotations, safety rules) but not the detailed step-by-step procedures and YAML templates that skills include. For full manifest generation capability, use **Option A** (global skills install).
@@ -292,9 +309,9 @@ git submodule add https://github.com/kube-dc/kube-dc-public.git .kube-dc
 
 ```
 kube-dc-public/
-├── AGENTS.md                          # Universal instructions (all IDEs)
+├── AGENTS.md                          # Canonical instructions (all IDEs)
 ├── CLAUDE.md                          # Claude Code instructions
-├── _agent-instructions.md             # Canonical source (edit here)
+├── _agent-instructions.md             # Short pointer to AGENTS.md
 ├── skills/                            # 18 workflow skills
 ├── knowledge/
 │   └── index.md                       # Master catalog of CRDs, skills, docs
@@ -302,6 +319,8 @@ kube-dc-public/
 ├── .claude/skills → ../skills         # Claude Code discovery
 ├── .cursor/rules/kube-dc-conventions/ # Cursor project rules
 ├── .devin/                            # Devin rules, skills, and workflows
+├── .claude-plugin/                    # Claude Code plugin and marketplace manifests
+├── .well-known/agent-skills/          # Skill index for web discovery
 ├── docs/                              # Full documentation
 └── examples/                          # Ready-to-use YAML manifests
 ```
@@ -347,9 +366,9 @@ All integrations below require a valid Project context in a kubeconfig for the K
 
 1. Log in to the Kube-DC console
 2. On the project Overview, under **Command-line access**, click **Get kubeconfig**
-3. Follow the displayed commands to download your kubeconfig
+3. Run the displayed commands: they install the `kube-dc` CLI, sign you in (`kube-dc login --domain <domain> --org <organization>`) and select the Project (`kube-dc use <domain>/<organization>/<project>`). The login writes one context per Project to your kubeconfig.
 
-Your kubeconfig will be saved at `~/.kube/config` by default. Verify it works:
+The contexts are written to `~/.kube/config` by default. A local MCP server uses the current context, so select the Project first. Verify it works:
 
 ```bash
 kube-dc config show
@@ -394,7 +413,7 @@ Claude Code chains several `kubectl` operations automatically. When a pod is cra
 
 Open the `kube-dc-public` repo in Claude Code. It contains:
 
-- `CLAUDE.md`: loaded automatically, references `@_agent-instructions.md` and `@knowledge/index.md`
+- `CLAUDE.md`: loaded automatically, references `@_agent-instructions.md` (which points to the canonical `AGENTS.md`) and `@knowledge/index.md`
 - `.claude/skills/`: 18 workflow skills (symlink to `skills/`)
 
 With both MCP and skills, Claude Code can generate correct Kube-DC manifests **and** apply them directly. See [Agent skills setup](#agent-skills-setup).
@@ -459,11 +478,10 @@ Cursor then knows the Kube-DC CRDs, annotations, and naming conventions, which a
 
 ## Devin Desktop
 
-[Devin Desktop](https://devin.ai/desktop) provides two
-local agents: Devin Local, the default for new tabs, and the legacy Cascade
-agent. Both support MCP, but they use separate configuration stores.
+[Devin Desktop](https://devin.ai/desktop), the new name for Windsurf, runs the
+Devin Local agent, which supports MCP.
 
-### Configure Devin local MCP
+### Configure Devin Local MCP
 
 Add the Kubernetes server at user scope so it is available across workspaces:
 
@@ -478,43 +496,20 @@ Devin Local stores user-scoped servers in
 write a shared `.devin/mcp_config.json` in the current workspace. See the
 official [Devin CLI MCP configuration](https://docs.devin.ai/cli/extensibility/mcp/configuration).
 
-### Configure Cascade MCP
-
-In the Cascade panel, select the **MCPs** icon in the top-right menu. You can
-also open **Devin Settings → Cascade → MCP Servers**. If the Kubernetes server
-is not available in the marketplace, edit the raw Cascade configuration and
-add:
-
-```json
-{
-  "mcpServers": {
-    "kubernetes": {
-      "command": "npx",
-      "args": ["-y", "mcp-server-kubernetes"]
-    }
-  }
-}
-```
-
-The raw Cascade configuration remains at the legacy path
-`~/.codeium/windsurf/mcp_config.json`. These settings apply only to Cascade;
-Devin Local uses the Devin CLI configuration described above. See the official
-[Cascade MCP guide](https://docs.devin.ai/desktop/cascade/mcp).
-
 ### Use the Kubernetes MCP
 
-Ask Devin Local or Cascade to use the Kubernetes tools when you describe an
+Ask Devin Local to use the Kubernetes tools when you describe an
 infrastructure task:
 
 ```
-Deploy the app from this Dockerfile to Project production in Organization acme.
+Deploy the image ghcr.io/acme/notes:1.4.0 to Project production in Organization acme.
 Check whether all pods in backing namespace acme-production are healthy.
 Summarize any issues.
 ```
 
 The agent can chain file edits, terminal commands, and MCP tool calls in a
-single flow: writing the Deployment YAML, applying it, and monitoring rollout
-status.
+single flow: writing the Application manifest (or a Deployment and Service),
+applying it, and checking its status.
 
 ### Use agent skills with Devin Desktop
 
@@ -562,11 +557,11 @@ VS Code + GitHub Copilot supports MCP through a workspace configuration. Create 
 }
 ```
 
-With this enabled, you can ask Copilot in the chat panel (`Ctrl+Alt+I`):
+With this enabled, open the Copilot chat (`Ctrl+Alt+I`), switch to **Agent** mode and ask:
 
 ```
-@workspace show me all crashlooping pods and suggest fixes
-@workspace generate a Deployment for nginx with resource limits matching our plan
+Show me all crashlooping pods in Project production and suggest fixes
+Generate a Deployment for nginx with resource limits that fit the Project quota
 ```
 
 ### Alternative: Red Hat Kubernetes MCP server
@@ -577,8 +572,11 @@ The [Red Hat kubernetes-mcp-server](https://github.com/containers/kubernetes-mcp
 # Download the binary for your platform
 curl -L https://github.com/containers/kubernetes-mcp-server/releases/latest/download/kubernetes-mcp-server-linux-amd64 \
   -o ~/.local/bin/kubernetes-mcp-server && chmod +x ~/.local/bin/kubernetes-mcp-server
+```
 
-# Save as .vscode/mcp.json
+Save as `.vscode/mcp.json`:
+
+```json
 {
   "servers": {
     "kubernetes": {
@@ -620,7 +618,32 @@ Deploy WordPress with a managed HA MariaDB database in Project production in Org
 Expose it over HTTPS with auto TLS.
 ```
 
-With Agent Skills loaded or the hosted MCP endpoint, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress as an Application that reads the delivered credentials and keeps its files on a data volume, and report its HTTPS address (no public IP is used). The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
+With Agent Skills loaded or the hosted MCP endpoint, the agent will: create a MariaDB `ManagedService` (WordPress core has no PostgreSQL driver) on the `mariadb-production` plan because the prompt asks for HA (`mariadb-development` otherwise) and a `ServiceBinding` for its owner credential, wait for both to become Ready, deploy WordPress so that it reads the delivered credentials and keeps its files on a data volume (with the agent skills, as an Application where your provider runs Applications), and report its HTTPS address (no public IP is used). The full manifest set is in [Deploy a full WordPress stack](deploy-wordpress-stack.md).
+
+### Deploy an app from GitHub with previews
+
+```
+Deploy the repository acme/notes to Project production in Organization acme, built on every push,
+with a preview for each pull request in Project staging. Tell me its address.
+```
+
+With the hosted MCP endpoint, the agent first asks where images go (a managed registry or your own), then calls `deploy_app` with `buildFrom` and reports the address from `rollout_status`. Where your provider turned Applications on, the app is an Application: the console's **Applications** view and `kube-dc app status notes` show the same app. See [Deploy from GitHub](deploy-from-github.md).
+
+### Roll back an app
+
+```
+The last release of notes in Project production is broken. Roll it back and tell me which release is running.
+```
+
+The agent calls `rollback` after you confirm. An Application stays on that release until you resume deploys (`rollback` with `resume: true`, or `kube-dc app resume notes`). A rollback does not undo database migrations. See [Roll back an application](rollback.md).
+
+### Give an app a secret
+
+```
+Create a secret for the Stripe API key of notes in Project production and use it in the app.
+```
+
+The agent calls `create_secret` and gives you the secret's console page, where you type the value; the value never passes through the conversation. It then calls `deploy_app` with `secretEnv`. See [Secrets Manager](secrets-manager.md).
 
 ### Create a VM with SSH access
 
@@ -686,3 +709,7 @@ The agent will: create an ObjectBucketClaim with the required `kube-dc.com/organ
 - [containers/kubernetes-mcp-server](https://github.com/containers/kubernetes-mcp-server): Red Hat single-binary MCP server
 - [GitOps with Kube-DC](gitops.md): Managing cluster state declaratively through Git
 - [CLI & Kubeconfig](cli-kubeconfig.md): Setting up kubectl for Kube-DC
+- [Ways to deploy](deploy-options.md): manifests, Applications from an image, Applications from GitHub
+- [Manage applications](applications.md): the Application resource, the `kube-dc app` commands and the AI app tools
+- [Managed services](managed-services.md), [Secrets Manager](secrets-manager.md), [KMS](kms.md), [Certificate Manager](certificate-manager.md)
+- [Machine identities](machine-identities.md): sign-in for CI, Terraform and local MCP servers
