@@ -154,9 +154,21 @@ kubectl delete servicebinding/{app}-db-owner managedservice/{app}-db
 ```
 
 The template sets `deletionPolicy: Retain`: deleting the `ManagedService`
-keeps its data, still charged, until an operator removes it. Ask the user
-before applying whether they want that, `Delete` (data and capacity freed
-on deletion) or `SnapshotAndDelete` (a final backup first), and set it.
+keeps the database running in the Project, still charged, and only an
+operator can remove it. Ask the user before applying whether they want that,
+`Delete` (data and capacity freed on deletion) or `SnapshotAndDelete` (a
+final backup first), and set it.
+
+A service is removed with its data only under `Delete`, and only once its
+name is confirmed. To remove one created with `Retain`:
+
+```bash
+kubectl annotate managedservice {app}-db services.kube-dc.com/confirm-delete={app}-db
+kubectl patch managedservice {app}-db --type merge -p '{"spec":{"deletionPolicy":"Delete"}}'
+# wait a minute or two for the change to apply, then:
+kubectl delete managedservice {app}-db
+kubectl get pods -l services.kube-dc.com/service={app}-db    # No resources found
+```
 
 ## 6. Without Applications
 

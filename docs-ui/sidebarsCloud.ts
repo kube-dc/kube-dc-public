@@ -110,6 +110,19 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Automation & AI',
+      collapsed: true,
+      items: [
+        {type: 'doc', id: 'ai-ide-integration', label: 'AI IDE Integration'},
+        {type: 'doc', id: 'mcp-for-administrators', label: 'Hosted MCP for Administrators'},
+        {type: 'doc', id: 'machine-identities', label: 'Machine Identities (Terraform, MCP, CI)'},
+        {type: 'doc', id: 'api-reference', label: 'Automate with the API'},
+        {type: 'doc', id: 'event-webhooks', label: 'Event Webhooks'},
+        {type: 'doc', id: 'gitops', label: 'GitOps and CI'},
+      ],
+    },
+    {
+      type: 'category',
       label: 'Managed Clusters',
       collapsed: true,
       items: [
@@ -167,19 +180,6 @@ const sidebars: SidebarsConfig = {
         'secrets-manager',
         'kms',
         'certificate-manager',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Automation & AI',
-      collapsed: true,
-      items: [
-        {type: 'doc', id: 'ai-ide-integration', label: 'AI IDE Integration'},
-        {type: 'doc', id: 'mcp-for-administrators', label: 'Hosted MCP for Administrators'},
-        {type: 'doc', id: 'machine-identities', label: 'Machine Identities (Terraform, MCP, CI)'},
-        {type: 'doc', id: 'api-reference', label: 'Automate with the API'},
-        {type: 'doc', id: 'event-webhooks', label: 'Event Webhooks'},
-        {type: 'doc', id: 'gitops', label: 'GitOps and CI'},
       ],
     },
     {

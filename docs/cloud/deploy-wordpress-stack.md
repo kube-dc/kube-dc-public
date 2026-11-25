@@ -65,13 +65,13 @@ spec:
     classRef:
       name: tenant-native
   compute:
-    cpu: "1"
+    cpu: 500m
     memory: 1Gi
   storage:
     size: 10Gi
   parameters:
     database: wordpress
-  deletionPolicy: Retain
+  deletionPolicy: Retain          # a delete keeps the database: see Clean up
 ---
 apiVersion: services.kube-dc.com/v1alpha1
 kind: ServiceBinding
@@ -93,6 +93,9 @@ kubectl apply -f 01-database.yaml
 kubectl get managedservice wordpress-db -w            # PHASE: Ready
 kubectl get servicebinding wordpress-db-password      # READY: True
 ```
+
+The database takes 5 to 6 minutes to become `Ready`: the platform starts
+it and takes a first backup. The binding is ready a few minutes earlier.
 
 The binding pins the service it found by name; add `serviceUID` to pin a
 specific instance. The Secret `wordpress-db-password` holds `host`, `port`,
@@ -185,7 +188,8 @@ kubectl create secret generic wordpress-admin \
 
 The Job mounts the app's volume. It must run on the node that holds the
 volume, so it asks to be scheduled next to the app's pod
-(`app.kubernetes.io/name: wordpress`). WP-CLI reads `wp-config.php`, which
+(`app.kubernetes.io/name: wordpress`) and requests little CPU and memory, to
+fit on that node. WP-CLI reads `wp-config.php`, which
 takes the database settings from the environment, so the Job gets the same
 variables, `WORDPRESS_CONFIG_EXTRA` included:
 
@@ -210,6 +214,8 @@ spec:
       containers:
         - name: wp-cli
           image: wordpress:cli
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
           command: ["sh", "-c"]
           args:
             - |
@@ -311,6 +317,8 @@ spec:
       initContainers:
         - name: archive
           image: busybox:1.36
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
           command: ["sh", "-c", "tar czf /out/wp-content.tgz -C /data wp-content"]
           volumeMounts:
             - { name: content, mountPath: /data, readOnly: true }
@@ -318,6 +326,8 @@ spec:
       containers:
         - name: upload
           image: amazon/aws-cli:2.17.16
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
           command: ["sh", "-c"]
           args:
             - |
@@ -325,7 +335,7 @@ spec:
               STAMP=$(date -u +%Y%m%d-%H%M%S)
               aws s3 cp /out/wp-content.tgz \
                 "s3://$BUCKET_NAME/backups/wp-content-$STAMP.tgz" \
-                --endpoint-url "https://s3.<domain>"
+                --no-progress --endpoint-url "https://s3.<domain>"
               aws s3 ls "s3://$BUCKET_NAME/backups/" --endpoint-url "https://s3.<domain>"
           envFrom:
             - configMapRef: { name: wordpress-files }   # BUCKET_NAME
@@ -372,8 +382,7 @@ kubectl delete job wordpress-install wp-content-backup --ignore-not-found
 kubectl delete app wordpress
 kubectl delete pvc wordpress-data          # the files: kept by deletionPolicy Retain
 kubectl delete secret wordpress-admin
-kubectl delete servicebinding wordpress-db-password
-kubectl delete managedservice wordpress-db
+kubectl delete servicebinding wordpress-db-password      # removes the Secret it delivered
 kubectl delete objectbucketclaim wordpress-files --ignore-not-found
 ```
 
@@ -382,12 +391,50 @@ Retain`. A new Application named `wordpress` does not take over a kept
 volume: copy the files out and delete the claim before you create the app
 again.
 
+### Remove the database
+
+The database was created with `deletionPolicy: Retain`. With that policy,
+deleting the `ManagedService` only ends its management: the database keeps
+running in the Project and keeps using quota, and only your provider can
+remove it. To remove the database and its data, set the policy to `Delete`
+and confirm the service's name first:
+
+```bash
+kubectl annotate managedservice wordpress-db services.kube-dc.com/confirm-delete=wordpress-db
+kubectl patch managedservice wordpress-db --type merge -p '{"spec":{"deletionPolicy":"Delete"}}'
+```
+
+Give the platform a minute or two to apply the change
+([Is the result current?](managed-services-status.md#is-the-result-current)
+has the exact check), then delete the service and check that its pods are
+gone:
+
+```bash
+kubectl delete managedservice wordpress-db               # about a minute
+kubectl get pods -l services.kube-dc.com/service=wordpress-db    # No resources found
+```
+
+If pods remain, the service was deleted under `Retain`: ask your provider to
+remove the retained database. This event names the cause:
+
+```bash
+kubectl get events --field-selector reason=DeletionPolicyDowngraded
+```
+
+`Delete` takes no final backup. Backups taken earlier stay until their
+retention ends and can be
+[restored into a new service](managed-services-backup-restore.md#restore-into-a-new-service).
+See
+[Status and deletion](managed-services-status-deletion.md#deletion-policies)
+for the policies.
+
 ## Troubleshooting
 
 | Symptom | What to check |
 |---|---|
+| The database stays `Provisioning` for more than 10 minutes | `kubectl get pods` and `kubectl get events`: a database pod that stays `Pending` with `Insufficient cpu` or `Insufficient memory` means the cluster has no room for it; ask your provider |
 | The app does not become ready | `kubectl describe app wordpress`: the step that waits says why, for example a missing `wordpress-db-password` Secret while the binding is not ready yet |
 | No address or certificate | The app's **Address** step (`RoutePublished`), and `kubectl get certificate` |
-| The install Job stays `Pending` | It must run on the volume's node: check that the WordPress pod is running and that the node has capacity |
+| The install Job stays `Pending` | It must run on the volume's node: check that the WordPress pod is running. `kubectl describe pod -l job-name=wordpress-install` shows what the node lacks |
 | The S3 upload times out | Use the public S3 endpoint, not `BUCKET_HOST` |
 | A database Service name collides | Name the `ManagedService` differently from the app |
