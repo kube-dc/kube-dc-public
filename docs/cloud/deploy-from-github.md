@@ -150,9 +150,13 @@ and ask it to deploy the repository. It calls `deploy_app` with `buildFrom`,
 which creates the same Application. It can also create a registry
 (`create_managed_service`) and give you a `docker login` command for one
 (`registry_login`). On **Applications → Connect GitHub**, the console builds
-a prompt from your choices for you to paste. Skip its **Set it up by hand**
-steps for builds on push, which do not make an Application: use **New
-application**, the prompt or the manifest above.
+a prompt from your choices for you to paste. With **Builds → On push, by
+the platform** selected, its **Set it up by hand** steps show an Application
+as `kubectl` commands for the Project, with the registry you chose and pull
+request previews in the same Project. Where your provider has not turned
+Applications on for new apps, create the app's Deployment first: the steps
+then turn on builds on push for that existing Deployment (see
+[Apps created before Applications](applications.md#apps-created-before-applications)).
 
 ## Builds
 

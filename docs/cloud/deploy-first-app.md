@@ -5,7 +5,11 @@ to run: a container image, or a GitHub repository the platform builds. The
 platform starts the pods, gives the app an HTTPS address and keeps every
 version that ran, so you can roll back.
 
-This guide deploys a container image with `kubectl` or an AI app.
+This guide deploys a container image with `kubectl` or an AI app. In the
+console, where your provider makes new apps as Applications,
+**Applications → New application → From a container image** does the same: it asks for a name, the image, the port and whether the app is
+public, shows the manifest it applies, and follows the app until it is
+ready.
 
 ## Other ways to deploy
 

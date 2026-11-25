@@ -113,6 +113,9 @@ numbered release every time you change what the pods run. Variables, Secrets,
 a data volume, autoscaling, release commands and a custom domain are fields
 of the same resource.
 
+In the console, where your provider makes new apps as Applications:
+**Applications → New application → From a container image**.
+
 - [Deploy your first application](deploy-first-app.md): step by step
 - [Manage applications](applications.md): every field, the console, the CLI and AI apps
 - [Roll back an application](rollback.md)

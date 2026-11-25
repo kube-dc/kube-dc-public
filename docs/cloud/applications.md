@@ -9,8 +9,9 @@ those objects. An Application is not the only way to run containers: you
 can also apply your own Kubernetes manifests. [Ways to deploy](deploy-options.md)
 compares the options.
 
-You create one with **New application** in the console (from a GitHub
-repository, where your provider offers builds; see
+You create one with **New application** in the console (from a container
+image, or from a GitHub repository where your provider offers builds; see
+[Deploy your first application](deploy-first-app.md) and
 [Deploy from GitHub](deploy-from-github.md)), with
 `kubectl apply` (see [Deploy your first application](deploy-first-app.md)),
 or with an AI app (`deploy_app`). They make the same resource, so you can
@@ -173,7 +174,7 @@ spec:
 | `build` | `strategy` (`Auto`, `Dockerfile` or `Railpack`), `dockerfile`, `args`, `secretRefs`, `cache`, and `automatic: false` to build only when asked |
 | `run.type` | `Web` (default) or `Worker`, which has no port, address or health check |
 | `run.port`, `run.healthPath`, `run.public` | The port the app listens on (default `8080`: set it for an app that listens elsewhere; the platform sets `PORT` only for apps built with Railpack); the readiness path; `public: false` keeps the app inside the Project (default `true`) |
-| `run.hostnames` | One custom hostname (see [Use your own domain](#use-your-own-domain)); omitted, the platform address. **New application** and `deploy_app` fill in the organization's default domain for a new public app |
+| `run.hostnames` | One custom hostname (see [Use your own domain](#use-your-own-domain)); omitted, the platform address. **New application** from GitHub and `deploy_app` fill in the organization's default domain for a new public app; **From a container image** uses the platform address |
 | `run.imagePullSecrets` | Secrets to pull a private image with (an app on a managed registry needs none) |
 | `run.env`, `run.envFromSecrets`, `run.restartOnSecretChange` | Variables, from a value or a Secret (or a [ManagedSecret](secrets-manager.md)), and restarts when a Secret they read changes; a restart is not a new release |
 | `run.replicas`, `run.resources` (`cpu` limit, `memory`), `run.autoscale` | Size of the app (see [Autoscaling](app-jobs-and-workers.md#autoscaling)) |
@@ -282,11 +283,11 @@ uses verified domains) and clicks **Connect a domain**:
      under the domain needs a record of its own. It only covers names
      without a record of their own, so `@`, `www` and `mail` keep working.
    - For one app on the domain itself (**One app on it** or **Both**), an A
-     record for `@` and a `www` CNAME, with a warning that a website you run
-     there moves to the app. An Application answers only on the domain
-     itself and `www` is not redirected to it: for an Application, leave the
-     `www` record out and the wizard's app choice empty, and set the domain
-     in its `run.hostnames`.
+     record for `@`, with a warning that a website you run there moves to the
+     app. An Application answers only on the domain itself, so the wizard
+     asks for no `www` record: `www.<domain>` is not redirected to it. Apps
+     from before Applications also get a `www` CNAME and a redirect from
+     `www`.
 
    If your DNS panel adds the domain itself, enter only the part shown (for
    example `_kube-dc.apps` and `*.apps`). On Cloudflare, set the records to
@@ -295,11 +296,17 @@ uses verified domains) and clicks **Connect a domain**:
    Encrypt from issuing certificates.
 
    **Finish** is enabled once the domain is verified and its records are
-   found. Then a new public app made with **New application** or
-   `deploy_app` gets `<app>.<domain>` (or `<app>-<project>.<domain>` when
-   another app has that name). Existing apps keep their addresses, and an
-   Application you write yourself gets the domain only when you set it in
-   `hostnames`.
+   found. To put an Application on the domain itself, select its Project
+   and app under **The app on `<domain>`** on the **DNS** step before you
+   click **Finish**: the wizard sets the domain in its `run.hostnames` and
+   links to the app's page, which shows when the new address is live or
+   what it waits for. If you made this the default for new apps, a new
+   public app made from GitHub with **New application**, or with
+   `deploy_app`, gets `<app>.<domain>` (or `<app>-<project>.<domain>` when
+   another app has that name). Other existing apps keep their addresses. An
+   app made with **From a container image**, and an
+   Application you write yourself, get the domain only when you set it in
+   `run.hostnames`.
 
 If you replace an existing default, finish the wizard after the new domain is
 verified; the previous default serves new apps until then. If you close the
@@ -352,8 +359,8 @@ confirm) keep the volume unless you ask for it: without `--delete-volume`
 ## Apps created before Applications
 
 Apps deployed before your installation offered Applications keep running, and
-the console and AI apps still operate them (the list marks them **Not
-migrated**). Until your provider turns Applications on for new apps, **New
+the console and AI apps still operate them. Where new apps are
+Applications, the console marks the older ones **Not migrated**. Until your provider turns Applications on for new apps, **New
 application** and AI apps make apps of this older kind too; `kubectl apply`
 of an Application makes an Application wherever Applications run. There is no migration tool: to make one an Application, delete it
 and create it again with the same name, which keeps its platform address. Set
