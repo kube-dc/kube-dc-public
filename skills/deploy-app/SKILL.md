@@ -181,8 +181,11 @@ any claim). Tell the user what changes: the Application makes its own
 Service named after the app and gets its address from `run.hostnames` or the
 platform address, so traffic to the old Service or hostname stops until DNS
 and clients follow; it does not take over a data volume (it refuses an
-existing `{app}-data` claim), so the data must be copied out and back. Only
-after the user agrees, delete the old objects and create the Application.
+existing `{app}-data` claim), so the data must be copied out and back. List
+exactly which objects belong to this app alone (its Deployment, and only a
+Service, route or claim nothing else selects or mounts) and keep any that
+another workload uses. Only after the user agrees to that list, delete those
+objects and create the Application.
 
 ## Deploy from GitHub on every push
 

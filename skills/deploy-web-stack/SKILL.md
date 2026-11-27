@@ -38,9 +38,12 @@ kubectl auth can-i create applications.apps.kube-dc.com
 curl -s https://backend.<domain>/api/platform/info   # applications.enabled, applications.create
 ```
 
-`applications.enabled` and `applications.create` true: step 3 deploys an
-Application. Otherwise use step 6 instead of step 3. Decide this before you
-write anything; never apply an Application to find out.
+`applications.enabled` and `applications.create` both the JSON value `true`:
+step 3 deploys an Application. Both present and either `false`: use step 6
+instead of step 3. If the request fails or the answer lacks either value,
+do not guess: tell the user and ask which path their installation offers.
+Decide this before you write anything; never apply an Application to find
+out.
 
 Pick the engine the application supports: WordPress and most PHP CMSs need
 MySQL or MariaDB (WordPress has no PostgreSQL driver); Django, Rails,
