@@ -184,8 +184,10 @@ and clients follow; it does not take over a data volume (it refuses an
 existing `{app}-data` claim), so the data must be copied out and back. List
 exactly which objects belong to this app alone (its Deployment, and only a
 Service, route or claim nothing else selects or mounts) and keep any that
-another workload uses. Only after the user agrees to that list, delete those
-objects and create the Application.
+another workload uses. The Application refuses an existing `{app}-data`
+claim, so if that claim must stay (another workload mounts it), pick another
+app name before cutting over. Only after the user agrees to that list,
+delete those objects and create the Application.
 
 ## Deploy from GitHub on every push
 

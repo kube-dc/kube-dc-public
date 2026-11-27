@@ -39,9 +39,10 @@ curl -s https://backend.<domain>/api/platform/info   # applications.enabled, app
 ```
 
 `applications.enabled` and `applications.create` both the JSON value `true`:
-step 3 deploys an Application. Both present and either `false`: use step 6
-instead of step 3. If the request fails or the answer lacks either value,
-do not guess: tell the user and ask which path their installation offers.
+step 3 deploys an Application. Both JSON booleans and either `false`: use
+step 6 instead of step 3. If the request fails, or either value is missing
+or not a JSON boolean, do not guess: tell the user and ask which path their
+installation offers.
 Decide this before you write anything; never apply an Application to find
 out.
 
