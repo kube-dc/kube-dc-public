@@ -184,17 +184,20 @@ and clients follow; it does not take over a data volume (it refuses an
 existing `{app}-data` claim).
 
 - **The app keeps no data (the user confirms: nothing to keep in a claim,
-  an `emptyDir` or anywhere else):** list exactly the objects that are this
-  app's alone (its Deployment, and only a Service or route nothing else
-  selects). If a Service of the app's name must stay, the Application needs
-  another name. With the user's agreement to that list and to a short
+  an `emptyDir` or anywhere else):** first choose the Application's name
+  and check that nothing of that name stays in the way (a Service another
+  workload uses, an `{app}-data` claim: the Application refuses both); if
+  anything does, pick another name. Then list exactly the objects that are
+  this app's alone (its Deployment, and only a Service or route nothing else
+  selects). With the user's agreement to the name, that list and a short
   outage, delete them and create the Application.
 - **The app keeps data:** replacing it is a data migration, which this skill
   does not run: give guidance only and leave the plain app as it is. What it
-  takes: every writer stopped and its pods gone; a backup; an Application of
-  another name (it refuses the existing `{app}-data` claim) that takes no
-  traffic until its data is restored and checked; its own address checked
-  before the hostname moves.
+  takes: writes stopped and a backup checked while the old pods still exist
+  (an `emptyDir` goes with its pods); an Application of another name (it
+  refuses the existing `{app}-data` claim) that takes no traffic until its
+  data is restored and checked; its own address checked before the hostname
+  moves.
 
 ## Deploy from GitHub on every push
 
