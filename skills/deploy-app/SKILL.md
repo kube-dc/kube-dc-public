@@ -184,14 +184,14 @@ and clients follow; it does not take over a data volume (it refuses an
 existing `{app}-data` claim), so the data must be copied out and back. List
 exactly which objects belong to this app alone (its Deployment, and only a
 Service, route or claim nothing else selects or mounts) and keep any that
-another workload uses. The Application refuses an existing `{app}-data`
-claim, so if that claim must stay (another workload mounts it), pick another
-app name before cutting over. The user agrees to that list first. With the
-same name, the old objects must go before the Application can be created
-(the name is in use), so agree a short outage. With another name, create the
-Application first, check that it is reachable, and keep the old Deployment
-and Service serving until every client uses the new name or address; delete
-the listed objects only then.
+another workload uses; if the `{app}-data` claim must stay, the Application
+needs another name. Replacing the app is a cutover with a short outage, in
+this order, each step after the user agrees: stop the old app (scale its
+Deployment to 0, so nothing writes to its data any more); copy the data out;
+delete the old app's own objects (the Deployment, and its Service and route
+when they are its alone, which frees the hostname); create the Application
+and copy the data in; check it is reachable and clients work; only then
+delete the old claim, unless another workload mounts it.
 
 ## Deploy from GitHub on every push
 
