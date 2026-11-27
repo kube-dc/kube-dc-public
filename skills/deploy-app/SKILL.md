@@ -183,26 +183,19 @@ platform address, so traffic to the old Service or hostname stops until DNS
 and clients follow; it does not take over a data volume (it refuses an
 existing `{app}-data` claim).
 
-- **The app keeps no data (the user confirms: nothing to keep in a claim,
-  an `emptyDir` or anywhere else):** first choose the Application's name
-  and check that nothing of that name stays in the way (a Service another
-  workload uses, an `{app}-data` claim: the Application refuses both); if
-  anything does, pick another name. Then list exactly the objects that are
-  this app's alone (its Deployment, a Service nothing else selects, and a
-  route only when every rule of it points at that Service; read the rules
-  and backends). A route that also serves other workloads stays: as part of
-  the cutover, each backend reference to the app's own Service becomes the
-  Application's Service, in place, with every other backend and weight kept.
-  If the app is reached only through a Service that also selects other
-  pods, do not change anything: give guidance only, as for data below. With the user's agreement to the name, that list, the route
-  changes and a short outage, delete them and create the Application.
-- **The app keeps data:** replacing it is a data migration, which this skill
-  does not run: give guidance only and leave the plain app as it is. What it
-  takes: writes stopped and a backup checked while the old pods still exist
-  (an `emptyDir` goes with its pods); an Application of another name (it
-  refuses the existing `{app}-data` claim) that takes no traffic until its
-  data is restored and checked; its own address checked before the hostname
-  moves.
+Replacing an existing plain app is a cutover the user runs; this skill gives
+guidance only and does not delete, scale or retarget their objects. Report
+what you found (the app's Deployment; every Service that selects its pods,
+and whether other pods share it; every route that points at those Services,
+in any namespace, with its rules, ports and weights; any data in a claim, an
+`emptyDir` or elsewhere) and what a cutover would take: an Application name
+that nothing of that name blocks (the Application refuses an existing
+Service or `{app}-data` claim it did not make); data backed up while the
+old pods still exist and restored before the Application takes traffic;
+each route's references to the app's own Service moved to the
+Application's Service on a matching port, with other backends and weights
+kept; a short outage the user agrees to. A new app of a free name needs none
+of this: create the Application.
 
 ## Deploy from GitHub on every push
 
