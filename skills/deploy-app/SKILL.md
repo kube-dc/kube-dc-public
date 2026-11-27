@@ -183,17 +183,18 @@ platform address, so traffic to the old Service or hostname stops until DNS
 and clients follow; it does not take over a data volume (it refuses an
 existing `{app}-data` claim).
 
-- **The app keeps no data in a claim:** list exactly the objects that are
-  this app's alone (its Deployment, and only a Service or route nothing else
-  selects), and with the user's agreement to that list and to a short
+- **The app keeps no data (the user confirms: nothing to keep in a claim,
+  an `emptyDir` or anywhere else):** list exactly the objects that are this
+  app's alone (its Deployment, and only a Service or route nothing else
+  selects). If a Service of the app's name must stay, the Application needs
+  another name. With the user's agreement to that list and to a short
   outage, delete them and create the Application.
-- **The app keeps data in a claim:** replacing it is a data migration, which
-  this skill does not run. Tell the user what it takes (every writer of the
-  claim stopped and its pods gone; a backup; an Application of another name,
-  since it refuses the existing `{app}-data` claim, that takes no traffic
-  until its data is restored and checked; its own address checked before
-  the hostname moves) and leave the plain app as it
-  is unless the user leads that migration step by step.
+- **The app keeps data:** replacing it is a data migration, which this skill
+  does not run: give guidance only and leave the plain app as it is. What it
+  takes: every writer stopped and its pods gone; a backup; an Application of
+  another name (it refuses the existing `{app}-data` claim) that takes no
+  traffic until its data is restored and checked; its own address checked
+  before the hostname moves.
 
 ## Deploy from GitHub on every push
 
