@@ -17,7 +17,7 @@ It uses the platform's defaults, which agents most often get wrong:
   creates its volume, Deployment, Service, HTTPS route and certificate, and
   allocates **no external IP**. Never use `type: LoadBalancer` for web
   traffic, and never create an Issuer. Only where the installation does not
-  run Applications, use the template's plain manifests (step 6).
+  run Applications (step 0), use the template's plain manifests (step 6).
 
 Single-step references: `create-database` (plans, families, bindings),
 `deploy-app` (workload hygiene), `expose-service` (other route options),
@@ -35,7 +35,12 @@ kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}{"\n"}
 kubectl get resourcequota
 kubectl auth can-i create managedservices.services.kube-dc.com
 kubectl auth can-i create applications.apps.kube-dc.com
+curl -s https://backend.<domain>/api/platform/info   # applications.enabled, applications.create
 ```
+
+`applications.enabled` and `applications.create` true: step 3 deploys an
+Application. Otherwise use step 6 instead of step 3. Decide this before you
+write anything; never apply an Application to find out.
 
 Pick the engine the application supports: WordPress and most PHP CMSs need
 MySQL or MariaDB (WordPress has no PostgreSQL driver); Django, Rails,
@@ -196,9 +201,9 @@ but pods remain, tell the user to ask their provider to remove them.
 
 ## 6. Without Applications
 
-Where `kubectl get app` reports no such resource type, or an applied
-Application gets no status within a minute (delete it then), apply parts 3
-to 5 of [web-stack-template.yaml](web-stack-template.yaml) instead of step 3:
+Where step 0 found that the installation does not run Applications
+(`applications.enabled` or `applications.create` false), apply parts 3 to 5
+of [web-stack-template.yaml](web-stack-template.yaml) instead of step 3:
 
 - Part 3, a PVC: replace `rbd-vm` with the replicated class you picked;
   without it, also remove the volume and its mount from part 4. With

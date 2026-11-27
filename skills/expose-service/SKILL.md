@@ -3,9 +3,12 @@ name: expose-service
 description: Expose a Service from a Kube-DC Project with a hostname-based HTTP/HTTPS/TLS Gateway route or a dedicated EIP-backed LoadBalancer for selected TCP/UDP ports.
 ---
 
-To run an image and publish it in one step, the hosted MCP tool `deploy_app`
-creates the app (an Application, which generates the Deployment and this kind
-of Service); `rollout_status` reports the URL (see `deploy-app`). Do not add these
+To run an image and publish it in one step where the installation runs
+Applications (`applications.enabled` and `applications.create` in
+`https://backend.<domain>/api/platform/info`, see `deploy-app`), the hosted
+MCP tool `deploy_app` creates the app (an Application, which generates the
+Deployment and this kind of Service); `rollout_status` reports the URL.
+Elsewhere, apply a Deployment and expose its Service as below. Do not add these
 annotations to a Service an Application generated: set `run.public` and
 `run.hostnames` on the Application instead.
 

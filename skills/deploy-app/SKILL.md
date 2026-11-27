@@ -14,14 +14,21 @@ those objects. Plain Deployments remain for what an Application does not
 cover (below). Keep the Project context, quota, storage, database, and
 exposure decisions explicit.
 
-Check that the installation runs Applications before writing one. The API can be
-served while the provider has not turned the controller on, so listing the
-resource type (`kubectl api-resources --api-group=apps.kube-dc.com`) is not
-enough: apply the Application and check that it gets a status within a minute
-(`kubectl get app <name>` shows a STATUS, `.status.conditions` is set). If it stays empty, delete it and use the
-plain manifests below. With the hosted MCP server, `deploy_app` makes only
-Applications (its output has `application: Application/<name>`); where the
-installation does not run them, use the plain manifests below.
+**Choose the path before writing anything.** `curl -s https://backend.<domain>/api/platform/info` (public, no token;
+`<domain>` is the installation's base domain, as in `kube-dc login`) reports
+`applications.enabled` and `applications.create`. Listing the resource type
+(`kubectl api-resources --api-group=apps.kube-dc.com`) is not enough: the CRD
+can be installed where the controller does not run. Never apply an
+Application to find out, and never delete one because it has no status yet.
+
+- `enabled` and `create` true: the app is an Application (`deploy_app`, the
+  manifests below, builds on push). `deploy_app` makes only Applications (its
+  output has `application: Application/<name>`).
+- `enabled` false, or `create` false for a new app: use the plain manifests
+  below (a Deployment and a Service) and, for builds from GitHub, the user's
+  own GitHub Actions workflow (`connect_repository`, which adds `deploy.yml`
+  and `preview.yml`). With the hosted MCP server, a `deploy_app` refusal that
+  says the Application API is off means the same.
 
 ## With the hosted MCP server
 
@@ -165,12 +172,17 @@ writing the manifests below:
   about deploys elsewhere (chat, a script) instead of polling.
 
 `deploy_app` does not take over a plain Deployment of the same name (one
-applied with `kubectl`): the Application reports the name as in use. To make
-such an app an Application, delete it and create the Application with the
-same name (ask the user first). Its platform address stays; a custom domain
-is set again in `run.hostnames`; a data volume is not taken over (the new
-Application refuses the old `{app}-data` claim), so the data must be copied
-out and back.
+applied with `kubectl`): the Application reports the name as in use. Before
+proposing to replace such an app with an Application, find what it uses:
+`kubectl get deployment,service,httproute,persistentvolumeclaim` (its
+Service may have another name, its address may come from that Service's
+`service.nlb.kube-dc.com/route-hostname` or a route of its own, its data from
+any claim). Tell the user what changes: the Application makes its own
+Service named after the app and gets its address from `run.hostnames` or the
+platform address, so traffic to the old Service or hostname stops until DNS
+and clients follow; it does not take over a data volume (it refuses an
+existing `{app}-data` claim), so the data must be copied out and back. Only
+after the user agrees, delete the old objects and create the Application.
 
 ## Deploy from GitHub on every push
 
@@ -220,8 +232,9 @@ by a repository admin). The hosted MCP guide
 
 Then choose how builds run (one per app; both would deploy every push twice):
 
-- **Builds on push by the platform** (no CI in the repository): `deploy_app`
-  with `buildFrom`. Managed registry of the app's own project:
+- **Builds on push by the platform** (no CI in the repository; only where
+  `applications.enabled` and `applications.create` are true, see above):
+  `deploy_app` with `buildFrom`. Managed registry of the app's own project:
   `buildFrom.registry: <name>`, no `image` and no push Secret (for an
   Application not already on a managed registry, any `image` outside
   `ghcr.io` without `pushSecret` is refused; GHCR needs `pushSecret` too, as
