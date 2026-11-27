@@ -73,7 +73,7 @@ Skills location: `skills/{skill-name}/SKILL.md`
 | `cli-kubeconfig.md` | CLI install, kubeconfig setup, IDE integration | ~200 lines |
 | `ai-ide-integration.md` | MCP server setup for Claude/Cursor/Windsurf | ~690 lines |
 | `deploy-first-app.md` | First app: an image Application with kubectl or an AI app, new release, rollback, clean up; when to use plain manifests | ~125 lines |
-| `applications.md` | The Application resource: console, YAML fields, conditions, `kube-dc app` CLI, AI tools, domains, deletion, apps created before Applications | ~360 lines |
+| `applications.md` | The Application resource: console, YAML fields, conditions, `kube-dc app` CLI, AI tools, domains, deletion | ~350 lines |
 | `rollback.md` | Releases, rollback by pin, instant rollback with a warm previous version | ~145 lines |
 | `app-jobs-and-workers.md` | Release commands (migrations), workers, one-off and cron jobs, autoscaling, data volumes, restarts on Secret change | ~155 lines |
 | `deploy-from-github.md` | New application from GitHub, the Application manifest, organization consent, managed vs own registry, builds, pull request previews, preview databases, copy grants and masking, own GitHub Actions workflow | ~365 lines |
