@@ -191,8 +191,10 @@ existing `{app}-data` claim).
   this app's alone (its Deployment, a Service nothing else selects, and a
   route only when every rule of it points at that Service; read the rules
   and backends). A route that also serves other workloads stays: as part of
-  the cutover, each backend reference to the old Service becomes the
-  Application's Service, in place, with every other backend and weight kept. With the user's agreement to the name, that list, the route
+  the cutover, each backend reference to the app's own Service becomes the
+  Application's Service, in place, with every other backend and weight kept.
+  If the app is reached only through a Service that also selects other
+  pods, do not change anything: give guidance only, as for data below. With the user's agreement to the name, that list, the route
   changes and a short outage, delete them and create the Application.
 - **The app keeps data:** replacing it is a data migration, which this skill
   does not run: give guidance only and leave the plain app as it is. What it
