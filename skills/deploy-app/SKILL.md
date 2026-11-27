@@ -186,9 +186,12 @@ exactly which objects belong to this app alone (its Deployment, and only a
 Service, route or claim nothing else selects or mounts) and keep any that
 another workload uses. The Application refuses an existing `{app}-data`
 claim, so if that claim must stay (another workload mounts it), pick another
-app name before cutting over; then the app's Service name changes too, so
-keep the old Service until every client uses the new name or address. Only after the user agrees to that list,
-delete those objects and create the Application.
+app name before cutting over. The user agrees to that list first. With the
+same name, the old objects must go before the Application can be created
+(the name is in use), so agree a short outage. With another name, create the
+Application first, check that it is reachable, and keep the old Deployment
+and Service serving until every client uses the new name or address; delete
+the listed objects only then.
 
 ## Deploy from GitHub on every push
 
