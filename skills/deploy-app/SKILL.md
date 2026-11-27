@@ -181,17 +181,19 @@ any claim). Tell the user what changes: the Application makes its own
 Service named after the app and gets its address from `run.hostnames` or the
 platform address, so traffic to the old Service or hostname stops until DNS
 and clients follow; it does not take over a data volume (it refuses an
-existing `{app}-data` claim), so the data must be copied out and back. List
-exactly which objects belong to this app alone (its Deployment, and only a
-Service, route or claim nothing else selects or mounts) and keep any that
-another workload uses; if the `{app}-data` claim must stay, the Application
-needs another name. Replacing the app is a cutover with a short outage, in
-this order, each step after the user agrees: stop the old app (scale its
-Deployment to 0, so nothing writes to its data any more); copy the data out;
-delete the old app's own objects (the Deployment, and its Service and route
-when they are its alone, which frees the hostname); create the Application
-and copy the data in; check it is reachable and clients work; only then
-delete the old claim, unless another workload mounts it.
+existing `{app}-data` claim).
+
+- **The app keeps no data in a claim:** list exactly the objects that are
+  this app's alone (its Deployment, and only a Service or route nothing else
+  selects), and with the user's agreement to that list and to a short
+  outage, delete them and create the Application.
+- **The app keeps data in a claim:** replacing it is a data migration, which
+  this skill does not run. Tell the user what it takes (every writer of the
+  claim stopped and its pods gone; a backup; an Application of another name,
+  since it refuses the existing `{app}-data` claim, that takes no traffic
+  until its data is restored and checked; its own address checked before
+  the hostname moves) and leave the plain app as it
+  is unless the user leads that migration step by step.
 
 ## Deploy from GitHub on every push
 
