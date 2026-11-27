@@ -2135,6 +2135,15 @@ For S3-compatible object storage, see [Deploying Rook Ceph Object Storage](deplo
 
 To enable Google OAuth login, see [SSO with Google Auth](sso-google-auth.md).
 
+### Organizations without a plan
+
+With `BILLING_PROVIDER=none` (the default), a new installation does not ask
+organizations to choose a plan: `bootstrap init` writes
+`BILLING_PLAN_REQUIRED=false`, and an organization without a plan has no quota
+until an administrator assigns one. Add `--set BILLING_PLAN_REQUIRED=true` to
+keep the plan picker. See
+[Organizations without a plan](billing-plans-configuration.md#organizations-without-a-plan).
+
 ### PAYG usage billing (optional)
 
 Kube-DC's pay-as-you-go usage billing is off by default. Without `--payg`,

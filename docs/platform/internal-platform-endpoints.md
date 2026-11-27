@@ -139,7 +139,8 @@ allowlists, and a node must announce it.
 Inside each Project VPC, the cluster DNS address (`CLUSTER_DNS`, for example
 `10.101.0.11`) is a Kube-OVN SwitchLBRule to the Project's own resolver,
 `vpc-dns-<project>` in `kube-system`. Pods and VMs in a Project both use this
-resolver, and all the resolvers read the shared `vpc-dns-corefile` ConfigMap.
+resolver, and every resolver runs a copy of the shared `vpc-dns-corefile`
+ConfigMap that resolves only its own Project's namespace from the cluster.
 The `hosts` block in [Project DNS](#project-dns) therefore applies to Project
 Pods and VMs. Platform Pods use `rke2-coredns` instead.
 
@@ -420,8 +421,9 @@ cluster serves. `backend.<domain>` and `login.<domain>` also work.
 Each Project VPC runs its own CoreDNS Deployment, `vpc-dns-<project>`, in
 `kube-system`. Project Pods and VMs use only this resolver (see
 [Project DNS for Pods and VMs](#project-dns-for-pods-and-vms)). All of these
-Deployments read the `kube-system/vpc-dns-corefile` ConfigMap. A `hosts` block
-in that Corefile maps the platform hostnames to the VIPs:
+Deployments run a per-Project copy of the `kube-system/vpc-dns-corefile`
+ConfigMap, which the manager keeps in step with it. A `hosts` block in that
+Corefile maps the platform hostnames to the VIPs:
 
 ```corefile
 hosts {
@@ -560,17 +562,26 @@ Add the `hosts` block from [Project DNS](#project-dns) to the `.:53` server
 block of the `vpc-dns-corefile` ConfigMap. With Fleet, put it in the
 per-cluster patch of that ConfigMap. Without Fleet, edit the ConfigMap.
 
-### 6. Restart the Project resolvers
+### 6. Let the Project resolvers pick it up
 
-Restart every `vpc-dns-*` Deployment, so each resolver loads the changed
-Corefile:
+Each Project resolver runs its own copy of `vpc-dns-corefile`, named
+`vpc-dns-corefile-<project-namespace>`. That copy only lets the Project
+resolve its own namespace (and `default`) from the management cluster. The
+kube-dc manager refreshes every copy from the shared ConfigMap when it next
+reconciles the Project, which happens within 15 minutes. CoreDNS then reloads
+the copy without a restart. Restarting `vpc-dns-*` Deployments does not speed
+this up. To apply the change at once, restart the manager, which reconciles
+every Project:
 
 ```bash
-kubectl -n kube-system get deploy -o name | grep '^deployment.apps/vpc-dns-' | \
-  xargs -I{} kubectl -n kube-system rollout restart {}
+kubectl -n kube-dc rollout restart deployment kube-dc-manager
+```
 
-kubectl -n kube-system get deploy -o name | grep '^deployment.apps/vpc-dns-' | \
-  xargs -I{} kubectl -n kube-system rollout status {} --timeout=120s
+Check one Project's copy:
+
+```bash
+kubectl -n kube-system get configmap vpc-dns-corefile-<project-namespace> \
+  -o jsonpath='{.data.Corefile}'
 ```
 
 ### 7. Install the anchors
@@ -641,7 +652,7 @@ the name to the `envoyGateway` line of the Corefile `hosts` block:
 ```
 
 Then restart the resolvers as in
-[Restart the Project resolvers](#6-restart-the-project-resolvers).
+[Let the Project resolvers pick it up](#6-let-the-project-resolvers-pick-it-up).
 
 ### Drain a node
 
@@ -741,7 +752,7 @@ This table lists common symptoms:
 | `connection reset by peer` to the `envoyGateway` VIP | `health.host` is a `TLSRoute` hostname, most often `kube-api.<domain>`. | Set `health.host` to `console.<domain>` or another `HTTPRoute` hostname. |
 | Timeout to a VIP while the backends are healthy | The VIP is missing from one of the global allowlists, so the Project router drops the packet. | Add the VIP to both allowlists. Check with `kubectl ko nbctl lr-policy-list <project-router>`: the VIP must be in the 32000 and 29500 allow rules. |
 | A Project VM reaches a platform hostname, but a Project Pod times out | Class D: the address is inside `INFRA_ATTACHMENT_ROUTES`, so the Pod uses the locked `eth0`. `ip route get <address>` in the Pod shows `dev eth0`. | Enable `envoyGateway` with a VIP on the external network, and map the hostnames to it in Project DNS. See [Class D](#class-d). |
-| `nslookup` from a Project Pod returns the public address | The `vpc-dns-<project>` Deployment did not load the changed Corefile, or the name is not in the `hosts` block. | Check the ConfigMap, then run `kubectl -n kube-system rollout restart deploy/vpc-dns-<project>`. |
+| `nslookup` from a Project Pod returns the public address | The Project's copy `vpc-dns-corefile-<project>` does not have the change yet, or the name is not in the `hosts` block. | Check both ConfigMaps. The manager refreshes the copy within 15 minutes; `kubectl -n kube-dc rollout restart deployment kube-dc-manager` refreshes all copies at once. |
 | The Service has no address and stays pending | `loadBalancerClass` does not match the `--lb-class` flag of the MetalLB controller. | Set `loadBalancerClass` to the value that MetalLB uses. The default is `metallb`. |
 | MetalLB does not announce the VIP | No anchor on the node, or no node is both a speaker candidate and a ready backend. | Run `kube-dc bootstrap doctor anchors <cluster>`. Check that `advNodeSelectors` and the backend `nodeSelector` select at least one common node. |
 | A `NoCandidates` event and an empty slice | The backend `nodeSelector` matches no Node. | Correct the selector. For `envoyGateway`, select the nodes where Envoy runs. |

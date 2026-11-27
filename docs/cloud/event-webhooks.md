@@ -62,7 +62,7 @@ before it.
 | `DeploymentFailed` | A Deployment rollout passed its progress deadline |
 | `RouteReady` | A Service published with `service.nlb.kube-dc.com/expose-route` got its hostname |
 | `ManagedServiceReady` | A managed service became ready, and no earlier ready event for it is still kept |
-| `PreviewExpiring` | A preview that runs as a plain Deployment (made by your own GitHub Actions workflow, or by an app from before Applications) expires within two hours |
+| `PreviewExpiring` | A preview that runs as a plain Deployment (for example one your own GitHub Actions workflow or your manifests made, labelled `preview.kube-dc.com/name` with `preview.kube-dc.com/expires-at`) expires within two hours |
 | `WorkloadCrashLooping`, `WorkloadNotReady`, `WorkloadDegraded`, `JobFailed`, `VolumeFillingUp` | A pod restarts in a loop or stays not ready, a Deployment or StatefulSet has fewer ready replicas than wanted, a Job failed, a volume is filling up |
 | `WorkloadCpuThrottled`, `WorkloadMemoryNearLimit` | A container is throttled on CPU or close to its memory limit (not for managed-service pods) |
 | `ManagedServiceUnhealthy`, `ManagedClusterUnhealthy` | A managed service or Managed Cluster is degraded or failed |

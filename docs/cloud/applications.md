@@ -17,13 +17,26 @@ image, or from a GitHub repository where your provider offers builds; see
 or with an AI app (`deploy_app`). They make the same resource, so you can
 switch between them at any time.
 
-**New application** and AI apps make an Application where your provider has
-turned that on for new apps (see
-[Apps created before Applications](#apps-created-before-applications)).
+You need the developer role in the Project to change an application.
 
-You need the developer role in the Project to change an application. If an
-Application you applied still shows no status after a minute, your provider
-has not turned Applications on: delete it and ask your provider.
+### Check that your installation runs Applications
+
+Check this before you create anything. The platform's public information
+says whether Applications run:
+
+```bash
+curl -s https://backend.<domain>/api/platform/info
+# "applications": {"enabled": true, "create": true}
+```
+
+No sign-in is needed. Create Applications only where both `enabled` and
+`create` are `true`; in the console, **New application** appears only there.
+If the page does not answer, try again later; do not pick a path until it
+does. Where either is `false`, deploy with your own Kubernetes
+manifests (a Deployment and a Service, see
+[Deploy Kubernetes manifests directly](deploy-options.md#deploy-kubernetes-manifests-directly))
+and build them in your own GitHub Actions workflow (see
+[Build in your own GitHub Actions workflow](deploy-from-github.md#build-in-your-own-github-actions-workflow-instead)).
 
 ## In the console
 
@@ -285,9 +298,7 @@ uses verified domains) and clicks **Connect a domain**:
    - For one app on the domain itself (**One app on it** or **Both**), an A
      record for `@`, with a warning that a website you run there moves to the
      app. An Application answers only on the domain itself, so the wizard
-     asks for no `www` record: `www.<domain>` is not redirected to it. Apps
-     from before Applications also get a `www` CNAME and a redirect from
-     `www`.
+     asks for no `www` record: `www.<domain>` is not redirected to it.
 
    If your DNS panel adds the domain itself, enter only the part shown (for
    example `_kube-dc.apps` and `*.apps`). On Cloudflare, set the records to
@@ -355,14 +366,3 @@ longer built.
 confirm) keep the volume unless you ask for it: without `--delete-volume`
 (or `deleteData`) they set the policy to `Retain` first, even when it was
 `Delete`.
-
-## Apps created before Applications
-
-Apps deployed before your installation offered Applications keep running, and
-the console and AI apps still operate them. Where new apps are
-Applications, the console marks the older ones **Not migrated**. Until your provider turns Applications on for new apps, **New
-application** and AI apps make apps of this older kind too; `kubectl apply`
-of an Application makes an Application wherever Applications run. There is no migration tool: to make one an Application, delete it
-and create it again with the same name, which keeps its platform address. Set
-its custom domain again in `run.hostnames`, and copy its data volume out
-first: the new Application does not take over the old `<app>-data` claim.

@@ -50,12 +50,11 @@ for licensing every Windows VM they run:
   accepted exposure into a redistribution problem.
 
 
-This is the **one-time operator task** that produces the Windows 11 golden image for a
-cluster. After the golden is built and published to the cluster's S3 OS-image mirror
-(`s3.<your-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2`), it
-appears in the Console UI Operating System dropdown as **Windows 11 Enterprise (Golden
-Image)**, and **end users create Windows VMs from the console**. See
-[Creating a VM](/cloud/creating-vm#windows-11). Users do not run this guide.
+Build and verify the golden image, then publish a Ready snapshot in the
+`windows-11-golden` family. Once the project has its copy of the selected
+snapshot, tenants can select **Windows 11 Enterprise (Golden Image)** in the
+console. Follow [OS-image operations](os-image-operations.md) for snapshot
+promotion and [Creating a VM](/cloud/creating-vm#windows-11) for the tenant flow.
 
 :::note Storage requirement
 The finished golden is ~75 GB. Each Windows VM clones it, so a user's project needs

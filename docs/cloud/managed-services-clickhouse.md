@@ -108,7 +108,7 @@ The delivered `Secret` has these keys:
 | `username`, `password` | The login of the credential role |
 | `tls`, `ca.crt` | `verify-full`, and the CA that signs the server certificate |
 | `uri` | `clickhouse://<username>:<password>@<host>:9440/<database>?secure=true&skip_verify=false` |
-| `httpsUrl` | `https://<host>:8443` |
+| `httpsUrl` | `https://<host>:8443/?database=<database>`, ready to use as is |
 | `jdbcUrl` | `jdbc:clickhouse://…?ssl=true&sslmode=STRICT` |
 
 A check from a pod in the Project:

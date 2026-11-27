@@ -627,7 +627,7 @@ Deploy the repository acme/notes to Project production in Organization acme, bui
 with a preview for each pull request in Project staging. Tell me its address.
 ```
 
-With the hosted MCP endpoint, the agent first asks where images go (a managed registry or your own), then calls `deploy_app` with `buildFrom` and reports the address from `rollout_status`. Where your provider turned Applications on, the app is an Application: the console's **Applications** view and `kube-dc app status notes` show the same app. See [Deploy from GitHub](deploy-from-github.md).
+With the hosted MCP endpoint, the agent first checks whether the installation creates Applications (`applications.enabled` and `applications.create` in `https://backend.<domain>/api/platform/info`) and asks where images go (a managed registry or your own). Where both are true, it calls `deploy_app` with `buildFrom` and reports the address from `rollout_status`; the app is an Application, and the console's **Applications** view and `kube-dc app status notes` show the same app. Where they do not, it sets up your own GitHub Actions workflow with `connect_repository`, which adds `deploy.yml` and a `preview.yml` for the pull request previews (see [Build in your own GitHub Actions workflow](deploy-from-github.md#build-in-your-own-github-actions-workflow-instead)).
 
 ### Roll back an app
 

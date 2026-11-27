@@ -224,10 +224,8 @@ A GitHub token can be exchanged once; request a new one for each sign-in.
 
 ## Deployment status on GitHub
 
-This section is about a plain Deployment: one your own workflow deploys, one
-you apply yourself, or an app created before
-[Applications](applications.md#apps-created-before-applications). An
-Application the platform builds from GitHub needs none of it: each build shows
+This section is about a plain Deployment: one your own workflow deploys or
+one you apply yourself. An [Application](applications.md) the platform builds from GitHub needs none of it: each build shows
 on the commit as the check run `kube-dc` (see
 [Builds](deploy-from-github.md#builds)). An Application that runs an image you
 built gets nothing on GitHub.

@@ -18,7 +18,7 @@ schedule and rebuilds the catalog the UI dropdown reads. It exists so that creat
 never depends on quay.io or a distro mirror being up, so restricted and air-gapped
 installs work at all.
 
-**The goldens** turn those images into **ready-to-clone snapshots** on Ceph. Creating a
+**The goldens** turn those images into **ready-to-clone snapshots** on compatible CSI storage. Creating a
 VM is then not a download: it is a snapshot clone, near-instant, costing almost no space
 until the guest starts writing.
 
@@ -64,6 +64,28 @@ snapshot  VolumeSnapshot                                      dependsOn convert
 Adding an OS is three files in `clusters/<cluster>/rbd-vm-block/{import,convert,snapshot}`.
 Distribution is a *rebuild per cluster* from immutable inputs. Nothing large crosses a
 network boundary, and every cluster converges on an equivalent result.
+
+## Enable prepared images on a CSI StorageClass
+
+An installation can designate a single StorageClass for prepared images. Set
+`storage.kube-dc.com/prepared-images: "true"` and
+`storage.kube-dc.com/snapshot-class: <volume-snapshot-class>` on that class. Both
+classes must use the same CSI driver. The CSI driver must support restoring a
+PVC from a pre-provisioned snapshot that references an existing snapshot handle.
+Existing Ceph installations can continue to use the implicit `rbd-vm` setup.
+
+For a Linux Filesystem image, use CDI to import a generalized cloud image over
+HTTPS to a PVC on the selected class. After the DataVolume succeeds, snapshot
+that PVC into `golden-images` using the configured snapshot class and apply the
+golden labels above. Keep the source disk and snapshot while projects use the
+image. The project controller publishes retained snapshot aliases and marks each
+alias with the restore StorageClass.
+
+In **Create virtual machine**, select the operating system and **Prepared snapshot
+image**. The console restores the root PVC from the ready snapshot and applies
+the new VM's cloud-init configuration and project SSH key on first boot. The
+root disk must be at least the snapshot restore size. Test a fresh boot and SSH
+session in a project before promoting a new source image.
 
 ## Producer 2: Windows (bake)
 
@@ -149,7 +171,10 @@ and compresses to a **6.35 GiB** qcow2. Import on a receiving cluster takes ~15 
 | Containerdisk in the zot depot | **Rejected.** A ~23 GiB blob defeated the zot S3 driver |
 | **qcow2 in the image bucket, imported by CDI** | **Use this.** Proven cross-cluster, ~6 GiB, minutes |
 
-Receiving cluster:
+On the receiving cluster, import the versioned image in `golden-images` using
+the installation's authorized distribution source. Keep any source credential
+in that namespace. The console uses the promoted project snapshot for each
+tenant root disk.
 
 ```yaml
 apiVersion: cdi.kubevirt.io/v1beta1
@@ -161,7 +186,7 @@ metadata:
 spec:
   source:
     http:
-      url: "http://rook-ceph-rgw-my-store.rook-ceph.svc/cdi-os-images/windows/11/<date>/windows11-x64-golden.qcow2"
+      url: "https://images.example.com/windows/11/BUILD_ID/windows11-x64-golden.qcow2"
   storage:
     accessModes: [ReadWriteOnce]
     volumeMode: Filesystem
@@ -169,7 +194,8 @@ spec:
     resources: { requests: { storage: 75Gi } }
 ```
 
-Then snapshot that PVC with the contract labels above. Name goldens **versioned**
+Replace the sample URL with the immutable import URL and `BUILD_ID` with the
+image build identifier. Then snapshot that PVC with the golden contract labels. Name goldens **versioned**
 (`golden-windows-11-golden-<date>`) so a candidate can sit beside the incumbent.
 `<date>` is the build date.
 
@@ -231,9 +257,11 @@ spec:
   releaseDigest: "sha256:f0dea74da9c54ba4728b2f4841316490cadd66b7ab1ed10de46549d457eb5018"
 ```
 
-Promoting a new golden is then: commit the new versioned DataVolume + VolumeSnapshot
-(staged, serving nothing), let every cluster import and gate it, then change
-`snapshotName` in a second commit. Rollback is the same field, back.
+Create the selection pointing at the current snapshot before staging its replacement.
+Keep selection objects in `golden-images` for both modes. A `Block` selection
+points to a snapshot in `golden-images-block`. Commit the new versioned
+DataVolume and VolumeSnapshot, test the candidate, then change `snapshotName`
+in a separate commit. Restore the previous value to roll back.
 
 **It fails closed.** A family whose selection names a missing or unready snapshot is
 **skipped**, not served from a sibling. Skipping is safe, because projects already

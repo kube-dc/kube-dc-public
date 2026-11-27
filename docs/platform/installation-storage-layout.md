@@ -168,6 +168,13 @@ device with `ls -lL` under `/var/lib/kubelet/pods/*/volumeDevices/` to see
 which case a driver is. Without the setting, the image import and the VM fail
 with `Permission denied` on the device.
 
+A class with `volumeBindingMode: WaitForFirstConsumer` works for VM disks. For
+such a class, CDI imports the image on the node that the scheduler selected
+for the VM, and the scheduler places the import pod there. If that node has a
+`NoSchedule` or `NoExecute` taint that your VMs tolerate, give CDI's import
+pods the same toleration in the `CDI` resource (`spec.workload.tolerations`).
+Without it, the import pod stays `Pending` and the VM stays in `Provisioning`.
+
 ## Failure domains
 
 - Database backups are written to object storage. When the database volumes

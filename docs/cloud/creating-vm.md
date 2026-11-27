@@ -380,40 +380,38 @@ spec:
 
 To create a Windows VM in the console, follow [Create a VM in the console](#create-a-vm-in-the-console) with these choices:
 
-1. In **Operating system**, select the Windows 11 entry of your OS catalog.
-2. In **Root disk capacity (GiB)**, enter at least the image minimum that the hint under the field shows.
+1. In **Operating system**, select **Windows 11 Enterprise (Golden Image)**. The console selects **Prepared snapshot image**.
+2. On **Storage & guest**, review the storage class and minimum root disk size from the snapshot. If the console reports that the snapshot is unavailable, ask your platform operator to prepare it for your project.
 3. After the VM is **Running**, open its detail page and click the **Console** tab.
 4. Click **Graphical console**. The Windows lock screen appears.
 
-The Windows golden image has the VirtIO drivers, the QEMU guest agent, SSH, and RDP installed. The platform applies the UEFI, TPM, and Hyper-V settings that the OS catalog defines for Windows. The VM reaches the Windows lock screen a few minutes after it starts.
+The console restores the root disk from a project snapshot. The Windows golden image includes VirtIO drivers, the QEMU guest agent, SSH, and RDP. The platform applies the UEFI, TPM, and Hyper-V settings defined in the OS catalog.
 
 :::tip Storage quota
-A Windows golden image is about 75 GB, so its root disk needs **75–80 GB of free storage quota** in your Project. If the Project is near its storage limit, the disk creation fails with a quota error. Free space, or request more, before you create a Windows VM.
+Your project needs enough free storage quota for the snapshot's restore size. For example, a 75 GiB snapshot requires at least 75 GiB of quota for the root disk.
 :::
 
-The kubectl equivalent shows the UEFI boot, TPM, and Hyper-V features that Windows requires:
+The example uses a Ready project snapshot named `golden-windows-11-golden` on `rbd-vm`. Use your project's snapshot name and compatible storage class if they differ. Set `PROJECT_NAMESPACE` to your project's backing namespace and `SSH_PUBLIC_KEY` to your SSH public key. To have the platform generate console credentials, create the VM in the console.
 
 <details>
-<summary>Windows 11: DataVolume and VirtualMachine manifest</summary>
+<summary>Windows 11 root claim and VirtualMachine manifest</summary>
 
 ```yaml
-apiVersion: cdi.kubevirt.io/v1beta1
-kind: DataVolume
+apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
   name: win-root
 spec:
-  pvc:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: 70G
-    storageClassName: local-path
-  source:
-    http:
-      # The golden image published to your cluster's S3 OS-image mirror.
-      # Replace <cluster-domain> with the domain of your installation.
-      url: https://s3.<cluster-domain>/cdi-os-images/private/windows/11/latest/windows11-x64-golden.qcow2
+  accessModes: [ReadWriteOnce]
+  volumeMode: Filesystem
+  storageClassName: rbd-vm
+  resources:
+    requests:
+      storage: 75Gi
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: golden-windows-11-golden
 ---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -427,8 +425,10 @@ spec:
       - name: vpc_net_0
         multus:
           default: true
-          networkName: <project-backing-namespace>/default
+          networkName: PROJECT_NAMESPACE/default
       domain:
+        machine:
+          type: q35
         cpu:
           cores: 2
           model: host-model
@@ -462,33 +462,25 @@ spec:
           - name: root-volume
             disk:
               bus: virtio
+            bootOrder: 1
           - name: cloudinitdisk
             disk:
               bus: virtio
           tpm:
             persistent: true
-      accessCredentials:
-      - sshPublicKey:
-          source:
-            secret:
-              secretName: authorized-keys-default
-          propagationMethod:
-            qemuGuestAgent:
-              users:
-              - kube-dc
-      readinessProbe:
-        guestAgentPing: {}
-        failureThreshold: 10
-        initialDelaySeconds: 30
-        periodSeconds: 10
-        timeoutSeconds: 5
       volumes:
       - name: root-volume
-        dataVolume:
-          name: win-root
+        persistentVolumeClaim:
+          claimName: win-root
       - name: cloudinitdisk
         cloudInitNoCloud:
-          userData: ""
+          userData: |
+            #cloud-config
+            users:
+              - name: kube-dc
+                groups: Administrators
+                ssh_authorized_keys:
+                  - SSH_PUBLIC_KEY
 ```
 
 </details>

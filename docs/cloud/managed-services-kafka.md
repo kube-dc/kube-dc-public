@@ -112,9 +112,19 @@ the `Secret`, which has these keys:
 | `ca.crt` | The CA that signs the broker certificates |
 | `uri` | A connection URI for clients that take one |
 
-A check from a pod in the Project with `kcat`:
+Kafka 4 accepts SCRAM logins only from clients that build the SCRAM exchange
+correctly. Clients based on librdkafka (`kcat`, `confluent-kafka` for Python, Go
+and JavaScript, `node-rdkafka`) need librdkafka **2.6.1 or later**; older builds
+are refused with "invalid credentials". The `edenhill/kcat` and
+`confluentinc/cp-kcat` images bundle librdkafka 1.x and cannot log in. Java
+clients, franz-go and kafkajs are not affected.
+
+A check from a pod in the Project with `kcat` on Alpine 3.22 or later, whose
+`kcat` package links librdkafka 2.10:
 
 ```sh
+apk add --no-cache kcat
+kcat -V | head -1    # must report librdkafka 2.6.1 or later
 kcat -b "$KAFKA_BOOTSTRAP_SERVERS" -X security.protocol=SASL_SSL \
   -X sasl.mechanism=SCRAM-SHA-512 -X sasl.username="$KAFKA_USER" \
   -X sasl.password="$KAFKA_PASSWORD" -X ssl.ca.location=/etc/kafka/ca.crt -L

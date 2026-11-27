@@ -159,26 +159,24 @@ the per-cycle download budget stays bounded.
     release: "15.6"
 ```
 
-### Example: Windows-style entry (no discovery)
+### Windows prepared image
 
-The chart ships the Windows golden entry with an empty `upstreamURL`. There is no
-`discovery:` block, so the refresh job skips the entry and logs
-`skip <os-name>: no upstream URL`. The chart does not redistribute an installed
-Windows disk. You supply the image yourself at `mirrorPath`, from an authenticated
-source. For how to produce the image, see [OS-image operations](os-image-operations.md).
-
-The chart default for this entry is:
+Set `preparedOnly: true` for a family that uses Ready project snapshots. The
+chart publishes its boot and sizing metadata, and the public mirror job skips
+the family. The backend combines the prepared entry with the mirror catalog.
+The default Windows entry uses this setting.
 
 ```yaml
 - osName: "Windows 11 Enterprise (Golden Image)"
   familyId: "windows-11-golden"
   cloudUser: kube-dc
-  upstreamURL: ""
-  mirrorPath: "private/windows/11/golden/windows11-x64-golden.qcow2"
+  preparedOnly: true
 ```
 
-To mirror the image from your own source, set `upstreamURL` to that URL. The
-`static-url` adapter then mirrors it verbatim.
+Prepare the Windows image in the operator's golden-image namespace and select
+its Ready snapshot for the `windows-11-golden` family. Verify that the project
+has a Ready snapshot on compatible CSI storage before creating a VM. For the
+import, snapshot, and promotion procedure, see [OS-image operations](os-image-operations.md).
 
 ## Refresh CronJob
 

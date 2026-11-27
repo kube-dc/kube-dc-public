@@ -34,9 +34,10 @@ You need:
 - [CLI access](cli-kubeconfig.md), with `kubectl` connected to that Project;
 - the `developer` or `admin` role in the Project.
 
-Your provider must offer Applications. If `kubectl get app` says the server
-has no resource type `app`, or a new app still shows no status after a
-minute, ask your provider.
+Your installation must run Applications: check it before you apply anything
+(see [Check that your installation runs Applications](applications.md#check-that-your-installation-runs-applications): `enabled` and `create` both `true`).
+Where it does not, deploy your own Deployment and Service instead (see
+[Deploy Kubernetes manifests directly](deploy-options.md#deploy-kubernetes-manifests-directly)).
 
 ## 1. Create the application
 
@@ -111,9 +112,13 @@ and ask, for example:
 > Deploy the image nginxinc/nginx-unprivileged:1.27-alpine as an app named
 > hello, listening on port 8080, and tell me its address.
 
-The AI app calls `deploy_app`, which creates the same Application (where
-your provider has [turned that on](applications.md#apps-created-before-applications)),
-and `rollout_status` to report the address. You can switch between the console, `kubectl` and an AI app at any
+The AI app calls `deploy_app`, which creates the same Application,
+and `rollout_status` to report the address. This needs an installation that
+runs Applications (see
+[Check that your installation runs Applications](applications.md#check-that-your-installation-runs-applications): `enabled` and `create` both `true`);
+elsewhere `deploy_app` refuses, and the AI app applies a Deployment and a
+Service instead (see
+[Deploy Kubernetes manifests directly](deploy-options.md#deploy-kubernetes-manifests-directly)). For an Application you can switch between the console, `kubectl` and an AI app at any
 time: they all change the same resource.
 
 ## Clean up

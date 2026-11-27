@@ -168,6 +168,14 @@ The command takes the following options:
 - `--org`: the Organization, which is also the realm name.
 - `--insecure`: skips TLS verification. Do not use it in production.
 
+The login stores your sign-in and all of its contexts together. It replaces
+each file in one step and keeps the other clusters, users and contexts in your
+kubeconfig, its file permissions, and a symbolic link to it. If you stop a
+login with Ctrl+C before it has stored anything, it exits with code `130` and
+your previous sign-in and kubeconfig stay as they were. Once it has started
+storing, it finishes first, then exits with code `0`, or `1` if storing
+failed.
+
 ### `kube-dc ns`
 
 Compatibility selector for Project backing namespaces. It rewrites the

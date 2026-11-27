@@ -178,6 +178,7 @@ database, source and settlement preflight above before you offer paid signup.
    PAYG_SELF_SERVICE_ENABLED=true
    PAYG_SELF_SERVICE_REQUIRE_CARD=true
    PAYG_SELF_SERVICE_COLLECTION_MODE=billable
+   PAYG_SELF_SERVICE_TRIAL_DAYS=14
    PAYG_SELF_SERVICE_RATE_CARD=your-card@your-revision
    PAYG_SETTLEMENT_CUTOFF=2h
    PAYG_EXPORT_PROVIDER=stripe
@@ -189,8 +190,17 @@ database, source and settlement preflight above before you offer paid signup.
 
 5. With an authorized test organization, complete hosted card setup and
    verify the accepted agreement, exact enforced policy revision, quota and
-   effective usage boundary. Billable signup requires a verified card and
-   configures zero trial days.
+   effective usage boundary. Set `billing.policy.selfService.trialDays` to
+   the free period you offer (0–365 days). Zero preserves immediate paid signup.
+   With a trial, the organization administrator accepts the rates and verifies a
+   card once. Usage stays free until the trial ends and the paid policy takes
+   effect on a whole UTC hour. The billing service completes the transition.
+   The administrator can cancel automatic billing before the deadline and
+   re-enroll later. Cancellation preserves the original free time. When a new
+   checkout trial expires after cancellation, the controller restricts new
+   resource growth and preserves running workloads. An existing measuring-only
+   customer must accept the paid offer. Usage before
+   activation stays free.
 6. When finance authorizes invoice creation, set
    `PAYG_EXPORT_CREATION_PAUSED=F`. An invoice still requires an eligible
    usage period and approval of its immutable statement. To qualify a live

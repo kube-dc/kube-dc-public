@@ -325,42 +325,59 @@ events are acknowledged and ignored.
 
 ## Builds on push
 
-With `githubApp.builds.enabled` (and the webhook), a push to a repository's
-default branch builds and deploys the apps set up for it, with no CI in the
-repository. An app opts in through the hosted MCP tool `deploy_app` with
-`buildFrom`, or with these on its Deployment:
+With `githubApp.builds.enabled` and the Application API (`apps.enabled`), the
+platform builds and deploys Applications whose source is a GitHub repository,
+with no CI in the repository. A tenant creates one with **New application**,
+the hosted MCP tool `deploy_app` with `buildFrom`, or `kubectl apply` (see
+[Deploy from GitHub](/cloud/deploy-from-github)). The manager mirrors the App
+and the build switch (Platform settings → Integrations, else the chart's App)
+into Secret `kube-dc-apps-github` of the app controller's namespace; builds
+pause while the switch is off.
 
-| On the Deployment | Value |
-|---|---|
-| label `build.kube-dc.com/on-push` | `"true"` |
-| `build.kube-dc.com/repository` | `owner/repo` |
-| `build.kube-dc.com/image` | registry path without a tag; images are tagged with the commit |
-| `build.kube-dc.com/push-secret` | not needed for a managed registry of the organization (below). Otherwise a `kubernetes.io/dockerconfigjson` Secret in the project that may push there. Required in practice: GHCR refuses pushes with a GitHub App token (`installation not allowed to Write organization package`), even with Packages: write accepted, so for GHCR use a classic personal access token with `write:packages`. Without it the App pushes `ghcr.io/<repository owner>/<name>` and keeps a pull Secret `<app>-ghcr` fresh, which works only if GitHub lifts that limit |
-| `build.kube-dc.com/dockerfile` | optional, default `Dockerfile` |
-| `build.kube-dc.com/previews` | optional, a project namespace of the same organization: every pull request is built into `<app>-pr-<n>` there |
-| `build.kube-dc.com/preview-hours` | optional, default 72: a preview without a new build is removed after this |
-
-On a signed push the manager checks the repository's `KUBE_DC_ORGANIZATION`
-claim against the project's organization, puts a `contents: read` token for
-that repository (one hour) in a Secret, and runs the build Pod
-`build-<app>-<commit>` in the project: rootless BuildKit
-(`githubApp.builds.image`, pinned by digest in the chart) builds the
-commit from GitHub and pushes it with the push Secret. A newer push replaces a
-running build. When the build succeeds the manager sets the Deployment's image
-(a new app is scaled from zero to one) and the `github.kube-dc.com/*`
-annotations, so the rollout is reported to GitHub. A build that could not
-start or failed is named in the Deployment's `build.kube-dc.com/last-error`,
-with the pod's reason (for example `DeadlineExceeded` or `Evicted`) and the
-last lines of the build log, which the kubelet keeps after the log is gone.
+A signed push marks the repository's Applications to read their branch head
+again; a periodic read finds a commit when a delivery is lost. For each new
+commit the app controller creates an `ApplicationBuild`, which is refused
+unless the repository's `KUBE_DC_ORGANIZATION` claim names the project's
+organization. When a build slot is free (`apps.builds.slots`: per project, organization and
+cluster), it puts a `contents: read` token for that repository (one hour) in a
+Secret and runs the build Pod in the project: rootless BuildKit
+(`githubApp.builds.image`, pinned by digest in the chart) builds the commit
+from GitHub and pushes it. A successful build becomes a release the
+Application deploys; a failed one records its reason and the last lines of
+the build log in the ApplicationBuild's status, which outlives the pod.
 
 Build pods request 200m CPU, 1Gi memory and 24Gi of node disk, and may use up
 to 2 CPU, 2Gi memory, 24Gi of BuildKit state (26Gi of node disk in all) and
 60 minutes. They count against the project's quota and are removed after a
 day. A cold build of a Rust and Node app needs more than 8Gi of
-state; plan node disk for one build per pushing app. Build
-pods prefer nodes without the `node-role.kubernetes.io/control-plane` label,
-so unpacking base images doesn't put a control-plane node under disk
-pressure; a cluster of control-plane nodes only still builds.
+state; plan node disk for one build per pushing app.
+
+**Where builds run.** Unpacking base images can put a node under disk
+pressure, so by default build pods stay off nodes with the
+`node-role.kubernetes.io/control-plane` label while a worker they may use
+exists: a Ready node without that label that the placement's node selector
+picks and whose cordon and `NoSchedule`/`NoExecute` taints the placement
+tolerates. The controller checks this when it creates the pod; a cluster of
+control-plane nodes only still builds. Set `apps.builds.placement` for an
+Application's builds:
+
+| Value | Effect |
+|---|---|
+| `controlPlane: avoid` (default) | Builds wait for a worker while one exists |
+| `controlPlane: allow` | Builds prefer workers and may run on control-plane nodes. Use it where control-plane nodes run tenant workloads and have the disk |
+| `nodeSelector`, `tolerations` | Put builds on dedicated build nodes; only nodes they select and tolerate count as workers. Tolerations take the `Equal` and `Exists` operators |
+
+A tenant pod can carry the same tolerations, so a taint keeps other pods off
+build nodes, not tenants out. A build pod that no node can take has the reason
+`WaitingForCapacity` and the scheduler's message in its ApplicationBuild's
+status (the Application's `Built` condition repeats the message), and fails
+as `NoCapacity` after three hours (a pod placed on a node that never starts
+fails as `Timeout`). A changed `apps.builds.placement` applies to the pods
+created after it; to move a build that is already waiting, delete its pod
+(`kubectl delete pod -n <project> -l apps.kube-dc.com/build=<build>`) once the
+app controller runs with the new settings: the build starts a new pod as its
+next attempt. A build has three attempts (`status.attempts`), so a build on
+its third fails instead; start it again (a new ApplicationBuild).
 
 **Into a managed registry.** When the image's host is the `https` host of a
 Ready managed registry (`registry` ManagedService) of the same organization,
@@ -372,9 +389,11 @@ the organization realm (audience `kube-dc-registry`, claim
 `kdc_registry: push:<project>`, 65 minutes so it outlives the build
 deadline). The app then pulls with the registry's pull Secret
 `kdc-registry-<registry>`, which the manager keeps fresh in every listed
-project and adds to the Deployment. A preview into a managed registry must be
-in the app's own project. With `build.kube-dc.com/push-secret` set, or for
-any other host, builds work as before.
+project and adds to the app's Deployment. For any other registry the
+Application names a push Secret (`spec.image.pushSecretRef`, a
+`kubernetes.io/dockerconfigjson` Secret in the project); GHCR refuses pushes
+with a GitHub App token, so use a classic personal access token with
+`write:packages` there.
 
 **People pushing to a managed registry.** Registry rights come from the
 Keycloak group attribute `kdc_registry`: `push:<project>` for project
@@ -392,18 +411,18 @@ manager adds `kube-dc-mcp` to the console client's access-token audience,
 which standard token exchange requires. All of it is off with
 `manager.registry.enabled: false`.
 
-**Pull requests.** With `build.kube-dc.com/previews`, an opened, reopened or
-updated pull request is built into a preview: a copy of the app in the
-previews project (no replicas until its first build, a published Service, the
-container's plain settings only: Secrets the app reads, such as its database,
-are not shared). Closing the pull request removes it; so does the janitor
-after `preview-hours` without a build. Pull requests from forks are not
-built.
+**Pull requests.** With `spec.previews.enabled`, an opened, reopened or
+updated pull request is built into a preview Application `<app>-pr-<n>` in
+the app's project or `spec.previews.project` (same organization), with its
+own database when the app asks for one. Closing the pull request removes it,
+and so does the expiry after `spec.previews.hours` (default 72) without a
+build. Pull requests from forks are not built.
 
 **Check runs.** Each build reports a check run `kube-dc` on its commit: in
 progress, then success with the app's URL or failure with the reason and
 the log tail. It needs the Checks permission; without it builds still run.
 
 The build Pod runs with Unconfined seccomp and AppArmor, like the runners'
-BuildKit sidecar; the pod baseline policies admit it because the manager
-creates it. The manager mounts the App's private key only with builds on.
+BuildKit sidecar; the pod baseline policies admit it because the app
+controller's own account creates it. The manager mounts the App's private
+key only with builds on.

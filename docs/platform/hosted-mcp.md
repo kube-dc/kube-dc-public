@@ -107,7 +107,19 @@ The server offers 39 tools. A read-only URL offers only the ten read tools:
 | Delete | `delete` |
 
 `get_resources` masks Secret values unless the caller asks to reveal them. A
-reveal is audited and is not available on a read-only URL. For
+reveal is audited and is not available on a read-only URL.
+
+Read-only URLs also get `query`. The agent sends a short JavaScript program
+that calls the read tools as `kube.<tool>(args)` and returns only its answer,
+instead of passing each full result through the model. The program runs in
+a QuickJS (WebAssembly) sandbox in the backend: no network, files or
+modules, at most 10 s, 50 tool calls, 2 MiB read and a 256 KiB result, and
+2 programs at once per organization. Its tool calls use the session's
+read-only token, like any other call on that URL.
+
+To read less, `get_logs` takes `grep`, `sinceSeconds` and `previous`;
+`get_resources` and `list` take `fields` (dotted paths such as
+`status.phase`); and `list` takes `project: "*"` for every project. For
 `connect_repository` and `registry_login`, see
 [GitHub App](github-app.md).
 

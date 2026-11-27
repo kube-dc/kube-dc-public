@@ -11,6 +11,11 @@ to apply your own Kubernetes manifests, see
 
 You need:
 
+- an installation that runs Applications (see
+  [Check that your installation runs Applications](applications.md#check-that-your-installation-runs-applications): `enabled` and `create` both `true`).
+  Where it does not, there is no **New application**: deploy from
+  [your own GitHub Actions workflow](#build-in-your-own-github-actions-workflow-instead)
+  instead;
 - the developer role in the Project;
 - to be an admin of the GitHub repository;
 - the platform's GitHub App installed on the repository (the console offers
@@ -38,9 +43,7 @@ You need:
    default), then click **Create app**.
 
 The page follows the registry setup, the first build and the rollout. The app
-is ready when its pods are available and its address is live. It is an
-Application where your provider has
-[turned that on](applications.md#apps-created-before-applications). After
+is ready when its pods are available and its address is live. After
 that, every push to the branch builds and deploys a new release. Manage the
 app under **Applications** (see [Manage applications](applications.md)).
 
@@ -153,10 +156,7 @@ which creates the same Application. It can also create a registry
 a prompt from your choices for you to paste. With **Builds → On push, by
 the platform** selected, its **Set it up by hand** steps show an Application
 as `kubectl` commands for the Project, with the registry you chose and pull
-request previews in the same Project. Where your provider has not turned
-Applications on for new apps, create the app's Deployment first: the steps
-then turn on builds on push for that existing Deployment (see
-[Apps created before Applications](applications.md#apps-created-before-applications)).
+request previews in the same Project.
 
 ## Builds
 
