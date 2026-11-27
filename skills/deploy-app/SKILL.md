@@ -172,30 +172,14 @@ writing the manifests below:
   about deploys elsewhere (chat, a script) instead of polling.
 
 `deploy_app` does not take over a plain Deployment of the same name (one
-applied with `kubectl`): the Application reports the name as in use. Before
-proposing to replace such an app with an Application, find what it uses:
-`kubectl get deployment,service,httproute,persistentvolumeclaim` (its
-Service may have another name, its address may come from that Service's
-`service.nlb.kube-dc.com/route-hostname` or a route of its own, its data from
-any claim). Tell the user what changes: the Application makes its own
-Service named after the app and gets its address from `run.hostnames` or the
-platform address, so traffic to the old Service or hostname stops until DNS
-and clients follow; it does not take over a data volume (it refuses an
-existing `{app}-data` claim).
-
-Replacing an existing plain app is a cutover the user runs; this skill gives
-guidance only and does not delete, scale or retarget their objects. Report
-what you found (the app's Deployment; every Service that selects its pods,
-and whether other pods share it; every route that points at those Services,
-in any namespace, with its rules, ports and weights; any data in a claim, an
-`emptyDir` or elsewhere) and what a cutover would take: an Application name
-that nothing of that name blocks (the Application refuses an existing
-Service or `{app}-data` claim it did not make); data backed up while the
-old pods still exist and restored before the Application takes traffic;
-each route's references to the app's own Service moved to the
-Application's Service on a matching port, with other backends and weights
-kept; a short outage the user agrees to. A new app of a free name needs none
-of this: create the Application.
+applied with `kubectl`): the Application reports the name as in use, and it
+refuses a Service or `{app}-data` claim of its name that it did not make.
+Replacing an existing plain app with an Application is a migration the user
+plans and runs (its traffic, Services, routes and data); do not delete,
+scale or change their objects. Tell the user that, offer to show what the
+app uses (`kubectl get deployment,service,httproute,persistentvolumeclaim`),
+and offer the alternatives: keep the plain app and operate it with
+`kubectl`, or create the Application under a free name next to it.
 
 ## Deploy from GitHub on every push
 
