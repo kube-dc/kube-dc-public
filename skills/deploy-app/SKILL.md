@@ -188,9 +188,12 @@ existing `{app}-data` claim).
   and check that nothing of that name stays in the way (a Service another
   workload uses, an `{app}-data` claim: the Application refuses both); if
   anything does, pick another name. Then list exactly the objects that are
-  this app's alone (its Deployment, and only a Service or route nothing else
-  selects). With the user's agreement to the name, that list and a short
-  outage, delete them and create the Application.
+  this app's alone (its Deployment, a Service nothing else selects, and a
+  route only when every rule of it points at that Service; read the rules
+  and backends). A route that also serves other workloads stays: its rule
+  for this app is changed to the Application's Service as part of the
+  cutover. With the user's agreement to the name, that list, the route
+  changes and a short outage, delete them and create the Application.
 - **The app keeps data:** replacing it is a data migration, which this skill
   does not run: give guidance only and leave the plain app as it is. What it
   takes: writes stopped and a backup checked while the old pods still exist
