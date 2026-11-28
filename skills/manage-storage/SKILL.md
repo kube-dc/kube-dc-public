@@ -39,7 +39,7 @@ namespace:
 | Resource | Important keys |
 |---|---|
 | Secret | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
-| ConfigMap | `BUCKET_HOST`, `BUCKET_NAME`, `BUCKET_PORT`, `BUCKET_REGION` |
+| ConfigMap | `BUCKET_ENDPOINT`, `BUCKET_NAME`, `BUCKET_REGION` |
 
 These are per-bucket credentials. Use them only for that bucket. Organization
 account keys do not automatically grant data access to all ObjectBucketClaims.
@@ -54,9 +54,9 @@ envFrom:
     name: "{bucket-name}"
 ```
 
-For in-Project traffic, build the endpoint from `BUCKET_HOST` and
-`BUCKET_PORT`. For a workstation, set `S3_ENDPOINT` to the external endpoint
-shown by the Kube-DC console or provider:
+Use the HTTPS URL in `BUCKET_ENDPOINT` from pods and workstations. If the
+ConfigMap has no `BUCKET_ENDPOINT`, set it to the S3 endpoint shown in the
+bucket details. To run the AWS CLI from a workstation:
 
 ```bash
 export AWS_ACCESS_KEY_ID="$(
@@ -72,7 +72,12 @@ export BUCKET_NAME="$(
     -o jsonpath='{.data.BUCKET_NAME}'
 )"
 
-aws --endpoint-url "$S3_ENDPOINT" s3 ls "s3://$BUCKET_NAME/"
+export BUCKET_ENDPOINT="$(
+  kubectl get configmap {bucket-name} -n {backing-namespace} \
+    -o jsonpath='{.data.BUCKET_ENDPOINT}'
+)"
+
+aws --endpoint-url "$BUCKET_ENDPOINT" s3 ls "s3://$BUCKET_NAME/"
 ```
 
 Do not print the Secret values.

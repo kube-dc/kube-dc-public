@@ -13,7 +13,7 @@ To open object storage, click **Object Storage** in the section rail. The sectio
 To open a bucket, click its name. The bucket page has **Refresh** and **Delete bucket** buttons and these tabs:
 
 - **Objects**: the object browser. See [Object browser](#object-browser).
-- **Details**: the bucket configuration (claim name, S3 bucket name, storage class, creation date, endpoint, internal host, port, region, and connection Secret) and connection examples.
+- **Details**: the bucket configuration (claim name, S3 bucket name, storage class, creation date, S3 endpoint, region, and connection Secret) and connection examples.
 - **Access**: the **Bucket access policy**, the **Bucket credentials**, and the **Archive key rotations**.
 
 ### Create a bucket
@@ -62,7 +62,7 @@ kubectl get configmap my-bucket -n acme-production -o yaml
 
 The ConfigMap contains these keys:
 
-- `BUCKET_HOST`: Internal S3 endpoint
+- `BUCKET_ENDPOINT`: HTTPS S3 endpoint for project workloads
 - `BUCKET_NAME`: Full bucket name in S3
 - `BUCKET_PORT`: Service port
 - `BUCKET_REGION`: Region identifier
@@ -82,7 +82,7 @@ To change the access policy of a bucket:
 4. For **Public read**, select **Allow anyone with an object URL to read this bucket's objects**.
 5. Click **Apply access policy**.
 
-The **Endpoint** on the bucket's **Details** tab shows the S3 endpoint of your installation. Public object URLs follow this pattern:
+The **S3 endpoint** on the bucket's **Details** tab shows the S3 endpoint of your installation. Public object URLs follow this pattern:
 
 ```
 <s3-endpoint>/<bucket-name>/<object-key>
@@ -277,7 +277,7 @@ s3cmd put myfile.txt s3://acme-production-my-bucket/
 
 ### Use credentials from Kubernetes Secrets
 
-For workloads running inside your project, you can mount the per-bucket credentials directly:
+For workloads in your project, load the per-bucket Secret and ConfigMap. The ConfigMap supplies `BUCKET_ENDPOINT` and `BUCKET_NAME`. Use the HTTPS endpoint in `BUCKET_ENDPOINT`. If that field is unavailable on your installation, set it to the **S3 endpoint** shown in the bucket details.
 
 ```yaml
 apiVersion: v1
@@ -292,41 +292,18 @@ spec:
       image: amazon/aws-cli
       command: ["/bin/sh", "-c"]
       args:
-        - >-
-          aws --endpoint-url "http://${BUCKET_HOST}:${BUCKET_PORT}"
-          s3 ls "s3://${BUCKET_NAME}/"
+        - aws --endpoint-url "${BUCKET_ENDPOINT}" s3 ls "s3://${BUCKET_NAME}/"
+      envFrom:
+        - secretRef:
+            name: my-bucket
+        - configMapRef:
+            name: my-bucket
       env:
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: my-bucket
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: my-bucket
-              key: AWS_SECRET_ACCESS_KEY
-        - name: BUCKET_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: my-bucket
-              key: BUCKET_HOST
-        - name: BUCKET_PORT
-          valueFrom:
-            configMapKeyRef:
-              name: my-bucket
-              key: BUCKET_PORT
         - name: AWS_DEFAULT_REGION
-          valueFrom:
-            configMapKeyRef:
-              name: my-bucket
-              key: BUCKET_REGION
-        - name: BUCKET_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: my-bucket
-              key: BUCKET_NAME
+          value: us-east-1
 ```
+
+Use the region shown in the bucket details if your provider specifies a different region.
 
 ## Quotas
 
