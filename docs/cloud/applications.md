@@ -48,7 +48,7 @@ it (apps built from GitHub). The tabs:
 | Tab | What it shows and does |
 |---|---|
 | Overview | **Progress** (Source, Registry, Build, Release, Rollout, Address), the latest build, and, while the app is not ready, what is serving now |
-| Builds & releases | **Builds**: every build with its commit and result, **Log** or **Log tail**, cancel a running one, **Build again**. **Releases**: every version that ran, **Roll back to this release**, and **Retry release** after a failed release command |
+| Builds & releases | **Builds**: every build with its commit and result, **Log** (see [Build logs](#build-logs)), **Log tail** of a failed build, cancel a running one, **Build again** (see also [Images in the registry](#images-in-the-registry)). **Releases**: every version that ran, **Roll back to this release**, and **Retry release** after a failed release command |
 | Processes | Type (web or worker), replicas or autoscaling, release command, data volume, instant rollback, and the app's scheduled jobs |
 | Environment | Variables and the Secrets they come from |
 | Domains | The app's address and its custom hostname |
@@ -58,6 +58,24 @@ it (apps built from GitHub). The tabs:
 
 Settings are changed with **Edit YAML** on the tab that shows them (the
 **Previews** tab has none: edit the app's YAML on another tab).
+
+### Build logs
+
+While a build's pod exists (while it runs, and for a day after it ends),
+**Log** shows the pod's log. Once the pod is gone, **Older log** reads the
+build's lines from the platform's log store: the last 2,000 lines, for as long as the platform keeps logs (7 days
+unless your provider says otherwise) and the build is in the app's history (the last 5
+succeeded and 5 other builds by default). A failed build also keeps
+**Log tail**, the last lines it printed, for as long as its record exists.
+
+### Images in the registry
+
+Every build pushes a new image into the project's registry, and the
+registry keeps it: images are not deleted on their own, so the registry's
+storage fills over time. The registry's Overview shows how full it is;
+raise its storage before it is full, because a full registry makes builds
+fail with `PushFailed`. Do not delete an app's images with registry tools:
+a release you may roll back to, or a preview, can still need them.
 
 - A change to what the pods run makes a new numbered release: the image,
   variables, resources, port, health path, pull Secrets, and adding or

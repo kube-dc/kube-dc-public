@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
         'backend-scaling',
         'hosted-mcp',
         'github-app',
+        'applications-operations',
         'controller-diagram',
       ],
     },

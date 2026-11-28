@@ -379,6 +379,30 @@ app controller runs with the new settings: the build starts a new pod as its
 next attempt. A build has three attempts (`status.attempts`), so a build on
 its third fails instead; start it again (a new ApplicationBuild).
 
+**How many builds at once.** The scheduler does not see how much of a node's
+disk other pods' volumes and images already use, so size the slot limits
+(`apps.builds.slots`) from real free disk, per node:
+
+1. For each node builds may use, read its free disk:
+   `kubectl get --raw /api/v1/nodes/<node>/proxy/stats/summary` and take
+   `node.fs.availableBytes`.
+2. Subtract the kubelet's eviction floor (by default 10% of the
+   filesystem). What is left, divided by 26Gi and rounded down, is how many
+   builds that node holds at worst.
+3. Set `cluster` to the smallest of those numbers, the most constrained
+   eligible node: the scheduler may put every build on one node. A node
+   that holds no build at all must not be eligible: keep builds off it
+   with `nodeSelector`, or keep builds off until it has the disk. Never set
+   `cluster: 0`, which means no limit. Set
+   `organization` below `cluster` where `cluster` is 2 or more, so one
+   organization's flood leaves a slot for another, and `project` at or
+   below `organization`.
+
+This holds for dedicated build nodes too. Check memory the same way: each
+build may use 2Gi. Recheck when nodes are added or disks resized. The
+[operations runbook](applications-operations.md) has the alerts that show
+builds waiting.
+
 **Into a managed registry.** When the image's host is the `https` host of a
 Ready managed registry (`registry` ManagedService) of the same organization,
 no push Secret is needed. The image must be `<registry host>/<project>/<name>`,
